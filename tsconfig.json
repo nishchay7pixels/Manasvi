@@ -10,6 +10,7 @@
     { "path": "packages/model-adapter" },
     { "path": "packages/policy-sdk" },
     { "path": "packages/executor-sdk" },
+    { "path": "packages/sandbox-runtime" },
     { "path": "packages/plugin-sdk" },
     { "path": "packages/session-sdk" },
     { "path": "packages/testing" },

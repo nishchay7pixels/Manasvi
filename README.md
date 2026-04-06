@@ -150,7 +150,7 @@ Still evolving:
 | 5 | Session + context lifecycle | Enforce context hygiene/provenance and prevent cross-session leakage | Completed |
 | 5 (harness) | Early end-to-end AI path | Validate real message→policy→context→model loop | Completed |
 | 6 | Execution intent + approval flow | Secure bridge from orchestration to side effects | Completed (runtime slice) |
-| 7 | Sandboxed execution runtime | Harden real side-effect execution substrate | In progress / partial scaffolding |
+| 7 | Sandboxed execution runtime | Harden real side-effect execution substrate | Completed |
 
 ## What Can Be Tested Right Now
 

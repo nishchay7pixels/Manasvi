@@ -18,6 +18,9 @@
       "path": "../../packages/policy-sdk"
     },
     {
+      "path": "../../packages/sandbox-runtime"
+    },
+    {
       "path": "../../packages/service-runtime"
     }
   ],

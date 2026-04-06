@@ -1,6 +1,7 @@
 import {
   CONTRACT_SCHEMA_VERSION,
   approvedIntentArtifactSchema,
+  executorApiRequestSchema,
   executionIntentSchema
 } from "@manasvi/contracts";
 import {
@@ -10,12 +11,14 @@ import {
 } from "@manasvi/auth";
 import { HttpPolicyClient } from "@manasvi/policy-sdk";
 import { validateExecutionAuthorization } from "@manasvi/executor-sdk";
+import { runSandboxedExecution } from "@manasvi/sandbox-runtime";
 import { respondJson, startHttpService } from "@manasvi/service-runtime";
 import { readJsonBody } from "@manasvi/service-runtime";
 import { z } from "zod";
 
 import { loadExecutionManagerConfig } from "./config.js";
 import { queryPolicyForExecution } from "./policy-integration.js";
+import { deriveRuntimePolicy } from "./runtime-policy.js";
 
 async function main(): Promise<void> {
   const config = await loadExecutionManagerConfig();
@@ -63,7 +66,8 @@ async function main(): Promise<void> {
   const executeIntentSchema = z.object({
     intent: executionIntentSchema,
     artifact: approvedIntentArtifactSchema,
-    dryRun: z.boolean().default(true)
+    dryRun: z.boolean().default(false),
+    secretValuesByRef: z.record(z.string().min(1)).optional()
   });
 
   await startHttpService({
@@ -194,15 +198,89 @@ async function main(): Promise<void> {
           });
           return true;
         }
+        const runtimePolicy = deriveRuntimePolicy({
+          intent: incoming.intent,
+          artifact: incoming.artifact,
+          policyDecision: decision,
+          sandboxProfileDefault: config.sandboxProfileDefault,
+          egressWhitelistPolicy: config.egressWhitelistPolicy
+        });
+        const runId = `run:${Date.now()}:${Math.random().toString(16).slice(2, 10)}`;
+        const executionToken = tokenService.issueToken({
+          caller: buildServicePrincipalReference(config.serviceName),
+          subject: { principalId: incoming.intent.intentId, principalType: "tool" },
+          scopes: [`execution.run:${runId}`, "execution.runtime.invoke"],
+          tenantId: incoming.intent.snapshot.tenantId,
+          workspaceId: incoming.intent.snapshot.workspaceId,
+          ttlSeconds: config.executionTokenTtlSeconds
+        });
+        const runtimeRequest = executorApiRequestSchema.parse({
+          schemaVersion: "1.0",
+          runId,
+          intentId: incoming.intent.intentId,
+          artifactId: incoming.artifact.artifactId,
+          toolRef: incoming.intent.snapshot.action.toolRef ?? "tool:echo",
+          operation: incoming.intent.snapshot.action.operation,
+          parameters: incoming.intent.snapshot.action.parameters,
+          runtimePolicy,
+          executionToken,
+          trace
+        });
+
+        logger.info("Execution runtime policy derived", {
+          runId,
+          intentId: incoming.intent.intentId,
+          artifactId: incoming.artifact.artifactId,
+          sandboxMode: runtimePolicy.sandboxMode,
+          timeoutMs: runtimePolicy.timeoutMs,
+          cpuTimeLimitSeconds: runtimePolicy.cpuTimeLimitSeconds,
+          memoryLimitMb: runtimePolicy.memoryLimitMb
+        });
+        if (incoming.dryRun) {
+          consumedArtifacts.add(incoming.artifact.artifactId);
+          respondJson(res, 202, {
+            schemaVersion: CONTRACT_SCHEMA_VERSION,
+            accepted: true,
+            executionId: `exec:${Date.now()}`,
+            dryRun: true,
+            runId,
+            intentId: incoming.intent.intentId,
+            artifactId: incoming.artifact.artifactId,
+            runtimePolicy,
+            decision
+          });
+          return true;
+        }
+
+        const run = await runSandboxedExecution({
+          request: runtimeRequest,
+          tokenService,
+          decisionAuditRecordId: decision.auditRecordId,
+          executionAuditEventId: `exec-audit:${runId}`,
+          ...(incoming.secretValuesByRef ? { secretValuesByRef: incoming.secretValuesByRef } : {}),
+          sandboxRootDir: config.sandboxRootDir,
+          maxOutputBytes: config.sandboxMaxOutputBytes
+        });
         consumedArtifacts.add(incoming.artifact.artifactId);
+        for (const logEvent of run.logs) {
+          logger.info("Execution runtime event", {
+            runId,
+            intentId: logEvent.intentId,
+            stage: logEvent.stage,
+            sandboxMode: logEvent.sandboxMode,
+            metadata: logEvent.metadata
+          });
+        }
         respondJson(res, 202, {
           schemaVersion: CONTRACT_SCHEMA_VERSION,
           accepted: true,
           executionId: `exec:${Date.now()}`,
-          dryRun: incoming.dryRun,
+          dryRun: false,
+          runId,
           intentId: incoming.intent.intentId,
           artifactId: incoming.artifact.artifactId,
-          decision
+          decision,
+          resultArtifact: run.artifact
         });
         return true;
       }

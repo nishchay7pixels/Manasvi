@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { baseServiceConfigSchema, loadValidatedConfig } from "@manasvi/service-runtime";
+import { egressWhitelistPolicySchema } from "@manasvi/contracts";
 
 export const executionConfigSchema = baseServiceConfigSchema.extend({
   serviceName: z.literal("execution-manager"),
@@ -16,6 +17,10 @@ export const executionConfigSchema = baseServiceConfigSchema.extend({
   approvalVerificationKeys: z.record(z.string().min(1)).refine((value) => Object.keys(value).length > 0, {
     message: "At least one approval verification key is required"
   }),
+  executionTokenTtlSeconds: z.number().int().positive().max(600).default(90),
+  sandboxRootDir: z.string().min(1).default("/tmp/manasvi-runs"),
+  sandboxMaxOutputBytes: z.number().int().positive().max(512 * 1024).default(64 * 1024),
+  egressWhitelistPolicy: egressWhitelistPolicySchema,
   sandboxProfileDefault: z
     .enum(["read_only", "bounded_egress", "mutation_limited", "privileged_reviewed"])
     .default("read_only")
@@ -28,6 +33,29 @@ export async function loadExecutionManagerConfig(): Promise<ExecutionManagerConf
     serviceName: "execution-manager",
     schema: executionConfigSchema,
     buildConfig: async ({ env, profile, secrets }) => ({
+      ...(function () {
+        const egressPolicyRaw =
+          env.EXECUTION_EGRESS_WHITELIST_POLICY_JSON ??
+          JSON.stringify({
+            schemaVersion: "1.0",
+            policyId: "egress:local-default-deny",
+            description: "Default deny egress policy for local runtime",
+            rules: []
+          });
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(egressPolicyRaw);
+        } catch (error) {
+          throw new Error(
+            `Invalid EXECUTION_EGRESS_WHITELIST_POLICY_JSON: ${
+              error instanceof Error ? error.message : "unknown parse error"
+            }`
+          );
+        }
+        return {
+          egressWhitelistPolicy: egressWhitelistPolicySchema.parse(parsed)
+        };
+      })(),
       serviceName: "execution-manager",
       serviceVersion: env.SERVICE_VERSION ?? "0.1.0",
       environment: profile,
@@ -68,6 +96,9 @@ export async function loadExecutionManagerConfig(): Promise<ExecutionManagerConf
           acc[keyId] = secret;
           return acc;
         }, {}),
+      executionTokenTtlSeconds: Number(env.EXECUTION_TOKEN_TTL_SECONDS ?? 90),
+      sandboxRootDir: env.SANDBOX_ROOT_DIR ?? "/tmp/manasvi-runs",
+      sandboxMaxOutputBytes: Number(env.SANDBOX_MAX_OUTPUT_BYTES ?? 64 * 1024),
       sandboxProfileDefault: env.SANDBOX_PROFILE_DEFAULT ?? "read_only",
       executionControlToken:
         profile === "staging" || profile === "production"

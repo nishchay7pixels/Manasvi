@@ -118,6 +118,10 @@ services:
       LOG_LEVEL: info
       HUMAN_LOGS: "false"
       SANDBOX_PROFILE_DEFAULT: read_only
+      EXECUTION_TOKEN_TTL_SECONDS: "90"
+      SANDBOX_ROOT_DIR: /tmp/manasvi-runs
+      SANDBOX_MAX_OUTPUT_BYTES: "65536"
+      EXECUTION_EGRESS_WHITELIST_POLICY_JSON: '{"schemaVersion":"1.0","policyId":"egress:local-default-deny","description":"Default deny egress policy for local runtime","rules":[]}'
       POLICY_SERVICE_BASE_URL: http://policy-service:4103
       INTERNAL_AUTH_KEY_ID: local-k1
       INTERNAL_AUTH_SIGNING_SECRET: local-dev-internal-secret
