@@ -1,0 +1,32 @@
+{
+  "name": "manasvi",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@10.10.0",
+  "description": "Manasvi multi-service monorepo foundation",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev --parallel",
+    "lint": "turbo run lint",
+    "format": "node -e \"console.log('Format tooling is intentionally lightweight in this milestone.')\"",
+    "format:check": "node -e \"console.log('Format check is intentionally lightweight in this milestone.')\"",
+    "test": "turbo run test",
+    "typecheck": "turbo run typecheck",
+    "clean": "turbo run clean",
+    "dev:services": "pnpm -r --filter ./apps/* dev",
+    "dev:gateway": "pnpm --filter @manasvi/api-gateway dev",
+    "health:check": "node scripts/check-health.mjs",
+    "smoke:boot": "node scripts/smoke-boot.mjs",
+    "check": "pnpm lint && pnpm typecheck && pnpm test"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.2",
+    "prettier": "^3.5.3",
+    "tsx": "^4.19.3",
+    "turbo": "^2.5.0",
+    "typescript": "^5.8.3"
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "name": "@manasvi/contracts",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "dependencies": {
+    "zod": "^3.24.3"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "dev": "tsx watch src/index.ts",
+    "typecheck": "tsc -b --pretty false",
+    "lint": "tsc --noEmit -p tsconfig.json --pretty false",
+    "test": "tsx --test src/**/*.test.ts",
+    "clean": "rm -rf dist tsconfig.tsbuildinfo"
+  }
+}

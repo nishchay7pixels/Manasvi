@@ -1,0 +1,15 @@
+FROM node:20-bookworm
+
+WORKDIR /workspace
+
+RUN corepack enable && corepack prepare pnpm@10.10.0 --activate
+
+COPY package.json pnpm-workspace.yaml turbo.json tsconfig.json tsconfig.base.json .prettierrc.json ./
+COPY apps ./apps
+COPY packages ./packages
+COPY docs ./docs
+COPY configs ./configs
+
+RUN pnpm install --ignore-scripts
+
+CMD ["pnpm", "dev"]

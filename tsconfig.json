@@ -1,0 +1,23 @@
+{
+  "files": [],
+  "references": [
+    { "path": "packages/contracts" },
+    { "path": "packages/tracing" },
+    { "path": "packages/logging" },
+    { "path": "packages/auth" },
+    { "path": "packages/service-runtime" },
+    { "path": "packages/event-bus" },
+    { "path": "packages/policy-sdk" },
+    { "path": "packages/executor-sdk" },
+    { "path": "packages/plugin-sdk" },
+    { "path": "packages/testing" },
+    { "path": "apps/ingress-service" },
+    { "path": "apps/orchestrator-service" },
+    { "path": "apps/policy-service" },
+    { "path": "apps/execution-manager" },
+    { "path": "apps/memory-service" },
+    { "path": "apps/node-manager" },
+    { "path": "apps/audit-service" },
+    { "path": "apps/api-gateway" }
+  ]
+}

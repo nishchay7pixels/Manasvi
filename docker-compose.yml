@@ -1,0 +1,141 @@
+services:
+  api-gateway:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.dev
+    command: pnpm --filter @manasvi/api-gateway dev
+    environment:
+      MANASVI_ENV: local
+      SERVICE_PORT: "4100"
+      SERVICE_HOST: 0.0.0.0
+      LOG_LEVEL: info
+      HUMAN_LOGS: "false"
+      INGRESS_BASE_URL: http://ingress-service:4101
+      ORCHESTRATOR_BASE_URL: http://orchestrator-service:4102
+    ports:
+      - "4100:4100"
+    depends_on:
+      - ingress-service
+      - orchestrator-service
+
+  ingress-service:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.dev
+    command: pnpm --filter @manasvi/ingress-service dev
+    environment:
+      MANASVI_ENV: local
+      SERVICE_PORT: "4101"
+      SERVICE_HOST: 0.0.0.0
+      LOG_LEVEL: info
+      HUMAN_LOGS: "false"
+      CHANNEL_SIGNATURE_REQUIRED: "true"
+      EVENT_BUS_TARGET_URLS: http://orchestrator-service:4102/internal/events
+      INTERNAL_AUTH_KEY_ID: local-k1
+      INTERNAL_AUTH_SIGNING_SECRET: local-dev-internal-secret
+      INTERNAL_AUTH_ISSUER: manasvi.internal.auth
+      INTERNAL_AUTH_AUDIENCE: manasvi.internal.services
+      INTERNAL_AUTH_TOKEN_TTL_SECONDS: "120"
+    ports:
+      - "4101:4101"
+
+  orchestrator-service:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.dev
+    command: pnpm --filter @manasvi/orchestrator-service dev
+    environment:
+      MANASVI_ENV: local
+      SERVICE_PORT: "4102"
+      SERVICE_HOST: 0.0.0.0
+      LOG_LEVEL: info
+      HUMAN_LOGS: "false"
+      PLANNER_MODEL: placeholder-model
+      REQUIRE_SIGNED_INTERNAL_EVENTS: "false"
+      MAX_EVENT_HANDLER_ATTEMPTS: "5"
+      EVENT_SIGNING_KEYS: ""
+      INTERNAL_AUTH_VERIFICATION_KEYS: local-k1:local-dev-internal-secret
+      INTERNAL_AUTH_ISSUER: manasvi.internal.auth
+      INTERNAL_AUTH_AUDIENCE: manasvi.internal.services
+    ports:
+      - "4102:4102"
+    depends_on:
+      - policy-service
+
+  policy-service:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.dev
+    command: pnpm --filter @manasvi/policy-service dev
+    environment:
+      MANASVI_ENV: local
+      SERVICE_PORT: "4103"
+      SERVICE_HOST: 0.0.0.0
+      LOG_LEVEL: info
+      HUMAN_LOGS: "false"
+      DEFAULT_DECISION_TTL_SECONDS: "300"
+    ports:
+      - "4103:4103"
+
+  execution-manager:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.dev
+    command: pnpm --filter @manasvi/execution-manager dev
+    environment:
+      MANASVI_ENV: local
+      SERVICE_PORT: "4104"
+      SERVICE_HOST: 0.0.0.0
+      LOG_LEVEL: info
+      HUMAN_LOGS: "false"
+      SANDBOX_PROFILE_DEFAULT: read_only
+    ports:
+      - "4104:4104"
+
+  memory-service:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.dev
+    command: pnpm --filter @manasvi/memory-service dev
+    environment:
+      MANASVI_ENV: local
+      SERVICE_PORT: "4105"
+      SERVICE_HOST: 0.0.0.0
+      LOG_LEVEL: info
+      HUMAN_LOGS: "false"
+      DEFAULT_MEMORY_TTL_SECONDS: "3600"
+    ports:
+      - "4105:4105"
+
+  node-manager:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.dev
+    command: pnpm --filter @manasvi/node-manager dev
+    environment:
+      MANASVI_ENV: local
+      SERVICE_PORT: "4106"
+      SERVICE_HOST: 0.0.0.0
+      LOG_LEVEL: info
+      HUMAN_LOGS: "false"
+      NODE_PAIRING_TTL_SECONDS: "600"
+      INTERNAL_AUTH_VERIFICATION_KEYS: local-k1:local-dev-internal-secret
+      INTERNAL_AUTH_ISSUER: manasvi.internal.auth
+      INTERNAL_AUTH_AUDIENCE: manasvi.internal.services
+    ports:
+      - "4106:4106"
+
+  audit-service:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.dev
+    command: pnpm --filter @manasvi/audit-service dev
+    environment:
+      MANASVI_ENV: local
+      SERVICE_PORT: "4107"
+      SERVICE_HOST: 0.0.0.0
+      LOG_LEVEL: info
+      HUMAN_LOGS: "false"
+      AUDIT_APPEND_ONLY_MODE: "true"
+    ports:
+      - "4107:4107"

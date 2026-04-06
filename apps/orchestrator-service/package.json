@@ -1,0 +1,23 @@
+{
+  "name": "@manasvi/orchestrator-service",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -b",
+    "dev": "tsx watch src/index.ts",
+    "typecheck": "tsc -b --pretty false",
+    "lint": "tsc --noEmit -p tsconfig.json --pretty false",
+    "test": "node -e \"console.log('no tests yet for orchestrator-service')\"",
+    "clean": "rm -rf dist tsconfig.tsbuildinfo"
+  },
+  "dependencies": {
+    "@manasvi/auth": "workspace:*",
+    "@manasvi/contracts": "workspace:*",
+    "@manasvi/event-bus": "workspace:*",
+    "@manasvi/service-runtime": "workspace:*",
+    "zod": "^3.24.3"
+  }
+}
