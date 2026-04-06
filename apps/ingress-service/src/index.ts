@@ -39,13 +39,22 @@ async function main(): Promise<void> {
   const publisher = new EventPublisher({
     transport: new HttpTransport({
       targetUrls: config.eventBusTargetUrls,
+      timeoutMs: config.eventBusPublishTimeoutMs,
       headers: () => ({
         authorization: `Bearer ${tokenService.issueToken({
           caller: servicePrincipal,
           scopes: ["events:publish", "service:ingress"]
         })}`
       })
-    })
+    }),
+    ...(config.eventSigningSecret
+      ? {
+          signing: {
+            keyId: config.signingKeyId,
+            secret: config.eventSigningSecret
+          }
+        }
+      : {})
   });
 
   const inboundRequestSchema = z.object({
@@ -60,6 +69,13 @@ async function main(): Promise<void> {
       principalId: z.string().min(1),
       messageId: z.string().min(1)
     }),
+    session: z
+      .object({
+        sessionId: z.string().min(1).optional(),
+        conversationId: z.string().min(1).optional(),
+        turnId: z.string().min(1).optional()
+      })
+      .optional(),
     text: z.string().min(1),
     metadata: z.record(z.unknown()).default({})
   });
@@ -115,16 +131,18 @@ async function main(): Promise<void> {
             principalId: incoming.channel.principalId
           },
           source: {
-            sourceType: "channel",
-            sourceId: incoming.channel.principalId,
+            sourceType: resolved.context?.authenticated ? "service" : "api",
+            sourceId: resolved.context?.authenticated ? config.serviceName : incoming.channel.principalId,
+            ...(resolved.context?.authenticated ? { sourceService: config.serviceName } : {}),
             sourceAuthenticity: {
               verified: Boolean(resolved.context?.authenticated),
-              method: resolved.context?.authenticated ? "token" : "none",
+              method: resolved.context?.authenticated ? "internal-auth" : "none",
               authnStrength: resolved.context?.authenticated ? "strong" : "none",
               evidenceRef: originPrincipal.principalId
             }
           },
           trace: trace,
+          ...(incoming.session ? { session: incoming.session } : {}),
           payload: {
             payloadSchemaVersion: "1.0",
             channelMessageId: incoming.channel.messageId,
@@ -150,6 +168,7 @@ async function main(): Promise<void> {
           eventType: validated.eventType,
           callerPrincipalId: resolved.context?.caller.principalId,
           actorPrincipalId: validated.actor.principalId,
+          sessionId: validated.session.sessionId,
           trustClassification: validated.trust.classification,
           traceId: validated.trace.traceId,
           correlationId: validated.trace.correlationId

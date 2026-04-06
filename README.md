@@ -27,6 +27,7 @@ packages/
   policy-sdk/
   executor-sdk/
   plugin-sdk/
+  model-adapter/
   session-sdk/
   testing/
   service-runtime/
@@ -47,6 +48,7 @@ docs/
 - `@manasvi/policy-sdk`: typed HTTP client for `policy-service` evaluation API.
 - `@manasvi/executor-sdk`: execution dispatch interfaces.
 - `@manasvi/plugin-sdk`: plugin manifest and hook contracts.
+- `@manasvi/model-adapter`: temporary LLM adapter for Milestone 5 harness (`mock`, local `ollama`, and optional `openai` mode).
 - `@manasvi/session-sdk`: session store, isolation-aware resolution, and context assembly pipeline with provenance traces.
 - `@manasvi/testing`: reusable health/readiness and contract test helpers.
 
@@ -102,6 +104,10 @@ pnpm install
 
 ### Run all services (host)
 ```bash
+# Optional: place local overrides in .env.local (auto-loaded by service runtime)
+# cp .env.example .env.local
+# then replace placeholder secret values in .env.local
+
 pnpm dev
 ```
 
@@ -137,6 +143,7 @@ pnpm typecheck
 pnpm lint
 pnpm test
 pnpm format:check
+pnpm harness:smoke
 ```
 
 ## Add a New Service (Bootstrap Pattern)
@@ -183,3 +190,8 @@ Deferred to Milestone 2+:
   - `GET /orchestration/context-traces?sessionId=<id>`
   - `GET /orchestration/sessions?sessionId=<id>`
 - Session isolation is explicit and session membership does not replace policy authorization.
+
+## Milestone 5 Test Harness Slice
+- Primary test endpoint: `POST /test-harness/chat` on `api-gateway` (`:4100`).
+- Flow exercised: gateway -> ingress normalization/event publish -> orchestrator policy/session/context -> model adapter -> response.
+- Detailed operator runbook: `docs/testing/how-to-test-manasvi-milestone-5.md`.

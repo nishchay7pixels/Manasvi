@@ -15,6 +15,9 @@
       "path": "../../packages/event-bus"
     },
     {
+      "path": "../../packages/model-adapter"
+    },
+    {
       "path": "../../packages/policy-sdk"
     },
     {

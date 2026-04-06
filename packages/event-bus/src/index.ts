@@ -118,7 +118,14 @@ export class EventPublisher {
   constructor(private readonly options: EventPublisherOptions) {}
 
   async publish(event: Omit<CanonicalEventEnvelope, "integrity"> | CanonicalEventEnvelope): Promise<void> {
-    const signed = "integrity" in event ? event : attachEventIntegrity(event, this.options.signing);
+    const signed = this.options.signing
+      ? attachEventIntegrity(
+          "integrity" in event
+            ? (({ integrity: _integrity, ...rest }) => rest)(event)
+            : event,
+          this.options.signing
+        )
+      : ("integrity" in event ? event : attachEventIntegrity(event));
     const parsed = parseCanonicalEvent(signed);
     await this.options.transport.publish(parsed);
   }

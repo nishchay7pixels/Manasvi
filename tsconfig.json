@@ -7,6 +7,7 @@
     { "path": "packages/auth" },
     { "path": "packages/service-runtime" },
     { "path": "packages/event-bus" },
+    { "path": "packages/model-adapter" },
     { "path": "packages/policy-sdk" },
     { "path": "packages/executor-sdk" },
     { "path": "packages/plugin-sdk" },

@@ -1,17 +1,18 @@
-import { CONTRACT_SCHEMA_VERSION } from "@manasvi/contracts";
+import { CONTRACT_SCHEMA_VERSION, resolvedPrincipalContextSchema } from "@manasvi/contracts";
 import {
   InternalTokenService,
   PrincipalResolver,
-  buildServicePrincipalReference,
-  resolvePrincipalContextFromEvent
+  buildServicePrincipalReference
 } from "@manasvi/auth";
 import { EventConsumer, InMemoryDeadLetterStore, RetryableError } from "@manasvi/event-bus";
+import { createModelAdapter } from "@manasvi/model-adapter";
 import { HttpPolicyClient } from "@manasvi/policy-sdk";
 import { ContextAssembler, InMemorySessionStore } from "@manasvi/session-sdk";
 import { readJsonBody, respondJson, startHttpService } from "@manasvi/service-runtime";
 import { z } from "zod";
 
 import { loadOrchestratorServiceConfig } from "./config.js";
+import { buildHarnessEventResultRecord, buildModelInvocationRequest, type HarnessEventResultRecord } from "./model-integration.js";
 import { queryPolicyForOrchestration } from "./policy-integration.js";
 
 async function main(): Promise<void> {
@@ -51,6 +52,26 @@ async function main(): Promise<void> {
         scopes: ["policy.evaluate", "service:orchestrator"]
       })
   });
+  const modelAdapter = createModelAdapter({
+    mode: config.modelAdapterMode,
+    model: config.plannerModel,
+    timeoutMs: config.modelAdapterTimeoutMs,
+    ...(config.openAiApiKey ? { openAiApiKey: config.openAiApiKey } : {}),
+    openAiBaseUrl: config.openAiBaseUrl,
+    ollamaBaseUrl: config.ollamaBaseUrl
+  });
+  const harnessEventResults = new Map<string, HarnessEventResultRecord>();
+  const harnessResultTtlMs = config.harnessEventResultTtlSeconds * 1000;
+
+  const upsertHarnessEventResult = (record: HarnessEventResultRecord): void => {
+    harnessEventResults.set(record.eventId, record);
+    const cutoff = Date.now() - harnessResultTtlMs;
+    for (const [eventId, existing] of harnessEventResults.entries()) {
+      if (new Date(existing.completedAt).getTime() < cutoff) {
+        harnessEventResults.delete(eventId);
+      }
+    }
+  };
   const deadLetterStore = new InMemoryDeadLetterStore();
   const consumer = new EventConsumer({
     deadLetterStore,
@@ -60,7 +81,16 @@ async function main(): Promise<void> {
   });
 
   consumer.subscribe("ingress.external_message.received", async (event, context) => {
-    const principalContext = resolvePrincipalContextFromEvent({ event });
+    const principalContext = resolvedPrincipalContextSchema.parse({
+      caller: servicePrincipal,
+      actor: event.actor,
+      origin: event.channel,
+      tenantId: event.tenantId,
+      workspaceId: event.workspaceId,
+      authnStrength: "strong",
+      authenticated: true,
+      scopes: []
+    });
     const decision = await queryPolicyForOrchestration(policyClient, {
       principalContext,
       actionClass: "invoke",
@@ -136,7 +166,76 @@ async function main(): Promise<void> {
       policyNotes: [`policy-decision:${decision.decision}:${decision.reasonCodes.join(",")}`],
       tokenBudget: config.sessionContextTokenBudget
     });
-    // Placeholder for full orchestration logic in later milestones.
+    const modelRequest = buildModelInvocationRequest({
+      messageId: event.eventId,
+      traceId: event.trace.traceId,
+      correlationId: event.trace.correlationId,
+      userInput: payload.text,
+      assembledContext,
+      maxContextChunks: config.modelAdapterMaxContextChunks
+    });
+    try {
+      const modelResponse = await modelAdapter.invoke(modelRequest);
+      upsertHarnessEventResult(
+        buildHarnessEventResultRecord({
+          eventId: event.eventId,
+          assembledContext,
+          principalContext,
+          traceId: event.trace.traceId,
+          correlationId: event.trace.correlationId,
+          policyDecision: decision.decision,
+          policyReasonCodes: decision.reasonCodes,
+          auditRecordId: decision.auditRecordId,
+          modelResponse
+        })
+      );
+      console.log(
+        JSON.stringify({
+          timestamp: new Date().toISOString(),
+          level: "info",
+          service: "orchestrator-service",
+          message: "Model adapter generated response",
+          eventId: event.eventId,
+          mode: modelResponse.mode,
+          provider: modelResponse.provider,
+          model: modelResponse.model,
+          latencyMs: modelResponse.latencyMs,
+          sessionId: assembledContext.session.sessionId,
+          contextTraceId: assembledContext.trace.traceId,
+          traceId: event.trace.traceId,
+          correlationId: event.trace.correlationId
+        })
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "unknown model adapter error";
+      upsertHarnessEventResult(
+        buildHarnessEventResultRecord({
+          eventId: event.eventId,
+          assembledContext,
+          principalContext,
+          traceId: event.trace.traceId,
+          correlationId: event.trace.correlationId,
+          policyDecision: decision.decision,
+          policyReasonCodes: decision.reasonCodes,
+          auditRecordId: decision.auditRecordId,
+          errorMessage: message
+        })
+      );
+      console.error(
+        JSON.stringify({
+          timestamp: new Date().toISOString(),
+          level: "error",
+          service: "orchestrator-service",
+          message: "Model adapter invocation failed",
+          eventId: event.eventId,
+          error: message,
+          sessionId: assembledContext.session.sessionId,
+          contextTraceId: assembledContext.trace.traceId,
+          traceId: event.trace.traceId,
+          correlationId: event.trace.correlationId
+        })
+      );
+    }
     console.log(
       JSON.stringify({
         timestamp: new Date().toISOString(),
@@ -319,6 +418,42 @@ async function main(): Promise<void> {
           schemaVersion: CONTRACT_SCHEMA_VERSION,
           session,
           messages
+        });
+        return true;
+      }
+      if (req.method === "GET" && req.url?.startsWith("/orchestration/event-results")) {
+        const principal = principalResolver.resolveFromHttpHeaders(req.headers, {
+          requireAuthentication: true,
+          allowActorOverride: false
+        });
+        if (!principal.ok) {
+          respondJson(res, principal.statusCode ?? 401, {
+            schemaVersion: CONTRACT_SCHEMA_VERSION,
+            errorCode: principal.errorCode
+          });
+          return true;
+        }
+        const url = new URL(req.url, "http://localhost");
+        const eventId = url.searchParams.get("eventId");
+        if (!eventId) {
+          respondJson(res, 400, {
+            schemaVersion: CONTRACT_SCHEMA_VERSION,
+            error: "eventId query parameter is required"
+          });
+          return true;
+        }
+        const result = harnessEventResults.get(eventId);
+        if (!result) {
+          respondJson(res, 404, {
+            schemaVersion: CONTRACT_SCHEMA_VERSION,
+            status: "pending",
+            eventId
+          });
+          return true;
+        }
+        respondJson(res, result.status === "completed" ? 200 : 502, {
+          schemaVersion: CONTRACT_SCHEMA_VERSION,
+          result
         });
         return true;
       }

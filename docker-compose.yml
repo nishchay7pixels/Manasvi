@@ -12,6 +12,12 @@ services:
       HUMAN_LOGS: "false"
       INGRESS_BASE_URL: http://ingress-service:4101
       ORCHESTRATOR_BASE_URL: http://orchestrator-service:4102
+      INTERNAL_AUTH_KEY_ID: local-k1
+      INTERNAL_AUTH_SIGNING_SECRET: local-dev-internal-secret
+      INTERNAL_AUTH_ISSUER: manasvi.internal.auth
+      INTERNAL_AUTH_AUDIENCE: manasvi.internal.services
+      HARNESS_POLL_TIMEOUT_MS: "12000"
+      HARNESS_POLL_INTERVAL_MS: "250"
     ports:
       - "4100:4100"
     depends_on:
@@ -59,6 +65,12 @@ services:
       SESSION_DEFAULT_ISOLATION_MODE: per_user_isolated
       SESSION_CONTEXT_TOKEN_BUDGET: "2048"
       SESSION_RECENT_MESSAGE_LIMIT: "20"
+      MODEL_ADAPTER_MODE: mock
+      MODEL_ADAPTER_TIMEOUT_MS: "20000"
+      MODEL_ADAPTER_MAX_CONTEXT_CHUNKS: "24"
+      OPENAI_BASE_URL: https://api.openai.com/v1
+      OLLAMA_BASE_URL: http://host.docker.internal:11434/v1
+      HARNESS_EVENT_RESULT_TTL_SECONDS: "900"
       INTERNAL_AUTH_KEY_ID: local-k1
       INTERNAL_AUTH_SIGNING_SECRET: local-dev-internal-secret
       INTERNAL_AUTH_VERIFICATION_KEYS: local-k1:local-dev-internal-secret

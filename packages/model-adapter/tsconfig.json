@@ -6,13 +6,7 @@
   },
   "references": [
     {
-      "path": "../../packages/auth"
-    },
-    {
-      "path": "../../packages/contracts"
-    },
-    {
-      "path": "../../packages/service-runtime"
+      "path": "../contracts"
     }
   ],
   "include": ["src/**/*.ts"]
