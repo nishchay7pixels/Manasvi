@@ -1,4 +1,4 @@
-# Manasvi
+# Manasvi (Secure orchestration for real-world AI actions)
 
 Secure, policy-driven, multi-service agent operating fabric for auditable AI automation.
 
