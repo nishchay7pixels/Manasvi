@@ -56,6 +56,9 @@ services:
       MAX_EVENT_HANDLER_ATTEMPTS: "5"
       EVENT_SIGNING_KEYS: ""
       POLICY_SERVICE_BASE_URL: http://policy-service:4103
+      SESSION_DEFAULT_ISOLATION_MODE: per_user_isolated
+      SESSION_CONTEXT_TOKEN_BUDGET: "2048"
+      SESSION_RECENT_MESSAGE_LIMIT: "20"
       INTERNAL_AUTH_KEY_ID: local-k1
       INTERNAL_AUTH_SIGNING_SECRET: local-dev-internal-secret
       INTERNAL_AUTH_VERIFICATION_KEYS: local-k1:local-dev-internal-secret

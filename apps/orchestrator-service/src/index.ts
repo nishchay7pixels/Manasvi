@@ -7,6 +7,7 @@ import {
 } from "@manasvi/auth";
 import { EventConsumer, InMemoryDeadLetterStore, RetryableError } from "@manasvi/event-bus";
 import { HttpPolicyClient } from "@manasvi/policy-sdk";
+import { ContextAssembler, InMemorySessionStore } from "@manasvi/session-sdk";
 import { readJsonBody, respondJson, startHttpService } from "@manasvi/service-runtime";
 import { z } from "zod";
 
@@ -37,11 +38,16 @@ async function main(): Promise<void> {
     }
   );
   const principalResolver = new PrincipalResolver(tokenService);
+  const sessionStore = new InMemorySessionStore();
+  const contextAssembler = new ContextAssembler(sessionStore, {
+    recentMessageLimit: config.sessionRecentMessageLimit
+  });
+  const servicePrincipal = buildServicePrincipalReference(config.serviceName);
   const policyClient = new HttpPolicyClient({
     baseUrl: config.policyServiceBaseUrl,
     getAuthToken: () =>
       tokenService.issueToken({
-        caller: buildServicePrincipalReference(config.serviceName),
+        caller: servicePrincipal,
         scopes: ["policy.evaluate", "service:orchestrator"]
       })
   });
@@ -92,6 +98,44 @@ async function main(): Promise<void> {
     if (!payload.text || payload.text.length === 0) {
       throw new RetryableError("Empty text payload is retryable while upstream normalizer settles");
     }
+    const assembledContext = await contextAssembler.assembleForMessage({
+      message: {
+        messageId: event.eventId,
+        text: payload.text,
+        sender: event.actor,
+        trustClassification: event.trust.classification,
+        sourceRef: `event:${event.eventId}`,
+        createdAt: event.timestamp
+      },
+      sessionResolve: {
+        tenantId: event.tenantId,
+        workspaceId: event.workspaceId,
+        isolationMode: config.sessionDefaultIsolationMode,
+        sessionType: "channel_thread",
+        owner: event.actor,
+        createdBy: servicePrincipal,
+        participants: [event.channel],
+        ...(event.session.sessionId ? { explicitSessionId: event.session.sessionId } : {}),
+        channelBinding: {
+          channelPrincipal: event.channel,
+          ...(event.session.conversationId
+            ? { externalConversationId: event.session.conversationId }
+            : {}),
+          ...(event.session.turnId ? { externalThreadId: event.session.turnId } : {})
+        },
+        resolutionHint: `event:${event.eventId}`
+      },
+      trace: {
+        traceId: event.trace.traceId,
+        correlationId: event.trace.correlationId,
+        ...(event.trace.parentTraceId ? { parentTraceId: event.trace.parentTraceId } : {})
+      },
+      systemInstructions: [
+        "Session is context hygiene only. Authorization still requires principal and policy."
+      ],
+      policyNotes: [`policy-decision:${decision.decision}:${decision.reasonCodes.join(",")}`],
+      tokenBudget: config.sessionContextTokenBudget
+    });
     // Placeholder for full orchestration logic in later milestones.
     console.log(
       JSON.stringify({
@@ -108,6 +152,10 @@ async function main(): Promise<void> {
         sourceId: event.source.sourceId,
         callerPrincipalId: principalContext.caller.principalId,
         actorPrincipalId: principalContext.actor.principalId,
+        sessionId: assembledContext.session.sessionId,
+        contextTraceId: assembledContext.trace.traceId,
+        includedChunkCount: assembledContext.chunks.length,
+        sessionRiskLevel: assembledContext.session.riskProfile.level,
         traceId: event.trace.traceId,
         correlationId: event.trace.correlationId,
         attempt: context.attempt
@@ -118,6 +166,7 @@ async function main(): Promise<void> {
   const planRequestSchema = z.object({
     tenantId: z.string().min(1),
     workspaceId: z.string().min(1),
+    messageText: z.string().min(1),
     sessionId: z.string().min(1).optional(),
     actionId: z.string().min(1).default("orchestration.plan.invoke-agent"),
     riskFlags: z.array(z.string().min(1)).default([])
@@ -173,23 +222,103 @@ async function main(): Promise<void> {
           ...(incoming.sessionId ? { sessionId: incoming.sessionId } : {}),
           riskFlags: incoming.riskFlags
         });
+        const assembledContext = await contextAssembler.assembleForMessage({
+          message: {
+            messageId: `plan:${Date.now()}`,
+            text: incoming.messageText,
+            sender: principal.context.actor,
+            trustClassification: "USER_OWNED",
+            sourceRef: "orchestration.plan.request"
+          },
+          sessionResolve: {
+            tenantId: incoming.tenantId,
+            workspaceId: incoming.workspaceId,
+            isolationMode: config.sessionDefaultIsolationMode,
+            sessionType: "user_interaction",
+            owner: principal.context.actor,
+            createdBy: servicePrincipal,
+            participants: [principal.context.caller],
+            ...(incoming.sessionId ? { explicitSessionId: incoming.sessionId } : {}),
+            resolutionHint: principal.context.actor.principalId
+          },
+          trace: {
+            traceId: trace.traceId,
+            correlationId: trace.correlationId,
+            ...(trace.parentTraceId ? { parentTraceId: trace.parentTraceId } : {})
+          },
+          systemInstructions: [
+            "Session membership does not grant privileges. Policy evaluation governs authorization."
+          ],
+          policyNotes: [`policy-decision:${decision.decision}`],
+          tokenBudget: config.sessionContextTokenBudget
+        });
         logger.info("Policy evaluated orchestration plan request", {
           decision: decision.decision,
           reasonCodes: decision.reasonCodes,
-          auditRecordId: decision.auditRecordId
+          auditRecordId: decision.auditRecordId,
+          sessionId: assembledContext.session.sessionId,
+          contextTraceId: assembledContext.trace.traceId
         });
         if (decision.decision === "DENY") {
           respondJson(res, 403, {
             schemaVersion: CONTRACT_SCHEMA_VERSION,
             queued: false,
-            decision
+            decision,
+            sessionId: assembledContext.session.sessionId,
+            contextTraceId: assembledContext.trace.traceId
           });
           return true;
         }
         respondJson(res, 202, {
           schemaVersion: CONTRACT_SCHEMA_VERSION,
           queued: true,
-          decision
+          decision,
+          sessionId: assembledContext.session.sessionId,
+          contextTraceId: assembledContext.trace.traceId,
+          contextChunkCount: assembledContext.chunks.length
+        });
+        return true;
+      }
+      if (req.method === "GET" && req.url?.startsWith("/orchestration/context-traces")) {
+        const url = new URL(req.url, "http://localhost");
+        const sessionId = url.searchParams.get("sessionId");
+        if (!sessionId) {
+          respondJson(res, 400, {
+            schemaVersion: CONTRACT_SCHEMA_VERSION,
+            error: "sessionId query parameter is required"
+          });
+          return true;
+        }
+        const traces = await sessionStore.listContextTraces({ sessionId, limit: 100 });
+        respondJson(res, 200, {
+          schemaVersion: CONTRACT_SCHEMA_VERSION,
+          traces
+        });
+        return true;
+      }
+      if (req.method === "GET" && req.url?.startsWith("/orchestration/sessions")) {
+        const url = new URL(req.url, "http://localhost");
+        const sessionId = url.searchParams.get("sessionId");
+        if (!sessionId) {
+          respondJson(res, 400, {
+            schemaVersion: CONTRACT_SCHEMA_VERSION,
+            error: "sessionId query parameter is required"
+          });
+          return true;
+        }
+        const session = await sessionStore.getSessionById(sessionId);
+        if (!session) {
+          respondJson(res, 404, {
+            schemaVersion: CONTRACT_SCHEMA_VERSION,
+            error: "session not found"
+          });
+          return true;
+        }
+        const messages = await sessionStore.listSessionMessages({ sessionId, limit: 50 });
+        respondJson(res, 200, {
+          schemaVersion: CONTRACT_SCHEMA_VERSION,
+          session,
+          messages
         });
         return true;
       }

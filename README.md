@@ -27,6 +27,7 @@ packages/
   policy-sdk/
   executor-sdk/
   plugin-sdk/
+  session-sdk/
   testing/
   service-runtime/
   event-bus/
@@ -46,6 +47,7 @@ docs/
 - `@manasvi/policy-sdk`: typed HTTP client for `policy-service` evaluation API.
 - `@manasvi/executor-sdk`: execution dispatch interfaces.
 - `@manasvi/plugin-sdk`: plugin manifest and hook contracts.
+- `@manasvi/session-sdk`: session store, isolation-aware resolution, and context assembly pipeline with provenance traces.
 - `@manasvi/testing`: reusable health/readiness and contract test helpers.
 
 ## Service Boot Convention
@@ -174,3 +176,10 @@ Deferred to Milestone 2+:
 - Policy metadata and decision audit visibility:
   - `GET /policy/metadata`
   - `GET /policy/audit/decisions`
+
+## Milestone 5 Session/Context Slice
+- Orchestrator resolves/creates sessions and assembles structured context with provenance/trust metadata.
+- Context traces are generated per message and can be inspected with:
+  - `GET /orchestration/context-traces?sessionId=<id>`
+  - `GET /orchestration/sessions?sessionId=<id>`
+- Session isolation is explicit and session membership does not replace policy authorization.

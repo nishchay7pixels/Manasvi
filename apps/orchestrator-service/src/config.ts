@@ -10,6 +10,16 @@ export const orchestratorConfigSchema = baseServiceConfigSchema.extend({
   maxEventHandlerAttempts: z.number().int().positive().default(5),
   eventSigningSecretsByKeyId: z.record(z.string().min(1)).default({}),
   policyServiceBaseUrl: z.string().url().default("http://policy-service:4103"),
+  sessionDefaultIsolationMode: z.enum([
+    "per_user_isolated",
+    "per_channel_thread",
+    "shared_collaborative",
+    "ephemeral_one_shot",
+    "service_internal",
+    "workspace_scoped_constrained"
+  ]).default("per_user_isolated"),
+  sessionContextTokenBudget: z.number().int().positive().default(2048),
+  sessionRecentMessageLimit: z.number().int().positive().default(20),
   internalAuthIssuer: z.string().min(1).default("manasvi.internal.auth"),
   internalAuthAudience: z.string().min(1).default("manasvi.internal.services"),
   internalAuthKeyId: z.string().min(1),
@@ -37,6 +47,9 @@ export async function loadOrchestratorServiceConfig(): Promise<OrchestratorServi
       requireSignedInternalEvents: env.REQUIRE_SIGNED_INTERNAL_EVENTS !== "false",
       maxEventHandlerAttempts: Number(env.MAX_EVENT_HANDLER_ATTEMPTS ?? 5),
       policyServiceBaseUrl: env.POLICY_SERVICE_BASE_URL ?? "http://policy-service:4103",
+      sessionDefaultIsolationMode: env.SESSION_DEFAULT_ISOLATION_MODE ?? "per_user_isolated",
+      sessionContextTokenBudget: Number(env.SESSION_CONTEXT_TOKEN_BUDGET ?? 2048),
+      sessionRecentMessageLimit: Number(env.SESSION_RECENT_MESSAGE_LIMIT ?? 20),
       eventSigningSecretsByKeyId: (env.EVENT_SIGNING_KEYS ?? "")
         .split(",")
         .map((entry) => entry.trim())

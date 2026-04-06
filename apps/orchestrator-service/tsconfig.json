@@ -18,6 +18,9 @@
       "path": "../../packages/policy-sdk"
     },
     {
+      "path": "../../packages/session-sdk"
+    },
+    {
       "path": "../../packages/service-runtime"
     }
   ],
