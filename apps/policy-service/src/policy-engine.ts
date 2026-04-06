@@ -22,7 +22,9 @@ const sensitiveActionClasses = new Set<ActionClass>([
   "access-filesystem",
   "mutate-memory",
   "skip-approval",
-  "administer-policy"
+  "administer-policy",
+  "external-side-effect",
+  "destructive-action"
 ]);
 
 const highSensitivityResourceClasses = new Set<ResourceClass>([

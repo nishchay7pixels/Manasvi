@@ -175,6 +175,59 @@
             "highRiskCoverage": false,
             "tags": ["memory", "session"]
           }
+        },
+        {
+          "ruleId": "allow-orchestrator-read-tool-metadata",
+          "description": "Orchestrator may perform low-risk read operations on tool endpoints without human approval.",
+          "priority": 675,
+          "effect": "allow",
+          "enabled": true,
+          "selectors": {
+            "callerTypes": ["service"],
+            "actorTypes": ["human_user", "agent"],
+            "callerIds": ["service:orchestrator-service"],
+            "actorIds": []
+          },
+          "actionClasses": ["read"],
+          "resourceClasses": ["tool-endpoint"],
+          "resourceIdPatterns": ["tool:*"],
+          "requiredCapabilities": ["tool.read"],
+          "conditions": {
+            "requireTenantMatch": true,
+            "requireWorkspaceMatch": true,
+            "allowSkipApproval": false,
+            "maxRiskLevel": "medium"
+          },
+          "metadata": {
+            "highRiskCoverage": false,
+            "tags": ["intent", "read-only"]
+          }
+        },
+        {
+          "ruleId": "require-approval-orchestrator-external-side-effect",
+          "description": "External side effects requested by orchestrator require approval.",
+          "priority": 740,
+          "effect": "require_approval",
+          "enabled": true,
+          "selectors": {
+            "callerTypes": ["service"],
+            "actorTypes": ["human_user", "agent"],
+            "callerIds": ["service:orchestrator-service"],
+            "actorIds": []
+          },
+          "actionClasses": ["external-side-effect", "destructive-action"],
+          "resourceClasses": ["tool-endpoint", "network-zone", "filesystem-zone", "execution-node", "secret-reference"],
+          "resourceIdPatterns": ["tool:*", "network:*", "filesystem:*", "node:*", "secret:*"],
+          "requiredCapabilities": ["tool.invoke"],
+          "conditions": {
+            "requireTenantMatch": true,
+            "requireWorkspaceMatch": true,
+            "allowSkipApproval": false
+          },
+          "metadata": {
+            "highRiskCoverage": true,
+            "tags": ["intent", "approval", "high-risk"]
+          }
         }
       ]
     },

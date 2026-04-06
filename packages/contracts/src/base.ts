@@ -14,6 +14,7 @@ export type ServiceName =
   | "ingress-service"
   | "orchestrator-service"
   | "policy-service"
+  | "approval-service"
   | "execution-manager"
   | "memory-service"
   | "node-manager"
@@ -24,6 +25,7 @@ export const serviceNameSchema = z.enum([
   "ingress-service",
   "orchestrator-service",
   "policy-service",
+  "approval-service",
   "execution-manager",
   "memory-service",
   "node-manager",

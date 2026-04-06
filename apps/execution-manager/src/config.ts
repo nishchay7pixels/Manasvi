@@ -13,6 +13,9 @@ export const executionConfigSchema = baseServiceConfigSchema.extend({
   internalAuthVerificationKeys: z.record(z.string().min(1)).refine((value) => Object.keys(value).length > 0, {
     message: "At least one internal auth verification key is required"
   }),
+  approvalVerificationKeys: z.record(z.string().min(1)).refine((value) => Object.keys(value).length > 0, {
+    message: "At least one approval verification key is required"
+  }),
   sandboxProfileDefault: z
     .enum(["read_only", "bounded_egress", "mutation_limited", "privileged_reviewed"])
     .default("read_only")
@@ -38,6 +41,20 @@ export async function loadExecutionManagerConfig(): Promise<ExecutionManagerConf
       internalAuthKeyId: await secrets.require("INTERNAL_AUTH_KEY_ID"),
       internalAuthSigningSecret: await secrets.require("INTERNAL_AUTH_SIGNING_SECRET"),
       internalAuthVerificationKeys: (await secrets.require("INTERNAL_AUTH_VERIFICATION_KEYS"))
+        .split(",")
+        .map((entry) => entry.trim())
+        .filter((entry) => entry.length > 0)
+        .reduce<Record<string, string>>((acc, entry) => {
+          const separator = entry.indexOf(":");
+          if (separator <= 0 || separator >= entry.length - 1) {
+            return acc;
+          }
+          const keyId = entry.slice(0, separator);
+          const secret = entry.slice(separator + 1);
+          acc[keyId] = secret;
+          return acc;
+        }, {}),
+      approvalVerificationKeys: (await secrets.require("APPROVAL_VERIFICATION_KEYS"))
         .split(",")
         .map((entry) => entry.trim())
         .filter((entry) => entry.length > 0)

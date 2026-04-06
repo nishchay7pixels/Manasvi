@@ -1,10 +1,15 @@
-import { CONTRACT_SCHEMA_VERSION } from "@manasvi/contracts";
+import {
+  CONTRACT_SCHEMA_VERSION,
+  approvedIntentArtifactSchema,
+  executionIntentSchema
+} from "@manasvi/contracts";
 import {
   InternalTokenService,
   PrincipalResolver,
   buildServicePrincipalReference
 } from "@manasvi/auth";
 import { HttpPolicyClient } from "@manasvi/policy-sdk";
+import { validateExecutionAuthorization } from "@manasvi/executor-sdk";
 import { respondJson, startHttpService } from "@manasvi/service-runtime";
 import { readJsonBody } from "@manasvi/service-runtime";
 import { z } from "zod";
@@ -44,6 +49,7 @@ async function main(): Promise<void> {
         scopes: ["policy.evaluate", "service:execution-manager"]
       })
   });
+  const consumedArtifacts = new Set<string>();
 
   const dispatchRequestSchema = z.object({
     tenantId: z.string().min(1),
@@ -53,6 +59,11 @@ async function main(): Promise<void> {
     requestedCapabilities: z.array(z.string().min(1)).default(["node.execute"]),
     riskFlags: z.array(z.string().min(1)).default([]),
     skipApprovalRequested: z.boolean().default(false)
+  });
+  const executeIntentSchema = z.object({
+    intent: executionIntentSchema,
+    artifact: approvedIntentArtifactSchema,
+    dryRun: z.boolean().default(true)
   });
 
   await startHttpService({
@@ -118,6 +129,79 @@ async function main(): Promise<void> {
         respondJson(res, 202, {
           schemaVersion: CONTRACT_SCHEMA_VERSION,
           accepted: true,
+          decision
+        });
+        return true;
+      }
+      if (req.method === "POST" && req.url === "/execution/execute-intent") {
+        const principal = principalResolver.resolveFromHttpHeaders(req.headers, {
+          requireAuthentication: true,
+          allowActorOverride: true
+        });
+        if (!principal.ok || !principal.context) {
+          respondJson(res, principal.statusCode ?? 401, {
+            schemaVersion: CONTRACT_SCHEMA_VERSION,
+            accepted: false,
+            errorCode: principal.errorCode
+          });
+          return true;
+        }
+        const incoming = executeIntentSchema.parse(await readJsonBody(req));
+        const validation = validateExecutionAuthorization({
+          intent: incoming.intent,
+          artifact: incoming.artifact,
+          verificationSecretsByKeyId: config.approvalVerificationKeys,
+          consumedArtifactIds: consumedArtifacts
+        });
+        if (!validation.ok) {
+          logger.warn("Execution intent validation failed", {
+            intentId: incoming.intent.intentId,
+            artifactId: incoming.artifact.artifactId,
+            code: validation.code,
+            message: validation.message
+          });
+          respondJson(res, 422, {
+            schemaVersion: CONTRACT_SCHEMA_VERSION,
+            accepted: false,
+            errorCode: validation.code,
+            error: validation.message
+          });
+          return true;
+        }
+
+        const decision = await queryPolicyForExecution(policyClient, {
+          principalContext: principal.context,
+          actionClass: incoming.intent.snapshot.action.actionClass,
+          actionId: incoming.intent.snapshot.action.actionId,
+          resource: incoming.intent.snapshot.target,
+          requestedCapabilities: incoming.intent.snapshot.requiredCapabilities,
+          tenantId: incoming.intent.snapshot.tenantId,
+          workspaceId: incoming.intent.snapshot.workspaceId,
+          trace,
+          approvalPresent: incoming.artifact.approvalState === "approved",
+          skipApprovalRequested: false,
+          riskFlags: incoming.intent.snapshot.risk.reasons,
+          riskDeclaredLevel: incoming.intent.snapshot.risk.level
+        });
+        if (decision.decision === "DENY" || decision.decision === "REQUIRE_APPROVAL") {
+          respondJson(res, 403, {
+            schemaVersion: CONTRACT_SCHEMA_VERSION,
+            accepted: false,
+            validation: {
+              code: "POLICY_BLOCKED_EXECUTION",
+              detail: decision
+            }
+          });
+          return true;
+        }
+        consumedArtifacts.add(incoming.artifact.artifactId);
+        respondJson(res, 202, {
+          schemaVersion: CONTRACT_SCHEMA_VERSION,
+          accepted: true,
+          executionId: `exec:${Date.now()}`,
+          dryRun: incoming.dryRun,
+          intentId: incoming.intent.intentId,
+          artifactId: incoming.artifact.artifactId,
           decision
         });
         return true;

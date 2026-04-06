@@ -1,5 +1,5 @@
 {
-  "name": "@manasvi/execution-manager",
+  "name": "@manasvi/approval-service",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -17,7 +17,6 @@
     "@manasvi/auth": "workspace:*",
     "@manasvi/contracts": "workspace:*",
     "@manasvi/executor-sdk": "workspace:*",
-    "@manasvi/policy-sdk": "workspace:*",
     "@manasvi/service-runtime": "workspace:*",
     "zod": "^3.24.3"
   }

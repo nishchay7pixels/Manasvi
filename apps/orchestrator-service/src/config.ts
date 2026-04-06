@@ -17,6 +17,8 @@ export const orchestratorConfigSchema = baseServiceConfigSchema.extend({
   maxEventHandlerAttempts: z.number().int().positive().default(5),
   eventSigningSecretsByKeyId: z.record(z.string().min(1)).default({}),
   policyServiceBaseUrl: z.string().url().default("http://policy-service:4103"),
+  approvalServiceBaseUrl: z.string().url().default("http://approval-service:4108"),
+  executionIntentTtlSeconds: z.number().int().positive().max(86400).default(900),
   sessionDefaultIsolationMode: z.enum([
     "per_user_isolated",
     "per_channel_thread",
@@ -64,6 +66,8 @@ export async function loadOrchestratorServiceConfig(): Promise<OrchestratorServi
       requireSignedInternalEvents: env.REQUIRE_SIGNED_INTERNAL_EVENTS !== "false",
       maxEventHandlerAttempts: Number(env.MAX_EVENT_HANDLER_ATTEMPTS ?? 5),
       policyServiceBaseUrl: env.POLICY_SERVICE_BASE_URL ?? "http://policy-service:4103",
+      approvalServiceBaseUrl: env.APPROVAL_SERVICE_BASE_URL ?? "http://approval-service:4108",
+      executionIntentTtlSeconds: Number(env.EXECUTION_INTENT_TTL_SECONDS ?? 900),
       sessionDefaultIsolationMode: env.SESSION_DEFAULT_ISOLATION_MODE ?? "per_user_isolated",
       sessionContextTokenBudget: Number(env.SESSION_CONTEXT_TOKEN_BUDGET ?? 2048),
       sessionRecentMessageLimit: Number(env.SESSION_RECENT_MESSAGE_LIMIT ?? 20),

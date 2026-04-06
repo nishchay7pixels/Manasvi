@@ -16,6 +16,7 @@
     { "path": "apps/ingress-service" },
     { "path": "apps/orchestrator-service" },
     { "path": "apps/policy-service" },
+    { "path": "apps/approval-service" },
     { "path": "apps/execution-manager" },
     { "path": "apps/memory-service" },
     { "path": "apps/node-manager" },

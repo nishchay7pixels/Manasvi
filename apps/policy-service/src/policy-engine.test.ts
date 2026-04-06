@@ -166,6 +166,58 @@ test("approval required path", async () => {
   assert.equal(result.response.approvalRequired, true);
 });
 
+test("external side effect intent requires approval", async () => {
+  const policySet = await loadPolicySet();
+  const result = evaluatePolicy(
+    policySet,
+    request({
+      actionClass: "external-side-effect",
+      resourceClass: "tool-endpoint",
+      resourceId: "tool:shell",
+      requestedCapabilities: [
+        {
+          capabilityId: "tool.invoke",
+          scope: {
+            tenantId: "tenant-a",
+            workspaceId: "workspace-a",
+            resourceClass: "tool-endpoint"
+          },
+          constraints: {}
+        }
+      ]
+    }),
+    { defaultDecisionTtlSeconds: 300 }
+  );
+  assert.equal(result.response.decision, "REQUIRE_APPROVAL");
+  assert.equal(result.response.approvalRequired, true);
+});
+
+test("low-risk read intent can be allowed without approval", async () => {
+  const policySet = await loadPolicySet();
+  const result = evaluatePolicy(
+    policySet,
+    request({
+      actionClass: "read",
+      resourceClass: "tool-endpoint",
+      resourceId: "tool:web-search",
+      requestedCapabilities: [
+        {
+          capabilityId: "tool.read",
+          scope: {
+            tenantId: "tenant-a",
+            workspaceId: "workspace-a",
+            resourceClass: "tool-endpoint"
+          },
+          constraints: {}
+        }
+      ]
+    }),
+    { defaultDecisionTtlSeconds: 300 }
+  );
+  assert.equal(result.response.decision, "ALLOW");
+  assert.equal(result.response.approvalRequired, false);
+});
+
 test("missing principal context authentication is rejected", async () => {
   const policySet = await loadPolicySet();
   const result = evaluatePolicy(

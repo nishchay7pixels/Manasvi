@@ -1,4 +1,10 @@
-import { CONTRACT_SCHEMA_VERSION, resolvedPrincipalContextSchema } from "@manasvi/contracts";
+import {
+  CONTRACT_SCHEMA_VERSION,
+  actionClassSchema,
+  executionIntentSchema,
+  policyResourceReferenceSchema,
+  resolvedPrincipalContextSchema
+} from "@manasvi/contracts";
 import {
   InternalTokenService,
   PrincipalResolver,
@@ -12,6 +18,7 @@ import { readJsonBody, respondJson, startHttpService } from "@manasvi/service-ru
 import { z } from "zod";
 
 import { loadOrchestratorServiceConfig } from "./config.js";
+import { buildExecutionIntentFromPolicy } from "./intent-planner.js";
 import { buildHarnessEventResultRecord, buildModelInvocationRequest, type HarnessEventResultRecord } from "./model-integration.js";
 import { queryPolicyForOrchestration } from "./policy-integration.js";
 
@@ -61,6 +68,7 @@ async function main(): Promise<void> {
     ollamaBaseUrl: config.ollamaBaseUrl
   });
   const harnessEventResults = new Map<string, HarnessEventResultRecord>();
+  const executionIntents = new Map<string, z.infer<typeof executionIntentSchema>>();
   const harnessResultTtlMs = config.harnessEventResultTtlSeconds * 1000;
 
   const upsertHarnessEventResult = (record: HarnessEventResultRecord): void => {
@@ -270,6 +278,71 @@ async function main(): Promise<void> {
     actionId: z.string().min(1).default("orchestration.plan.invoke-agent"),
     riskFlags: z.array(z.string().min(1)).default([])
   });
+  const intentCreationSchema = z.object({
+    tenantId: z.string().min(1),
+    workspaceId: z.string().min(1),
+    sessionId: z.string().min(1).optional(),
+    action: z.object({
+      actionId: z.string().min(1),
+      actionClass: actionClassSchema,
+      operation: z.string().min(1),
+      toolRef: z.string().min(1).optional(),
+      parameters: z.record(z.unknown()).default({})
+    }),
+    target: policyResourceReferenceSchema,
+    requiredCapabilities: z.array(z.string().min(1)).default([]),
+    riskFlags: z.array(z.string().min(1)).default([]),
+    riskDeclaredLevel: z.enum(["low", "medium", "high", "critical"]).optional(),
+    idempotencyKey: z.string().min(1).optional()
+  });
+  const approvalDecisionSchema = z.object({
+    intentId: z.string().min(1),
+    approvalRequestId: z.string().min(1),
+    decision: z.enum(["approved", "rejected"]),
+    reason: z.string().min(1).optional()
+  });
+
+  const issueServiceToken = (scopes: string[]): string =>
+    tokenService.issueToken({
+      caller: servicePrincipal,
+      scopes
+    });
+
+  const createApprovalRequest = async (intent: z.infer<typeof executionIntentSchema>) => {
+    const response = await fetch(`${config.approvalServiceBaseUrl}/approvals/requests`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${issueServiceToken(["approval.request.create", "service:orchestrator"])}`
+      },
+      body: JSON.stringify({
+        intent
+      })
+    });
+    if (!response.ok) {
+      throw new Error(`Approval request creation failed with status ${response.status}: ${await response.text()}`);
+    }
+    const body = await response.json() as { request: { approvalRequestId: string } };
+    return body.request;
+  };
+
+  const issueSystemArtifact = async (intent: z.infer<typeof executionIntentSchema>) => {
+    const response = await fetch(`${config.approvalServiceBaseUrl}/approvals/artifacts/issue-system`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${issueServiceToken(["approval.artifact.issue", "service:orchestrator"])}`
+      },
+      body: JSON.stringify({
+        intent,
+        reason: "policy_no_human_approval_required"
+      })
+    });
+    if (!response.ok) {
+      throw new Error(`System artifact issuance failed with status ${response.status}: ${await response.text()}`);
+    }
+    return response.json();
+  };
 
   await startHttpService({
     config,
@@ -454,6 +527,200 @@ async function main(): Promise<void> {
         respondJson(res, result.status === "completed" ? 200 : 502, {
           schemaVersion: CONTRACT_SCHEMA_VERSION,
           result
+        });
+        return true;
+      }
+      if (req.method === "POST" && req.url === "/orchestration/execution-intents") {
+        const principal = principalResolver.resolveFromHttpHeaders(req.headers, {
+          requireAuthentication: true,
+          allowActorOverride: true
+        });
+        if (!principal.ok || !principal.context) {
+          respondJson(res, principal.statusCode ?? 401, {
+            schemaVersion: CONTRACT_SCHEMA_VERSION,
+            accepted: false,
+            errorCode: principal.errorCode
+          });
+          return true;
+        }
+        const incoming = intentCreationSchema.parse(await readJsonBody(req));
+        const decision = await queryPolicyForOrchestration(policyClient, {
+          principalContext: principal.context,
+          actionClass: incoming.action.actionClass,
+          actionId: incoming.action.actionId,
+          resource: incoming.target,
+          requestedCapabilities: incoming.requiredCapabilities,
+          tenantId: incoming.tenantId,
+          workspaceId: incoming.workspaceId,
+          trace,
+          ...(incoming.sessionId ? { sessionId: incoming.sessionId } : {}),
+          riskFlags: incoming.riskFlags,
+          ...(incoming.riskDeclaredLevel ? { riskDeclaredLevel: incoming.riskDeclaredLevel } : {})
+        });
+
+        const baseIntent = buildExecutionIntentFromPolicy({
+          decision,
+          principalContext: principal.context,
+          tenantId: incoming.tenantId,
+          workspaceId: incoming.workspaceId,
+          ...(incoming.sessionId ? { sessionId: incoming.sessionId } : {}),
+          trace,
+          action: {
+            actionId: incoming.action.actionId,
+            actionClass: incoming.action.actionClass,
+            operation: incoming.action.operation,
+            parameters: incoming.action.parameters,
+            ...(incoming.action.toolRef ? { toolRef: incoming.action.toolRef } : {})
+          },
+          target: incoming.target,
+          requiredCapabilities: incoming.requiredCapabilities,
+          ttlSeconds: config.executionIntentTtlSeconds,
+          ...(incoming.idempotencyKey ? { idempotencyKey: incoming.idempotencyKey } : {})
+        });
+        let intent = baseIntent;
+        executionIntents.set(intent.intentId, intent);
+
+        if (decision.decision === "DENY") {
+          respondJson(res, 403, {
+            schemaVersion: CONTRACT_SCHEMA_VERSION,
+            accepted: false,
+            intent,
+            decision
+          });
+          return true;
+        }
+
+        if (decision.approvalRequired) {
+          const requestResult = await createApprovalRequest(intent);
+          intent = executionIntentSchema.parse({
+            ...intent,
+            approval: {
+              ...intent.approval,
+              approvalRequestId: requestResult.approvalRequestId
+            },
+            updatedAt: new Date().toISOString()
+          });
+          executionIntents.set(intent.intentId, intent);
+          respondJson(res, 202, {
+            schemaVersion: CONTRACT_SCHEMA_VERSION,
+            accepted: true,
+            intent,
+            decision,
+            approvalRequestId: requestResult.approvalRequestId
+          });
+          return true;
+        }
+
+        const artifactResult = await issueSystemArtifact(intent);
+        respondJson(res, 201, {
+          schemaVersion: CONTRACT_SCHEMA_VERSION,
+          accepted: true,
+          intent,
+          decision,
+          artifact: artifactResult.artifact,
+          approvalRecord: artifactResult.approvalRecord
+        });
+        return true;
+      }
+      if (req.method === "POST" && req.url === "/orchestration/execution-intents/approval-decision") {
+        const principal = principalResolver.resolveFromHttpHeaders(req.headers, {
+          requireAuthentication: true,
+          allowActorOverride: true
+        });
+        if (!principal.ok || !principal.context) {
+          respondJson(res, principal.statusCode ?? 401, {
+            schemaVersion: CONTRACT_SCHEMA_VERSION,
+            accepted: false,
+            errorCode: principal.errorCode
+          });
+          return true;
+        }
+        const incoming = approvalDecisionSchema.parse(await readJsonBody(req));
+        const intent = executionIntents.get(incoming.intentId);
+        if (!intent) {
+          respondJson(res, 404, {
+            schemaVersion: CONTRACT_SCHEMA_VERSION,
+            error: "intent not found"
+          });
+          return true;
+        }
+        const response = await fetch(`${config.approvalServiceBaseUrl}/approvals/requests/decision`, {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            authorization: `Bearer ${issueServiceToken(["approval.request.decide", "service:orchestrator"])}`
+          },
+          body: JSON.stringify({
+            approvalRequestId: incoming.approvalRequestId,
+            intent,
+            decision: {
+              decision: incoming.decision,
+              decidedBy: principal.context.actor,
+              decidedAt: new Date().toISOString(),
+              ...(incoming.reason ? { reason: incoming.reason } : {}),
+              trace
+            }
+          })
+        });
+        const body = await response.json();
+        if (!response.ok) {
+          respondJson(res, response.status, {
+            schemaVersion: CONTRACT_SCHEMA_VERSION,
+            error: body
+          });
+          return true;
+        }
+        const updatedIntent = executionIntentSchema.parse({
+          ...intent,
+          approval: {
+            ...intent.approval,
+            state: incoming.decision === "approved" ? "approved" : "rejected",
+            ...(incoming.decision === "approved" ? { approvedBy: principal.context.actor } : {}),
+            ...(incoming.decision === "approved" ? { approvedAt: new Date().toISOString() } : {})
+          },
+          lifecycle: incoming.decision === "approved" ? "execution_authorized" : "rejected",
+          updatedAt: new Date().toISOString()
+        });
+        executionIntents.set(updatedIntent.intentId, updatedIntent);
+        respondJson(res, 200, {
+          schemaVersion: CONTRACT_SCHEMA_VERSION,
+          intent: updatedIntent,
+          approval: body
+        });
+        return true;
+      }
+      if (req.method === "GET" && req.url?.startsWith("/orchestration/execution-intents")) {
+        const url = new URL(req.url, "http://localhost");
+        const intentId = url.searchParams.get("intentId");
+        if (!intentId) {
+          respondJson(res, 400, {
+            schemaVersion: CONTRACT_SCHEMA_VERSION,
+            error: "intentId query parameter is required"
+          });
+          return true;
+        }
+        const intent = executionIntents.get(intentId);
+        if (!intent) {
+          respondJson(res, 404, {
+            schemaVersion: CONTRACT_SCHEMA_VERSION,
+            error: "intent not found"
+          });
+          return true;
+        }
+        const artifactResponse = await fetch(
+          `${config.approvalServiceBaseUrl}/approvals/artifacts?intentId=${encodeURIComponent(intentId)}`,
+          {
+            method: "GET",
+            headers: {
+              authorization: `Bearer ${issueServiceToken(["approval.artifact.read", "service:orchestrator"])}`
+            }
+          }
+        );
+        const artifactBody = artifactResponse.ok ? await artifactResponse.json() : undefined;
+        respondJson(res, 200, {
+          schemaVersion: CONTRACT_SCHEMA_VERSION,
+          intent,
+          ...(artifactBody?.artifact ? { artifact: artifactBody.artifact } : {})
         });
         return true;
       }

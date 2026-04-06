@@ -20,7 +20,9 @@ export const actionClassSchema = z.enum([
   "publish-event",
   "consume-event",
   "skip-approval",
-  "administer-policy"
+  "administer-policy",
+  "external-side-effect",
+  "destructive-action"
 ]);
 export type ActionClass = z.infer<typeof actionClassSchema>;
 
@@ -260,4 +262,3 @@ export function createPolicyEvaluationRequest(
     ...input
   });
 }
-

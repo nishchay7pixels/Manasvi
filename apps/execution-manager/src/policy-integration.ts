@@ -21,6 +21,7 @@ export interface ExecutionPolicyQueryInput {
   workspaceId: string;
   trace: PolicyTrace;
   skipApprovalRequested?: boolean;
+  approvalPresent?: boolean;
   riskFlags?: string[];
   riskDeclaredLevel?: "low" | "medium" | "high" | "critical";
 }
@@ -50,7 +51,7 @@ export async function queryPolicyForExecution(
     tenantId: input.tenantId,
     workspaceId: input.workspaceId,
     approval: {
-      approvalPresent: false,
+      approvalPresent: input.approvalPresent ?? false,
       skipApprovalRequested: input.skipApprovalRequested ?? false
     },
     risk: {

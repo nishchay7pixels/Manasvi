@@ -15,9 +15,6 @@
       "path": "../../packages/executor-sdk"
     },
     {
-      "path": "../../packages/policy-sdk"
-    },
-    {
       "path": "../../packages/service-runtime"
     }
   ],

@@ -37,6 +37,8 @@ services:
       HUMAN_LOGS: "false"
       CHANNEL_SIGNATURE_REQUIRED: "true"
       EVENT_BUS_TARGET_URLS: http://orchestrator-service:4102/internal/events
+      EVENT_SIGNING_KEYS: local-k1:local-dev-event-signing-secret
+      INGRESS_SIGNING_KEY_ID: local-k1
       INTERNAL_AUTH_KEY_ID: local-k1
       INTERNAL_AUTH_SIGNING_SECRET: local-dev-internal-secret
       INTERNAL_AUTH_ISSUER: manasvi.internal.auth
@@ -60,8 +62,10 @@ services:
       PLANNER_MODEL: placeholder-model
       REQUIRE_SIGNED_INTERNAL_EVENTS: "false"
       MAX_EVENT_HANDLER_ATTEMPTS: "5"
-      EVENT_SIGNING_KEYS: ""
+      EVENT_SIGNING_KEYS: local-k1:local-dev-event-signing-secret
       POLICY_SERVICE_BASE_URL: http://policy-service:4103
+      APPROVAL_SERVICE_BASE_URL: http://approval-service:4108
+      EXECUTION_INTENT_TTL_SECONDS: "900"
       SESSION_DEFAULT_ISOLATION_MODE: per_user_isolated
       SESSION_CONTEXT_TOKEN_BUDGET: "2048"
       SESSION_RECENT_MESSAGE_LIMIT: "20"
@@ -80,6 +84,7 @@ services:
       - "4102:4102"
     depends_on:
       - policy-service
+      - approval-service
 
   policy-service:
     build:
@@ -117,10 +122,33 @@ services:
       INTERNAL_AUTH_KEY_ID: local-k1
       INTERNAL_AUTH_SIGNING_SECRET: local-dev-internal-secret
       INTERNAL_AUTH_VERIFICATION_KEYS: local-k1:local-dev-internal-secret
+      APPROVAL_VERIFICATION_KEYS: local-k1:local-dev-event-signing-secret
       INTERNAL_AUTH_ISSUER: manasvi.internal.auth
       INTERNAL_AUTH_AUDIENCE: manasvi.internal.services
     ports:
       - "4104:4104"
+
+  approval-service:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.dev
+    command: pnpm --filter @manasvi/approval-service dev
+    environment:
+      MANASVI_ENV: local
+      SERVICE_PORT: "4108"
+      SERVICE_HOST: 0.0.0.0
+      LOG_LEVEL: info
+      HUMAN_LOGS: "false"
+      INTERNAL_AUTH_VERIFICATION_KEYS: local-k1:local-dev-internal-secret
+      INTERNAL_AUTH_ISSUER: manasvi.internal.auth
+      INTERNAL_AUTH_AUDIENCE: manasvi.internal.services
+      APPROVAL_SIGNING_KEYS: local-k1:local-dev-event-signing-secret
+      APPROVAL_SIGNING_KEY_ID: local-k1
+      APPROVAL_REQUEST_TTL_SECONDS: "3600"
+      APPROVED_ARTIFACT_TTL_SECONDS: "900"
+      APPROVAL_AUDIT_BUFFER_SIZE: "1000"
+    ports:
+      - "4108:4108"
 
   memory-service:
     build:
