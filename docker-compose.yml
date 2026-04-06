@@ -36,6 +36,7 @@ services:
       INTERNAL_AUTH_ISSUER: manasvi.internal.auth
       INTERNAL_AUTH_AUDIENCE: manasvi.internal.services
       INTERNAL_AUTH_TOKEN_TTL_SECONDS: "120"
+      POLICY_SERVICE_BASE_URL: http://policy-service:4103
     ports:
       - "4101:4101"
 
@@ -54,6 +55,9 @@ services:
       REQUIRE_SIGNED_INTERNAL_EVENTS: "false"
       MAX_EVENT_HANDLER_ATTEMPTS: "5"
       EVENT_SIGNING_KEYS: ""
+      POLICY_SERVICE_BASE_URL: http://policy-service:4103
+      INTERNAL_AUTH_KEY_ID: local-k1
+      INTERNAL_AUTH_SIGNING_SECRET: local-dev-internal-secret
       INTERNAL_AUTH_VERIFICATION_KEYS: local-k1:local-dev-internal-secret
       INTERNAL_AUTH_ISSUER: manasvi.internal.auth
       INTERNAL_AUTH_AUDIENCE: manasvi.internal.services
@@ -74,6 +78,11 @@ services:
       LOG_LEVEL: info
       HUMAN_LOGS: "false"
       DEFAULT_DECISION_TTL_SECONDS: "300"
+      POLICY_SET_PATH: configs/policies/default-policy-set.json
+      INTERNAL_AUTH_VERIFICATION_KEYS: local-k1:local-dev-internal-secret
+      INTERNAL_AUTH_ISSUER: manasvi.internal.auth
+      INTERNAL_AUTH_AUDIENCE: manasvi.internal.services
+      POLICY_DECISION_AUDIT_BUFFER_SIZE: "500"
     ports:
       - "4103:4103"
 
@@ -89,6 +98,12 @@ services:
       LOG_LEVEL: info
       HUMAN_LOGS: "false"
       SANDBOX_PROFILE_DEFAULT: read_only
+      POLICY_SERVICE_BASE_URL: http://policy-service:4103
+      INTERNAL_AUTH_KEY_ID: local-k1
+      INTERNAL_AUTH_SIGNING_SECRET: local-dev-internal-secret
+      INTERNAL_AUTH_VERIFICATION_KEYS: local-k1:local-dev-internal-secret
+      INTERNAL_AUTH_ISSUER: manasvi.internal.auth
+      INTERNAL_AUTH_AUDIENCE: manasvi.internal.services
     ports:
       - "4104:4104"
 

@@ -6,6 +6,9 @@
   },
   "references": [
     {
+      "path": "../../packages/auth"
+    },
+    {
       "path": "../../packages/contracts"
     },
     {
@@ -14,4 +17,3 @@
   ],
   "include": ["src/**/*.ts"]
 }
-

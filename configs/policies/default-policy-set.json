@@ -1,0 +1,269 @@
+{
+  "schemaVersion": "1.0",
+  "contractVersion": "1.0.0",
+  "policySetVersion": "2026-04-06.m4.1",
+  "sourceRef": "configs/policies/default-policy-set.json",
+  "loadedAt": "2026-04-06T00:00:00.000Z",
+  "policies": [
+    {
+      "policyId": "core-admin-guardrails",
+      "policyVersion": "1.0.0",
+      "description": "Protect policy administration and approval bypass classes.",
+      "enabled": true,
+      "rules": [
+        {
+          "ruleId": "deny-administer-policy-default",
+          "description": "Only policy-service can administer policy state.",
+          "priority": 1000,
+          "effect": "deny",
+          "enabled": true,
+          "selectors": {
+            "callerTypes": [],
+            "actorTypes": [],
+            "callerIds": [],
+            "actorIds": []
+          },
+          "actionClasses": ["administer-policy"],
+          "resourceClasses": ["service-endpoint", "audit-stream"],
+          "resourceIdPatterns": ["*"],
+          "requiredCapabilities": [],
+          "conditions": {
+            "requireTenantMatch": true,
+            "requireWorkspaceMatch": true,
+            "allowSkipApproval": false
+          },
+          "metadata": {
+            "highRiskCoverage": true,
+            "tags": ["guardrail"]
+          }
+        },
+        {
+          "ruleId": "allow-policy-service-administer-policy",
+          "description": "Policy service may administer policy endpoints for managed operations.",
+          "priority": 1100,
+          "effect": "allow",
+          "enabled": true,
+          "selectors": {
+            "callerTypes": ["service"],
+            "actorTypes": [],
+            "callerIds": ["service:policy-service"],
+            "actorIds": []
+          },
+          "actionClasses": ["administer-policy"],
+          "resourceClasses": ["service-endpoint"],
+          "resourceIdPatterns": ["policy:*"],
+          "requiredCapabilities": ["policy.admin"],
+          "conditions": {
+            "requireTenantMatch": true,
+            "requireWorkspaceMatch": true,
+            "allowSkipApproval": false
+          },
+          "metadata": {
+            "highRiskCoverage": true,
+            "tags": ["policy-admin"]
+          }
+        },
+        {
+          "ruleId": "deny-skip-approval-default",
+          "description": "Skip approval requests are denied unless explicitly covered.",
+          "priority": 1000,
+          "effect": "deny",
+          "enabled": true,
+          "selectors": {
+            "callerTypes": [],
+            "actorTypes": [],
+            "callerIds": [],
+            "actorIds": []
+          },
+          "actionClasses": ["skip-approval"],
+          "resourceClasses": ["approval-authority"],
+          "resourceIdPatterns": ["*"],
+          "requiredCapabilities": [],
+          "conditions": {
+            "requireTenantMatch": true,
+            "requireWorkspaceMatch": true,
+            "allowSkipApproval": false
+          },
+          "metadata": {
+            "highRiskCoverage": true,
+            "tags": ["guardrail"]
+          }
+        }
+      ]
+    },
+    {
+      "policyId": "orchestration-runtime-policy",
+      "policyVersion": "1.0.0",
+      "description": "Core orchestration permissions with capability checks.",
+      "enabled": true,
+      "rules": [
+        {
+          "ruleId": "allow-orchestrator-invoke-agent",
+          "description": "Orchestrator service may invoke agent definitions for same tenant/workspace.",
+          "priority": 700,
+          "effect": "allow",
+          "enabled": true,
+          "selectors": {
+            "callerTypes": ["service"],
+            "actorTypes": ["human_user", "agent"],
+            "callerIds": ["service:orchestrator-service"],
+            "actorIds": []
+          },
+          "actionClasses": ["invoke"],
+          "resourceClasses": ["agent-definition"],
+          "resourceIdPatterns": ["agent:*"],
+          "requiredCapabilities": ["agent.invoke"],
+          "conditions": {
+            "requireTenantMatch": true,
+            "requireWorkspaceMatch": true,
+            "allowSkipApproval": false,
+            "maxRiskLevel": "high"
+          },
+          "metadata": {
+            "highRiskCoverage": true,
+            "tags": ["orchestration"]
+          }
+        },
+        {
+          "ruleId": "require-approval-agent-tool-network",
+          "description": "Agent requests to access tool network endpoints require approval.",
+          "priority": 720,
+          "effect": "require_approval",
+          "enabled": true,
+          "selectors": {
+            "callerTypes": ["service"],
+            "actorTypes": ["agent"],
+            "callerIds": ["service:orchestrator-service"],
+            "actorIds": []
+          },
+          "actionClasses": ["access-network", "execute"],
+          "resourceClasses": ["tool-endpoint", "network-zone"],
+          "resourceIdPatterns": ["tool:*", "network:*"],
+          "requiredCapabilities": ["tool.invoke"],
+          "conditions": {
+            "requireTenantMatch": true,
+            "requireWorkspaceMatch": true,
+            "allowSkipApproval": false
+          },
+          "metadata": {
+            "highRiskCoverage": true,
+            "tags": ["tooling", "approval"]
+          }
+        },
+        {
+          "ruleId": "allow-session-memory-read",
+          "description": "Orchestrator may read memory namespace in-session.",
+          "priority": 650,
+          "effect": "allow",
+          "enabled": true,
+          "selectors": {
+            "callerTypes": ["service"],
+            "actorTypes": ["human_user", "agent"],
+            "callerIds": ["service:orchestrator-service"],
+            "actorIds": []
+          },
+          "actionClasses": ["read"],
+          "resourceClasses": ["memory-namespace", "session"],
+          "resourceIdPatterns": ["memory:*", "session:*"],
+          "requiredCapabilities": ["memory.read"],
+          "conditions": {
+            "requireTenantMatch": true,
+            "requireWorkspaceMatch": true,
+            "allowSkipApproval": false
+          },
+          "metadata": {
+            "highRiskCoverage": false,
+            "tags": ["memory", "session"]
+          }
+        }
+      ]
+    },
+    {
+      "policyId": "execution-and-extension-policy",
+      "policyVersion": "1.0.0",
+      "description": "Execution manager and plugin capability constraints.",
+      "enabled": true,
+      "rules": [
+        {
+          "ruleId": "allow-execution-manager-node-execute",
+          "description": "Execution manager can execute on scoped nodes.",
+          "priority": 700,
+          "effect": "allow",
+          "enabled": true,
+          "selectors": {
+            "callerTypes": ["service"],
+            "actorTypes": ["service", "agent"],
+            "callerIds": ["service:execution-manager"],
+            "actorIds": []
+          },
+          "actionClasses": ["execute"],
+          "resourceClasses": ["execution-node"],
+          "resourceIdPatterns": ["node:*"],
+          "requiredCapabilities": ["node.execute"],
+          "conditions": {
+            "requireTenantMatch": true,
+            "requireWorkspaceMatch": true,
+            "allowSkipApproval": false,
+            "maxRiskLevel": "high"
+          },
+          "metadata": {
+            "highRiskCoverage": true,
+            "tags": ["execution"]
+          }
+        },
+        {
+          "ruleId": "require-approval-secret-access",
+          "description": "Secret reference access requires explicit approval.",
+          "priority": 800,
+          "effect": "require_approval",
+          "enabled": true,
+          "selectors": {
+            "callerTypes": ["service", "plugin"],
+            "actorTypes": [],
+            "callerIds": [],
+            "actorIds": []
+          },
+          "actionClasses": ["access-secret"],
+          "resourceClasses": ["secret-reference"],
+          "resourceIdPatterns": ["secret:*"],
+          "requiredCapabilities": ["secret.read"],
+          "conditions": {
+            "requireTenantMatch": true,
+            "requireWorkspaceMatch": true,
+            "allowSkipApproval": false
+          },
+          "metadata": {
+            "highRiskCoverage": true,
+            "tags": ["secret", "approval"]
+          }
+        },
+        {
+          "ruleId": "require-approval-plugin-register-capability",
+          "description": "Plugin capability registration is approval-gated.",
+          "priority": 750,
+          "effect": "require_approval",
+          "enabled": true,
+          "selectors": {
+            "callerTypes": ["plugin"],
+            "actorTypes": [],
+            "callerIds": [],
+            "actorIds": []
+          },
+          "actionClasses": ["register"],
+          "resourceClasses": ["plugin-capability"],
+          "resourceIdPatterns": ["plugin-capability:*"],
+          "requiredCapabilities": ["plugin.register-capability"],
+          "conditions": {
+            "requireTenantMatch": true,
+            "requireWorkspaceMatch": true,
+            "allowSkipApproval": false
+          },
+          "metadata": {
+            "highRiskCoverage": true,
+            "tags": ["plugin", "approval"]
+          }
+        }
+      ]
+    }
+  ]
+}

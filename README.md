@@ -43,7 +43,7 @@ docs/
 - `@manasvi/logging`: structured JSON logging with redaction and trace fields.
 - `@manasvi/tracing`: trace/correlation propagation and request-scoped context.
 - `@manasvi/auth`: principal schemas, short-lived internal token auth, principal registry, and principal-resolution middleware.
-- `@manasvi/policy-sdk`: policy evaluation request/response interfaces.
+- `@manasvi/policy-sdk`: typed HTTP client for `policy-service` evaluation API.
 - `@manasvi/executor-sdk`: execution dispatch interfaces.
 - `@manasvi/plugin-sdk`: plugin manifest and hook contracts.
 - `@manasvi/testing`: reusable health/readiness and contract test helpers.
@@ -74,6 +74,10 @@ Every service follows the same pattern:
 - Redaction is built in for sensitive key patterns (`secret`, `token`, `password`, `key`).
 - Request handlers always propagate `x-trace-id` and `x-correlation-id`.
 - Internal service-to-service calls use short-lived bearer tokens with caller/actor claims.
+- Policy service settings:
+  - `POLICY_SERVICE_BASE_URL`
+  - `POLICY_SET_PATH`
+  - `POLICY_DECISION_AUDIT_BUFFER_SIZE`
 - Internal auth env vars:
   - `INTERNAL_AUTH_ISSUER`
   - `INTERNAL_AUTH_AUDIENCE`
@@ -162,3 +166,11 @@ Deferred to Milestone 2+:
 - Ingress publishes normalized canonical events to `EVENT_BUS_TARGET_URLS` (default: `http://localhost:4102/internal/events`).
 - Orchestrator subscribes via `/internal/events` and validates schema/integrity/idempotency before handling.
 - Dead letters are available at `GET /internal/dead-letter` on orchestrator.
+
+## Milestone 4 Policy Slice
+- Policy service evaluates authorization requests at `POST /policy/evaluate`.
+- Orchestrator and execution manager call policy-service before sensitive operations.
+- Policy decisions include reason codes, matched policy metadata, risk metadata, and audit linkage.
+- Policy metadata and decision audit visibility:
+  - `GET /policy/metadata`
+  - `GET /policy/audit/decisions`

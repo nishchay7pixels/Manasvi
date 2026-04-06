@@ -43,7 +43,10 @@ async function bootAndCheck(name, port) {
       INTERNAL_AUTH_AUDIENCE: "manasvi.internal.services",
       INTERNAL_AUTH_KEY_ID: "local-k1",
       INTERNAL_AUTH_SIGNING_SECRET: "local-dev-internal-secret",
-      INTERNAL_AUTH_VERIFICATION_KEYS: "local-k1:local-dev-internal-secret"
+      INTERNAL_AUTH_VERIFICATION_KEYS: "local-k1:local-dev-internal-secret",
+      POLICY_SERVICE_BASE_URL: "http://127.0.0.1:4103",
+      POLICY_SET_PATH: "configs/policies/default-policy-set.json",
+      POLICY_DECISION_AUDIT_BUFFER_SIZE: "500"
     }
   });
 

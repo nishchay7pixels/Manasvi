@@ -6,7 +6,13 @@
   },
   "references": [
     {
+      "path": "../../packages/auth"
+    },
+    {
       "path": "../../packages/contracts"
+    },
+    {
+      "path": "../../packages/policy-sdk"
     },
     {
       "path": "../../packages/service-runtime"
@@ -14,4 +20,3 @@
   ],
   "include": ["src/**/*.ts"]
 }
-

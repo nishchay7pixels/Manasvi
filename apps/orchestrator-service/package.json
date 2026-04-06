@@ -10,13 +10,14 @@
     "dev": "tsx watch src/index.ts",
     "typecheck": "tsc -b --pretty false",
     "lint": "tsc --noEmit -p tsconfig.json --pretty false",
-    "test": "node -e \"console.log('no tests yet for orchestrator-service')\"",
+    "test": "tsx --test src/**/*.test.ts",
     "clean": "rm -rf dist tsconfig.tsbuildinfo"
   },
   "dependencies": {
     "@manasvi/auth": "workspace:*",
     "@manasvi/contracts": "workspace:*",
     "@manasvi/event-bus": "workspace:*",
+    "@manasvi/policy-sdk": "workspace:*",
     "@manasvi/service-runtime": "workspace:*",
     "zod": "^3.24.3"
   }

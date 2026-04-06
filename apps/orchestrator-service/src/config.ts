@@ -9,8 +9,11 @@ export const orchestratorConfigSchema = baseServiceConfigSchema.extend({
   requireSignedInternalEvents: z.boolean().default(true),
   maxEventHandlerAttempts: z.number().int().positive().default(5),
   eventSigningSecretsByKeyId: z.record(z.string().min(1)).default({}),
+  policyServiceBaseUrl: z.string().url().default("http://policy-service:4103"),
   internalAuthIssuer: z.string().min(1).default("manasvi.internal.auth"),
   internalAuthAudience: z.string().min(1).default("manasvi.internal.services"),
+  internalAuthKeyId: z.string().min(1),
+  internalAuthSigningSecret: z.string().min(1),
   internalAuthVerificationKeys: z.record(z.string().min(1)).refine((value) => Object.keys(value).length > 0, {
     message: "At least one internal auth verification key is required"
   })
@@ -33,6 +36,7 @@ export async function loadOrchestratorServiceConfig(): Promise<OrchestratorServi
       plannerModel: env.PLANNER_MODEL ?? "placeholder-model",
       requireSignedInternalEvents: env.REQUIRE_SIGNED_INTERNAL_EVENTS !== "false",
       maxEventHandlerAttempts: Number(env.MAX_EVENT_HANDLER_ATTEMPTS ?? 5),
+      policyServiceBaseUrl: env.POLICY_SERVICE_BASE_URL ?? "http://policy-service:4103",
       eventSigningSecretsByKeyId: (env.EVENT_SIGNING_KEYS ?? "")
         .split(",")
         .map((entry) => entry.trim())
@@ -46,6 +50,8 @@ export async function loadOrchestratorServiceConfig(): Promise<OrchestratorServi
         }, {}),
       internalAuthIssuer: env.INTERNAL_AUTH_ISSUER ?? "manasvi.internal.auth",
       internalAuthAudience: env.INTERNAL_AUTH_AUDIENCE ?? "manasvi.internal.services",
+      internalAuthKeyId: await secrets.require("INTERNAL_AUTH_KEY_ID"),
+      internalAuthSigningSecret: await secrets.require("INTERNAL_AUTH_SIGNING_SECRET"),
       internalAuthVerificationKeys: (await secrets.require("INTERNAL_AUTH_VERIFICATION_KEYS"))
         .split(",")
         .map((entry) => entry.trim())

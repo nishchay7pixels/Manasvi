@@ -1,4 +1,5 @@
 import type { HealthResponse, ReadinessResponse } from "@manasvi/contracts";
+import type { PolicyDecisionResult, PolicyEvaluationResponse } from "@manasvi/contracts";
 
 export function assertHealthResponse(value: unknown): asserts value is HealthResponse {
   if (typeof value !== "object" || value === null) {
@@ -32,4 +33,20 @@ export async function fetchJson(url: string): Promise<unknown> {
     throw new Error(`HTTP ${response.status} from ${url}`);
   }
   return response.json();
+}
+
+export function assertPolicyDecision(
+  response: unknown,
+  expected: PolicyDecisionResult
+): asserts response is PolicyEvaluationResponse {
+  if (typeof response !== "object" || response === null) {
+    throw new Error("Expected policy response object");
+  }
+  const candidate = response as Partial<PolicyEvaluationResponse>;
+  if (candidate.decision !== expected) {
+    throw new Error(`Expected policy decision ${expected} but got ${candidate.decision}`);
+  }
+  if (!candidate.decisionId || !candidate.auditRecordId) {
+    throw new Error("Policy response missing decision/audit identifiers");
+  }
 }

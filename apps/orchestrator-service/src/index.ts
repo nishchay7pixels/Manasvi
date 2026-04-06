@@ -2,12 +2,16 @@ import { CONTRACT_SCHEMA_VERSION } from "@manasvi/contracts";
 import {
   InternalTokenService,
   PrincipalResolver,
+  buildServicePrincipalReference,
   resolvePrincipalContextFromEvent
 } from "@manasvi/auth";
 import { EventConsumer, InMemoryDeadLetterStore, RetryableError } from "@manasvi/event-bus";
+import { HttpPolicyClient } from "@manasvi/policy-sdk";
 import { readJsonBody, respondJson, startHttpService } from "@manasvi/service-runtime";
+import { z } from "zod";
 
 import { loadOrchestratorServiceConfig } from "./config.js";
+import { queryPolicyForOrchestration } from "./policy-integration.js";
 
 async function main(): Promise<void> {
   const config = await loadOrchestratorServiceConfig();
@@ -15,16 +19,15 @@ async function main(): Promise<void> {
   if (!firstKeyId) {
     throw new Error("internalAuthVerificationKeys must include at least one key");
   }
-  const firstKeySecret = config.internalAuthVerificationKeys[firstKeyId];
-  if (!firstKeySecret) {
+  if (!config.internalAuthVerificationKeys[firstKeyId]) {
     throw new Error(`Missing secret for key id ${firstKeyId}`);
   }
   const tokenService = new InternalTokenService(
     {
       issuer: config.internalAuthIssuer,
       audience: config.internalAuthAudience,
-      keyId: firstKeyId,
-      secret: firstKeySecret,
+      keyId: config.internalAuthKeyId,
+      secret: config.internalAuthSigningSecret,
       ttlSeconds: 120
     },
     {
@@ -34,6 +37,14 @@ async function main(): Promise<void> {
     }
   );
   const principalResolver = new PrincipalResolver(tokenService);
+  const policyClient = new HttpPolicyClient({
+    baseUrl: config.policyServiceBaseUrl,
+    getAuthToken: () =>
+      tokenService.issueToken({
+        caller: buildServicePrincipalReference(config.serviceName),
+        scopes: ["policy.evaluate", "service:orchestrator"]
+      })
+  });
   const deadLetterStore = new InMemoryDeadLetterStore();
   const consumer = new EventConsumer({
     deadLetterStore,
@@ -44,6 +55,39 @@ async function main(): Promise<void> {
 
   consumer.subscribe("ingress.external_message.received", async (event, context) => {
     const principalContext = resolvePrincipalContextFromEvent({ event });
+    const decision = await queryPolicyForOrchestration(policyClient, {
+      principalContext,
+      actionClass: "invoke",
+      actionId: "orchestration.ingress-event.plan",
+      resource: {
+        resourceClass: "agent-definition",
+        resourceId: "agent:default-planner",
+        tenantId: event.tenantId,
+        workspaceId: event.workspaceId,
+        attributes: {}
+      },
+      requestedCapabilities: ["agent.invoke"],
+      tenantId: event.tenantId,
+      workspaceId: event.workspaceId,
+      trace: event.trace,
+      ...(event.session.sessionId ? { sessionId: event.session.sessionId } : {}),
+      riskFlags: event.risk.reasons
+    });
+    if (decision.decision !== "ALLOW" && decision.decision !== "CONDITIONAL_ALLOW") {
+      console.log(
+        JSON.stringify({
+          timestamp: new Date().toISOString(),
+          level: "warn",
+          service: "orchestrator-service",
+          message: "Policy blocked orchestration for ingress event",
+          eventId: event.eventId,
+          decision: decision.decision,
+          reasonCodes: decision.reasonCodes,
+          auditRecordId: decision.auditRecordId
+        })
+      );
+      return;
+    }
     const payload = event.payload as { text?: string };
     if (!payload.text || payload.text.length === 0) {
       throw new RetryableError("Empty text payload is retryable while upstream normalizer settles");
@@ -71,6 +115,14 @@ async function main(): Promise<void> {
     );
   });
 
+  const planRequestSchema = z.object({
+    tenantId: z.string().min(1),
+    workspaceId: z.string().min(1),
+    sessionId: z.string().min(1).optional(),
+    actionId: z.string().min(1).default("orchestration.plan.invoke-agent"),
+    riskFlags: z.array(z.string().min(1)).default([])
+  });
+
   await startHttpService({
     config,
     serviceName: "orchestrator-service",
@@ -90,10 +142,54 @@ async function main(): Promise<void> {
         return true;
       }
       if (req.method === "POST" && req.url === "/orchestration/plan") {
-        logger.info("Plan request accepted (placeholder)");
+        const principal = principalResolver.resolveFromHttpHeaders(req.headers, {
+          requireAuthentication: true,
+          allowActorOverride: true
+        });
+        if (!principal.ok || !principal.context) {
+          respondJson(res, principal.statusCode ?? 401, {
+            schemaVersion: CONTRACT_SCHEMA_VERSION,
+            accepted: false,
+            errorCode: principal.errorCode
+          });
+          return true;
+        }
+        const incoming = planRequestSchema.parse(await readJsonBody(req));
+        const decision = await queryPolicyForOrchestration(policyClient, {
+          principalContext: principal.context,
+          actionClass: "invoke",
+          actionId: incoming.actionId,
+          resource: {
+            resourceClass: "agent-definition",
+            resourceId: "agent:default-planner",
+            tenantId: incoming.tenantId,
+            workspaceId: incoming.workspaceId,
+            attributes: {}
+          },
+          requestedCapabilities: ["agent.invoke"],
+          tenantId: incoming.tenantId,
+          workspaceId: incoming.workspaceId,
+          trace,
+          ...(incoming.sessionId ? { sessionId: incoming.sessionId } : {}),
+          riskFlags: incoming.riskFlags
+        });
+        logger.info("Policy evaluated orchestration plan request", {
+          decision: decision.decision,
+          reasonCodes: decision.reasonCodes,
+          auditRecordId: decision.auditRecordId
+        });
+        if (decision.decision === "DENY") {
+          respondJson(res, 403, {
+            schemaVersion: CONTRACT_SCHEMA_VERSION,
+            queued: false,
+            decision
+          });
+          return true;
+        }
         respondJson(res, 202, {
           schemaVersion: CONTRACT_SCHEMA_VERSION,
-          queued: true
+          queued: true,
+          decision
         });
         return true;
       }

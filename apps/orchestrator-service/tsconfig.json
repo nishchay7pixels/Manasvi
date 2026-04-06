@@ -15,6 +15,9 @@
       "path": "../../packages/event-bus"
     },
     {
+      "path": "../../packages/policy-sdk"
+    },
+    {
       "path": "../../packages/service-runtime"
     }
   ],
