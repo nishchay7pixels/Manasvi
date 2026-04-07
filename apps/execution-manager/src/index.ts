@@ -2,7 +2,9 @@ import {
   CONTRACT_SCHEMA_VERSION,
   approvedIntentArtifactSchema,
   executorApiRequestSchema,
-  executionIntentSchema
+  executionIntentSchema,
+  runtimePolicySchema,
+  toolExecutionContractSchema
 } from "@manasvi/contracts";
 import {
   InternalTokenService,
@@ -12,6 +14,7 @@ import {
 import { HttpPolicyClient } from "@manasvi/policy-sdk";
 import { validateExecutionAuthorization } from "@manasvi/executor-sdk";
 import { runSandboxedExecution } from "@manasvi/sandbox-runtime";
+import { validateToolInput, validateToolOutput } from "@manasvi/tool-sdk";
 import { respondJson, startHttpService } from "@manasvi/service-runtime";
 import { readJsonBody } from "@manasvi/service-runtime";
 import { z } from "zod";
@@ -19,6 +22,7 @@ import { z } from "zod";
 import { loadExecutionManagerConfig } from "./config.js";
 import { queryPolicyForExecution } from "./policy-integration.js";
 import { deriveRuntimePolicy } from "./runtime-policy.js";
+import { mergeRuntimePolicyWithToolHints } from "./tool-runtime-policy.js";
 
 async function main(): Promise<void> {
   const config = await loadExecutionManagerConfig();
@@ -66,6 +70,11 @@ async function main(): Promise<void> {
   const executeIntentSchema = z.object({
     intent: executionIntentSchema,
     artifact: approvedIntentArtifactSchema,
+    dryRun: z.boolean().default(false),
+    secretValuesByRef: z.record(z.string().min(1)).optional()
+  });
+  const executeToolContractRequestSchema = z.object({
+    contract: toolExecutionContractSchema,
     dryRun: z.boolean().default(false),
     secretValuesByRef: z.record(z.string().min(1)).optional()
   });
@@ -281,6 +290,183 @@ async function main(): Promise<void> {
           artifactId: incoming.artifact.artifactId,
           decision,
           resultArtifact: run.artifact
+        });
+        return true;
+      }
+      if (req.method === "POST" && req.url === "/execution/execute-tool-contract") {
+        const principal = principalResolver.resolveFromHttpHeaders(req.headers, {
+          requireAuthentication: true,
+          allowActorOverride: true
+        });
+        if (!principal.ok || !principal.context) {
+          respondJson(res, principal.statusCode ?? 401, {
+            schemaVersion: CONTRACT_SCHEMA_VERSION,
+            accepted: false,
+            errorCode: principal.errorCode
+          });
+          return true;
+        }
+        const incoming = executeToolContractRequestSchema.parse(await readJsonBody(req));
+        if (incoming.contract.invocation.caller.principalId !== principal.context.caller.principalId) {
+          respondJson(res, 403, {
+            schemaVersion: CONTRACT_SCHEMA_VERSION,
+            accepted: false,
+            errorCode: "CALLER_CONTEXT_MISMATCH"
+          });
+          return true;
+        }
+        if (incoming.contract.manifest.status !== "enabled") {
+          respondJson(res, 409, {
+            schemaVersion: CONTRACT_SCHEMA_VERSION,
+            accepted: false,
+            errorCode: "TOOL_NOT_ENABLED"
+          });
+          return true;
+        }
+        const validation = validateExecutionAuthorization({
+          intent: incoming.contract.intent,
+          artifact: incoming.contract.artifact,
+          verificationSecretsByKeyId: config.approvalVerificationKeys,
+          consumedArtifactIds: consumedArtifacts
+        });
+        if (!validation.ok) {
+          respondJson(res, 422, {
+            schemaVersion: CONTRACT_SCHEMA_VERSION,
+            accepted: false,
+            errorCode: validation.code,
+            error: validation.message
+          });
+          return true;
+        }
+        let validatedInput: Record<string, unknown>;
+        try {
+          validatedInput = validateToolInput(incoming.contract.manifest.toolId, incoming.contract.invocation.input);
+        } catch (error) {
+          respondJson(res, 422, {
+            schemaVersion: CONTRACT_SCHEMA_VERSION,
+            accepted: false,
+            errorCode: "TOOL_INPUT_VALIDATION_FAILED",
+            error: error instanceof Error ? error.message : "invalid tool input"
+          });
+          return true;
+        }
+        if (
+          incoming.contract.intent.snapshot.action.toolRef !== incoming.contract.manifest.runtimeBinding.toolRef ||
+          incoming.contract.intent.snapshot.action.operation !== incoming.contract.manifest.runtimeBinding.operation
+        ) {
+          respondJson(res, 422, {
+            schemaVersion: CONTRACT_SCHEMA_VERSION,
+            accepted: false,
+            errorCode: "TOOL_RUNTIME_BINDING_MISMATCH"
+          });
+          return true;
+        }
+        const decision = await queryPolicyForExecution(policyClient, {
+          principalContext: principal.context,
+          actionClass: incoming.contract.intent.snapshot.action.actionClass,
+          actionId: incoming.contract.intent.snapshot.action.actionId,
+          resource: incoming.contract.intent.snapshot.target,
+          requestedCapabilities: incoming.contract.intent.snapshot.requiredCapabilities,
+          tenantId: incoming.contract.intent.snapshot.tenantId,
+          workspaceId: incoming.contract.intent.snapshot.workspaceId,
+          trace,
+          approvalPresent: incoming.contract.artifact.approvalState === "approved",
+          skipApprovalRequested: false,
+          riskFlags: incoming.contract.intent.snapshot.risk.reasons,
+          riskDeclaredLevel: incoming.contract.intent.snapshot.risk.level
+        });
+        if (decision.decision === "DENY" || decision.decision === "REQUIRE_APPROVAL") {
+          respondJson(res, 403, {
+            schemaVersion: CONTRACT_SCHEMA_VERSION,
+            accepted: false,
+            validation: {
+              code: "POLICY_BLOCKED_EXECUTION",
+              detail: decision
+            }
+          });
+          return true;
+        }
+        const baseRuntimePolicy = deriveRuntimePolicy({
+          intent: incoming.contract.intent,
+          artifact: incoming.contract.artifact,
+          policyDecision: decision,
+          sandboxProfileDefault: config.sandboxProfileDefault,
+          egressWhitelistPolicy: config.egressWhitelistPolicy
+        });
+        const runtimePolicy = mergeRuntimePolicyWithToolHints({
+          baseRuntimePolicy,
+          toolContract: incoming.contract
+        });
+        const runId = `run:${Date.now()}:${Math.random().toString(16).slice(2, 10)}`;
+        const executionToken = tokenService.issueToken({
+          caller: buildServicePrincipalReference(config.serviceName),
+          subject: { principalId: incoming.contract.intent.intentId, principalType: "tool" },
+          scopes: [`execution.run:${runId}`, "execution.runtime.invoke"],
+          tenantId: incoming.contract.intent.snapshot.tenantId,
+          workspaceId: incoming.contract.intent.snapshot.workspaceId,
+          ttlSeconds: config.executionTokenTtlSeconds
+        });
+        const runtimeRequest = executorApiRequestSchema.parse({
+          schemaVersion: "1.0",
+          runId,
+          intentId: incoming.contract.intent.intentId,
+          artifactId: incoming.contract.artifact.artifactId,
+          toolRef: incoming.contract.manifest.runtimeBinding.toolRef,
+          operation: incoming.contract.manifest.runtimeBinding.operation,
+          parameters: validatedInput,
+          runtimePolicy,
+          executionToken,
+          trace
+        });
+        if (incoming.dryRun) {
+          consumedArtifacts.add(incoming.contract.artifact.artifactId);
+          respondJson(res, 202, {
+            schemaVersion: CONTRACT_SCHEMA_VERSION,
+            accepted: true,
+            dryRun: true,
+            runId,
+            intentId: incoming.contract.intent.intentId,
+            artifactId: incoming.contract.artifact.artifactId,
+            runtimePolicy
+          });
+          return true;
+        }
+        const run = await runSandboxedExecution({
+          request: runtimeRequest,
+          tokenService,
+          decisionAuditRecordId: decision.auditRecordId,
+          executionAuditEventId: `exec-audit:${runId}`,
+          ...(incoming.secretValuesByRef ? { secretValuesByRef: incoming.secretValuesByRef } : {}),
+          sandboxRootDir: config.sandboxRootDir,
+          maxOutputBytes: config.sandboxMaxOutputBytes
+        });
+        consumedArtifacts.add(incoming.contract.artifact.artifactId);
+        let validatedOutput: Record<string, unknown> | undefined;
+        if (run.artifact.status === "completed") {
+          try {
+            validatedOutput = validateToolOutput(incoming.contract.manifest.toolId, run.artifact.result);
+          } catch (error) {
+            respondJson(res, 422, {
+              schemaVersion: CONTRACT_SCHEMA_VERSION,
+              accepted: false,
+              errorCode: "TOOL_OUTPUT_VALIDATION_FAILED",
+              error: error instanceof Error ? error.message : "invalid tool output",
+              runId,
+              resultArtifact: run.artifact
+            });
+            return true;
+          }
+        }
+        respondJson(res, 202, {
+          schemaVersion: CONTRACT_SCHEMA_VERSION,
+          accepted: true,
+          dryRun: false,
+          runId,
+          intentId: incoming.contract.intent.intentId,
+          artifactId: incoming.contract.artifact.artifactId,
+          decision,
+          resultArtifact: run.artifact,
+          ...(validatedOutput ? { toolOutput: validatedOutput } : {})
         });
         return true;
       }

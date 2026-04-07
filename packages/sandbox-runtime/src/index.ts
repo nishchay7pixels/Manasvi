@@ -273,11 +273,135 @@ const handlers = {
     await fs.promises.writeFile(target, content, "utf8");
     return { wrote: target, bytes: Buffer.byteLength(content, "utf8") };
   },
+  "tool:file-read": async (parameters) => {
+    const target = String(parameters.path || "");
+    const encoding = parameters.encoding === "base64" ? "base64" : "utf8";
+    const value = await fs.promises.readFile(target);
+    const content = encoding === "base64" ? value.toString("base64") : value.toString("utf8");
+    return {
+      path: target,
+      encoding,
+      content,
+      bytes: value.byteLength
+    };
+  },
   "tool:http-get": async (parameters) => {
     const url = String(parameters.url || "");
     const response = await fetch(url);
     const text = await response.text();
-    return { status: response.status, preview: text.slice(0, 200) };
+    return {
+      url,
+      status: response.status,
+      preview: text.slice(0, 800),
+      contentType: response.headers.get("content-type") || undefined
+    };
+  },
+  "tool:web-search": async (parameters) => {
+    const query = String(parameters.query || "").trim();
+    const maxResults = Math.max(1, Math.min(10, Number(parameters.maxResults || 5)));
+    const endpoint =
+      "https://duckduckgo.com/?q=" +
+      encodeURIComponent(query) +
+      "&format=json&pretty=0&no_html=1&no_redirect=1";
+    const response = await fetch(endpoint);
+    const data = await response.json();
+    const abstractText = String(data.AbstractText || "").trim();
+    const abstractUrl = String(data.AbstractURL || "").trim();
+    const heading = String(data.Heading || query || "Result").trim();
+    const related = Array.isArray(data.RelatedTopics) ? data.RelatedTopics : [];
+    const parsedRelated = related
+      .flatMap((item) => {
+        if (item && typeof item === "object" && Array.isArray(item.Topics)) {
+          return item.Topics;
+        }
+        return [item];
+      })
+      .filter((item) => item && typeof item === "object")
+      .map((item) => ({
+        title: String(item.Text || "Related result"),
+        url: String(item.FirstURL || "https://duckduckgo.com"),
+        snippet: String(item.Text || "").slice(0, 240)
+      }))
+      .slice(0, maxResults);
+    const firstResult =
+      abstractText.length > 0
+        ? [
+            {
+              title: heading,
+              url: abstractUrl || "https://duckduckgo.com",
+              snippet: abstractText.slice(0, 240)
+            }
+          ]
+        : [];
+    return {
+      query,
+      results: [...firstResult, ...parsedRelated].slice(0, maxResults)
+    };
+  },
+  "tool:shell-command": async (parameters) => {
+    const { spawn } = require("node:child_process");
+    const command = String(parameters.command || "");
+    const args = Array.isArray(parameters.args) ? parameters.args.map(String) : [];
+    const allowedCommands = Array.isArray(parameters.allowedCommands)
+      ? parameters.allowedCommands.map(String)
+      : ["echo", "pwd", "ls"];
+    const timeoutMs = Math.max(1, Math.min(120000, Number(parameters.timeoutMs || 5000)));
+    if (!allowedCommands.includes(command)) {
+      const err = new Error("COMMAND_NOT_ALLOWED:" + command);
+      err.code = "COMMAND_NOT_ALLOWED";
+      throw err;
+    }
+    const result = await new Promise((resolve, reject) => {
+      const child = spawn(command, args, {
+        shell: false,
+        stdio: ["ignore", "pipe", "pipe"]
+      });
+      let stdout = "";
+      let stderr = "";
+      const timer = setTimeout(() => {
+        child.kill("SIGKILL");
+        const err = new Error("COMMAND_TIMEOUT");
+        err.code = "COMMAND_TIMEOUT";
+        reject(err);
+      }, timeoutMs);
+      child.stdout.on("data", (chunk) => {
+        stdout += String(chunk);
+      });
+      child.stderr.on("data", (chunk) => {
+        stderr += String(chunk);
+      });
+      child.on("error", (error) => {
+        clearTimeout(timer);
+        reject(error);
+      });
+      child.on("close", (code) => {
+        clearTimeout(timer);
+        resolve({
+          command,
+          args,
+          exitCode: Number(code ?? -1),
+          stdout,
+          stderr
+        });
+      });
+    });
+    return result;
+  },
+  "tool:memory-write": async (parameters) => {
+    const namespace = String(parameters.namespace || "memory:default");
+    const note = String(parameters.note || "");
+    return {
+      namespace,
+      noteId: "note:" + Date.now().toString(36),
+      persisted: note.length > 0
+    };
+  },
+  "tool:approval-request": async (parameters) => {
+    return {
+      intentId: String(parameters.intentId || ""),
+      approvalRequestCreated: true,
+      approvalRequestId: "approval-request:" + Date.now().toString(36)
+    };
   },
   "tool:env-dump": async (_parameters) => {
     const filtered = Object.fromEntries(

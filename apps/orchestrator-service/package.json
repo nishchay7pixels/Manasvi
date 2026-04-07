@@ -21,6 +21,8 @@
     "@manasvi/policy-sdk": "workspace:*",
     "@manasvi/session-sdk": "workspace:*",
     "@manasvi/service-runtime": "workspace:*",
+    "@manasvi/tool-registry": "workspace:*",
+    "@manasvi/tool-sdk": "workspace:*",
     "zod": "^3.24.3"
   }
 }

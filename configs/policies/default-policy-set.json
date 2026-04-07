@@ -204,6 +204,112 @@
           }
         },
         {
+          "ruleId": "allow-orchestrator-read-filesystem-tool",
+          "description": "Allow orchestrator to invoke explicit read-only filesystem tools.",
+          "priority": 680,
+          "effect": "allow",
+          "enabled": true,
+          "selectors": {
+            "callerTypes": ["service"],
+            "actorTypes": ["human_user", "agent"],
+            "callerIds": ["service:orchestrator-service"],
+            "actorIds": []
+          },
+          "actionClasses": ["read", "access-filesystem"],
+          "resourceClasses": ["filesystem-zone", "tool-endpoint"],
+          "resourceIdPatterns": ["filesystem:*", "tool.local-file-read"],
+          "requiredCapabilities": ["filesystem.read"],
+          "conditions": {
+            "requireTenantMatch": true,
+            "requireWorkspaceMatch": true,
+            "allowSkipApproval": false,
+            "maxRiskLevel": "medium"
+          },
+          "metadata": {
+            "highRiskCoverage": false,
+            "tags": ["tooling", "filesystem", "read-only"]
+          }
+        },
+        {
+          "ruleId": "allow-orchestrator-network-fetch-tools",
+          "description": "Allow network read tools with explicit capability and bounded risk.",
+          "priority": 685,
+          "effect": "allow",
+          "enabled": true,
+          "selectors": {
+            "callerTypes": ["service"],
+            "actorTypes": ["human_user", "agent"],
+            "callerIds": ["service:orchestrator-service"],
+            "actorIds": []
+          },
+          "actionClasses": ["access-network", "read"],
+          "resourceClasses": ["network-zone", "tool-endpoint"],
+          "resourceIdPatterns": ["network:*", "tool.http-fetch", "tool.web-search"],
+          "requiredCapabilities": ["network.fetch"],
+          "conditions": {
+            "requireTenantMatch": true,
+            "requireWorkspaceMatch": true,
+            "allowSkipApproval": false,
+            "maxRiskLevel": "medium"
+          },
+          "metadata": {
+            "highRiskCoverage": true,
+            "tags": ["tooling", "network", "read-only"]
+          }
+        },
+        {
+          "ruleId": "require-approval-shell-command-tools",
+          "description": "Shell command tools always require approval due privileged execution risk.",
+          "priority": 735,
+          "effect": "require_approval",
+          "enabled": true,
+          "selectors": {
+            "callerTypes": ["service"],
+            "actorTypes": ["human_user", "agent", "service"],
+            "callerIds": ["service:orchestrator-service"],
+            "actorIds": []
+          },
+          "actionClasses": ["execute", "external-side-effect"],
+          "resourceClasses": ["tool-endpoint", "filesystem-zone", "network-zone"],
+          "resourceIdPatterns": ["tool:*", "filesystem:*", "network:*"],
+          "requiredCapabilities": ["shell.execute"],
+          "conditions": {
+            "requireTenantMatch": true,
+            "requireWorkspaceMatch": true,
+            "allowSkipApproval": false
+          },
+          "metadata": {
+            "highRiskCoverage": true,
+            "tags": ["tooling", "shell", "approval"]
+          }
+        },
+        {
+          "ruleId": "require-approval-memory-write-tools",
+          "description": "Memory mutation tools require explicit approval.",
+          "priority": 730,
+          "effect": "require_approval",
+          "enabled": true,
+          "selectors": {
+            "callerTypes": ["service"],
+            "actorTypes": ["human_user", "agent"],
+            "callerIds": ["service:orchestrator-service"],
+            "actorIds": []
+          },
+          "actionClasses": ["mutate-memory"],
+          "resourceClasses": ["memory-namespace", "tool-endpoint"],
+          "resourceIdPatterns": ["memory:*", "tool.memory-note-write"],
+          "requiredCapabilities": ["memory.write"],
+          "conditions": {
+            "requireTenantMatch": true,
+            "requireWorkspaceMatch": true,
+            "allowSkipApproval": false
+          },
+          "metadata": {
+            "highRiskCoverage": true,
+            "tags": ["tooling", "memory", "approval"]
+          }
+        },
+        {
           "ruleId": "require-approval-orchestrator-external-side-effect",
           "description": "External side effects requested by orchestrator require approval.",
           "priority": 740,

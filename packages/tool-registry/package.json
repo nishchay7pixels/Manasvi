@@ -1,10 +1,21 @@
 {
-  "name": "@manasvi/execution-manager",
+  "name": "@manasvi/tool-registry",
   "version": "0.1.0",
   "private": true,
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "dependencies": {
+    "@manasvi/contracts": "workspace:*",
+    "@manasvi/tool-sdk": "workspace:*",
+    "zod": "^3.24.3"
+  },
   "scripts": {
     "build": "tsc -b",
     "dev": "tsx watch src/index.ts",
@@ -12,15 +23,5 @@
     "lint": "tsc --noEmit -p tsconfig.json --pretty false",
     "test": "tsx --test src/**/*.test.ts",
     "clean": "rm -rf dist tsconfig.tsbuildinfo"
-  },
-  "dependencies": {
-    "@manasvi/auth": "workspace:*",
-    "@manasvi/contracts": "workspace:*",
-    "@manasvi/executor-sdk": "workspace:*",
-    "@manasvi/policy-sdk": "workspace:*",
-    "@manasvi/sandbox-runtime": "workspace:*",
-    "@manasvi/service-runtime": "workspace:*",
-    "@manasvi/tool-sdk": "workspace:*",
-    "zod": "^3.24.3"
   }
 }

@@ -3,6 +3,7 @@ import {
   actionClassSchema,
   executionIntentSchema,
   policyResourceReferenceSchema,
+  toolManifestSchema,
   resolvedPrincipalContextSchema
 } from "@manasvi/contracts";
 import {
@@ -14,6 +15,14 @@ import { EventConsumer, InMemoryDeadLetterStore, RetryableError } from "@manasvi
 import { createModelAdapter } from "@manasvi/model-adapter";
 import { HttpPolicyClient } from "@manasvi/policy-sdk";
 import { ContextAssembler, InMemorySessionStore } from "@manasvi/session-sdk";
+import {
+  buildGovernedToolExecutionContract,
+  createGovernedToolInvocation,
+  createToolResult,
+  validateToolInput,
+  validateToolOutput
+} from "@manasvi/tool-sdk";
+import { InMemoryToolRegistry } from "@manasvi/tool-registry";
 import { readJsonBody, respondJson, startHttpService } from "@manasvi/service-runtime";
 import { z } from "zod";
 
@@ -69,6 +78,7 @@ async function main(): Promise<void> {
   });
   const harnessEventResults = new Map<string, HarnessEventResultRecord>();
   const executionIntents = new Map<string, z.infer<typeof executionIntentSchema>>();
+  const toolRegistry = new InMemoryToolRegistry({ preloadBuiltIns: true });
   const harnessResultTtlMs = config.harnessEventResultTtlSeconds * 1000;
 
   const upsertHarnessEventResult = (record: HarnessEventResultRecord): void => {
@@ -301,6 +311,25 @@ async function main(): Promise<void> {
     decision: z.enum(["approved", "rejected"]),
     reason: z.string().min(1).optional()
   });
+  const registerToolSchema = z.object({
+    manifest: toolManifestSchema
+  });
+  const updateToolStatusSchema = z.object({
+    toolId: z.string().min(1),
+    version: z.string().min(1),
+    status: z.enum(["enabled", "disabled", "deprecated"])
+  });
+  const invokeToolSchema = z.object({
+    tenantId: z.string().min(1),
+    workspaceId: z.string().min(1),
+    toolId: z.string().min(1),
+    toolVersion: z.string().min(1).optional(),
+    sessionId: z.string().min(1).optional(),
+    input: z.record(z.unknown()),
+    requestedSecretRefs: z.array(z.string().min(1)).default([]),
+    riskFlags: z.array(z.string().min(1)).default([]),
+    dryRun: z.boolean().default(false)
+  });
 
   const issueServiceToken = (scopes: string[]): string =>
     tokenService.issueToken({
@@ -344,6 +373,25 @@ async function main(): Promise<void> {
     return response.json();
   };
 
+  const executeToolContract = async (contract: ReturnType<typeof buildGovernedToolExecutionContract>, dryRun: boolean) => {
+    const response = await fetch(`${config.executionManagerBaseUrl}/execution/execute-tool-contract`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${issueServiceToken(["execution.intent.execute", "service:orchestrator"])}`
+      },
+      body: JSON.stringify({
+        contract,
+        dryRun
+      })
+    });
+    const body = await response.json();
+    if (!response.ok) {
+      throw new Error(`Tool execution failed with status ${response.status}: ${JSON.stringify(body)}`);
+    }
+    return body;
+  };
+
   await startHttpService({
     config,
     serviceName: "orchestrator-service",
@@ -359,6 +407,311 @@ async function main(): Promise<void> {
           service: config.serviceName,
           plane: "orchestration",
           trace
+        });
+        return true;
+      }
+      if (req.method === "GET" && req.url?.startsWith("/tools/metadata")) {
+        const principal = principalResolver.resolveFromHttpHeaders(req.headers, {
+          requireAuthentication: true,
+          allowActorOverride: false
+        });
+        if (!principal.ok) {
+          respondJson(res, principal.statusCode ?? 401, {
+            schemaVersion: CONTRACT_SCHEMA_VERSION,
+            errorCode: principal.errorCode
+          });
+          return true;
+        }
+        const url = new URL(req.url, "http://localhost");
+        const toolId = url.searchParams.get("toolId");
+        const version = url.searchParams.get("version");
+        if (toolId) {
+          const entry = toolRegistry.resolve(toolId, version ?? undefined);
+          if (!entry) {
+            respondJson(res, 404, {
+              schemaVersion: CONTRACT_SCHEMA_VERSION,
+              error: "tool not found"
+            });
+            return true;
+          }
+          respondJson(res, 200, {
+            schemaVersion: CONTRACT_SCHEMA_VERSION,
+            tool: entry,
+            explorer: toolRegistry.metadataExplorer().find((item) => item.toolId === entry.toolId && item.version === entry.version)
+          });
+          return true;
+        }
+        const statusParam = url.searchParams.get("status");
+        const status =
+          statusParam === "registered" || statusParam === "enabled" || statusParam === "disabled" || statusParam === "deprecated"
+            ? statusParam
+            : undefined;
+        respondJson(res, 200, {
+          schemaVersion: CONTRACT_SCHEMA_VERSION,
+          count: toolRegistry.list({ ...(status ? { status } : {}) }).length,
+          tools: toolRegistry.metadataExplorer({ ...(status ? { status } : {}) })
+        });
+        return true;
+      }
+      if (req.method === "POST" && req.url === "/tools/register") {
+        const principal = principalResolver.resolveFromHttpHeaders(req.headers, {
+          requireAuthentication: true,
+          allowActorOverride: true
+        });
+        if (!principal.ok || !principal.context) {
+          respondJson(res, principal.statusCode ?? 401, {
+            schemaVersion: CONTRACT_SCHEMA_VERSION,
+            accepted: false,
+            errorCode: principal.errorCode
+          });
+          return true;
+        }
+        const incoming = registerToolSchema.parse(await readJsonBody(req));
+        const entry = toolRegistry.register({
+          manifest: incoming.manifest,
+          registeredBy: principal.context.actor
+        });
+        logger.info("Tool registered", {
+          toolId: entry.toolId,
+          version: entry.version,
+          actionClass: entry.manifest.actionClass,
+          sideEffectClass: entry.manifest.sideEffectClass,
+          traceId: trace.traceId,
+          correlationId: trace.correlationId
+        });
+        respondJson(res, 201, {
+          schemaVersion: CONTRACT_SCHEMA_VERSION,
+          accepted: true,
+          entry
+        });
+        return true;
+      }
+      if (req.method === "POST" && req.url === "/tools/status") {
+        const principal = principalResolver.resolveFromHttpHeaders(req.headers, {
+          requireAuthentication: true,
+          allowActorOverride: true
+        });
+        if (!principal.ok) {
+          respondJson(res, principal.statusCode ?? 401, {
+            schemaVersion: CONTRACT_SCHEMA_VERSION,
+            accepted: false,
+            errorCode: principal.errorCode
+          });
+          return true;
+        }
+        const incoming = updateToolStatusSchema.parse(await readJsonBody(req));
+        const entry = toolRegistry.setStatus(incoming);
+        respondJson(res, 200, {
+          schemaVersion: CONTRACT_SCHEMA_VERSION,
+          accepted: true,
+          entry
+        });
+        return true;
+      }
+      if (req.method === "POST" && req.url === "/tools/invoke") {
+        const principal = principalResolver.resolveFromHttpHeaders(req.headers, {
+          requireAuthentication: true,
+          allowActorOverride: true
+        });
+        if (!principal.ok || !principal.context) {
+          respondJson(res, principal.statusCode ?? 401, {
+            schemaVersion: CONTRACT_SCHEMA_VERSION,
+            accepted: false,
+            errorCode: principal.errorCode
+          });
+          return true;
+        }
+        const incoming = invokeToolSchema.parse(await readJsonBody(req));
+        const registryEntry = toolRegistry.resolve(incoming.toolId, incoming.toolVersion);
+        if (!registryEntry) {
+          respondJson(res, 404, {
+            schemaVersion: CONTRACT_SCHEMA_VERSION,
+            accepted: false,
+            errorCode: "TOOL_NOT_REGISTERED"
+          });
+          return true;
+        }
+        if (registryEntry.status !== "enabled") {
+          respondJson(res, 409, {
+            schemaVersion: CONTRACT_SCHEMA_VERSION,
+            accepted: false,
+            errorCode: "TOOL_NOT_ENABLED"
+          });
+          return true;
+        }
+        let validatedInput: Record<string, unknown>;
+        try {
+          validatedInput = validateToolInput(registryEntry.toolId, incoming.input);
+        } catch (error) {
+          const result = createToolResult({
+            invocationId: `tool-invocation:invalid:${Date.now()}`,
+            toolId: registryEntry.toolId,
+            toolVersion: registryEntry.version,
+            status: "validation_failed",
+            output: {},
+            error: {
+              code: "TOOL_INPUT_VALIDATION_FAILED",
+              message: error instanceof Error ? error.message : "invalid tool input"
+            },
+            provenance: {
+              source: "orchestrator-service",
+              trustClassification: "CONTROL_TRUSTED"
+            },
+            runtime: {},
+            trace
+          });
+          respondJson(res, 422, {
+            schemaVersion: CONTRACT_SCHEMA_VERSION,
+            accepted: false,
+            result
+          });
+          return true;
+        }
+        const decision = await queryPolicyForOrchestration(policyClient, {
+          principalContext: principal.context,
+          actionClass: registryEntry.manifest.policyBinding.policyActionClass,
+          actionId: `tool.invoke.${registryEntry.toolId}`,
+          resource: {
+            ...registryEntry.manifest.policyBinding.resource,
+            tenantId: incoming.tenantId,
+            workspaceId: incoming.workspaceId,
+            attributes: {
+              toolId: registryEntry.toolId,
+              sideEffectClass: registryEntry.manifest.sideEffectClass,
+              mutability: registryEntry.manifest.mutability
+            }
+          },
+          requestedCapabilities: registryEntry.manifest.capabilities.map((item) => item.capabilityId),
+          tenantId: incoming.tenantId,
+          workspaceId: incoming.workspaceId,
+          trace,
+          ...(incoming.sessionId ? { sessionId: incoming.sessionId } : {}),
+          riskFlags: [...incoming.riskFlags, ...registryEntry.manifest.tags]
+        });
+        if (decision.decision === "DENY") {
+          const result = createToolResult({
+            invocationId: `tool-invocation:denied:${Date.now()}`,
+            toolId: registryEntry.toolId,
+            toolVersion: registryEntry.version,
+            status: "policy_denied",
+            output: {},
+            error: {
+              code: "POLICY_DENIED",
+              message: decision.reasonCodes.join(",")
+            },
+            provenance: {
+              source: "policy-service",
+              trustClassification: "CONTROL_TRUSTED"
+            },
+            runtime: {},
+            trace
+          });
+          respondJson(res, 403, {
+            schemaVersion: CONTRACT_SCHEMA_VERSION,
+            accepted: false,
+            decision,
+            result
+          });
+          return true;
+        }
+
+        const invocation = createGovernedToolInvocation({
+          toolId: registryEntry.toolId,
+          toolVersion: registryEntry.version,
+          tenantId: incoming.tenantId,
+          workspaceId: incoming.workspaceId,
+          actor: principal.context.actor,
+          caller: principal.context.caller,
+          ...(incoming.sessionId ? { sessionId: incoming.sessionId } : {}),
+          input: validatedInput,
+          requestedSecretRefs: incoming.requestedSecretRefs,
+          trace
+        });
+        const intent = buildExecutionIntentFromPolicy({
+          decision,
+          principalContext: principal.context,
+          tenantId: incoming.tenantId,
+          workspaceId: incoming.workspaceId,
+          ...(incoming.sessionId ? { sessionId: incoming.sessionId } : {}),
+          trace,
+          action: {
+            actionId: `tool.invoke.${registryEntry.toolId}`,
+            actionClass: registryEntry.manifest.policyBinding.policyActionClass,
+            operation: registryEntry.manifest.runtimeBinding.operation,
+            toolRef: registryEntry.manifest.runtimeBinding.toolRef,
+            parameters: validatedInput
+          },
+          target: {
+            ...registryEntry.manifest.policyBinding.resource,
+            tenantId: incoming.tenantId,
+            workspaceId: incoming.workspaceId,
+            attributes: {
+              toolId: registryEntry.toolId
+            }
+          },
+          requiredCapabilities: registryEntry.manifest.capabilities.map((item) => item.capabilityId),
+          ttlSeconds: config.executionIntentTtlSeconds,
+          idempotencyKey: invocation.invocationId
+        });
+        executionIntents.set(intent.intentId, intent);
+        if (decision.approvalRequired) {
+          const requestResult = await createApprovalRequest(intent);
+          const pendingIntent = executionIntentSchema.parse({
+            ...intent,
+            approval: {
+              ...intent.approval,
+              approvalRequestId: requestResult.approvalRequestId
+            },
+            updatedAt: new Date().toISOString()
+          });
+          executionIntents.set(pendingIntent.intentId, pendingIntent);
+          respondJson(res, 202, {
+            schemaVersion: CONTRACT_SCHEMA_VERSION,
+            accepted: true,
+            pendingApproval: true,
+            toolId: registryEntry.toolId,
+            invocation,
+            intent: pendingIntent,
+            decision,
+            approvalRequestId: requestResult.approvalRequestId
+          });
+          return true;
+        }
+        const artifactResult = await issueSystemArtifact(intent);
+        const contract = buildGovernedToolExecutionContract({
+          manifest: registryEntry.manifest,
+          invocation,
+          intent,
+          artifact: artifactResult.artifact,
+          trace
+        });
+        const execution = await executeToolContract(contract, incoming.dryRun);
+        if (execution?.toolOutput) {
+          try {
+            validateToolOutput(registryEntry.toolId, execution.toolOutput);
+          } catch (error) {
+            respondJson(res, 422, {
+              schemaVersion: CONTRACT_SCHEMA_VERSION,
+              accepted: false,
+              errorCode: "TOOL_OUTPUT_VALIDATION_FAILED",
+              error: error instanceof Error ? error.message : "tool output validation failed",
+              decision,
+              intent,
+              execution
+            });
+            return true;
+          }
+        }
+        respondJson(res, 202, {
+          schemaVersion: CONTRACT_SCHEMA_VERSION,
+          accepted: true,
+          pendingApproval: false,
+          toolId: registryEntry.toolId,
+          invocation,
+          intent,
+          decision,
+          artifact: artifactResult.artifact,
+          execution
         });
         return true;
       }

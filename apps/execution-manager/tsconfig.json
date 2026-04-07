@@ -22,6 +22,9 @@
     },
     {
       "path": "../../packages/service-runtime"
+    },
+    {
+      "path": "../../packages/tool-sdk"
     }
   ],
   "include": ["src/**/*.ts"]
