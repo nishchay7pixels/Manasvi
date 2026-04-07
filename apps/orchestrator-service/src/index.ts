@@ -29,6 +29,7 @@ import { readJsonBody, respondJson, startHttpService } from "@manasvi/service-ru
 import { z } from "zod";
 
 import { loadOrchestratorServiceConfig } from "./config.js";
+import { AdapterBackedPlannerProvider, GovernedAgentRuntime } from "./agent-runtime.js";
 import { buildExecutionIntentFromPolicy } from "./intent-planner.js";
 import { buildHarnessEventResultRecord, buildModelInvocationRequest, type HarnessEventResultRecord } from "./model-integration.js";
 import { queryPolicyForOrchestration } from "./policy-integration.js";
@@ -499,6 +500,16 @@ async function main(): Promise<void> {
     riskFlags: z.array(z.string().min(1)).default([]),
     dryRun: z.boolean().default(false)
   });
+  const agentTurnRequestSchema = z.object({
+    tenantId: z.string().min(1),
+    workspaceId: z.string().min(1),
+    messageText: z.string().min(1),
+    sessionId: z.string().min(1).optional(),
+    maxIterations: z.number().int().positive().max(20).optional(),
+    maxConsecutiveFailures: z.number().int().positive().max(10).optional(),
+    strictPlannerParsing: z.boolean().optional(),
+    approvalSimulation: z.enum(["pending", "approved", "rejected"]).optional()
+  });
 
   const issueServiceToken = (scopes: string[]): string =>
     tokenService.issueToken({
@@ -560,6 +571,18 @@ async function main(): Promise<void> {
     }
     return body;
   };
+  const plannerProvider = new AdapterBackedPlannerProvider(modelAdapter);
+  const agentRuntime = new GovernedAgentRuntime({
+    policyClient,
+    memoryClient,
+    contextAssembler,
+    plannerProvider,
+    toolRegistry,
+    servicePrincipal,
+    createApprovalRequest,
+    issueSystemArtifact,
+    executeToolContract
+  });
 
   await startHttpService({
     config,
@@ -882,6 +905,60 @@ async function main(): Promise<void> {
           artifact: artifactResult.artifact,
           execution
         });
+        return true;
+      }
+      if (req.method === "POST" && req.url === "/agent-runtime/turn") {
+        const principal = principalResolver.resolveFromHttpHeaders(req.headers, {
+          requireAuthentication: true,
+          allowActorOverride: true
+        });
+        if (!principal.ok || !principal.context) {
+          respondJson(res, principal.statusCode ?? 401, {
+            schemaVersion: CONTRACT_SCHEMA_VERSION,
+            accepted: false,
+            errorCode: principal.errorCode
+          });
+          return true;
+        }
+        const incoming = agentTurnRequestSchema.parse(await readJsonBody(req));
+        const run = await agentRuntime.runTurn({
+          tenantId: incoming.tenantId,
+          workspaceId: incoming.workspaceId,
+          messageText: incoming.messageText,
+          principalContext: principal.context,
+          trace,
+          ...(incoming.sessionId ? { sessionId: incoming.sessionId } : {}),
+          config: {
+            maxIterations: incoming.maxIterations ?? config.agentLoopMaxIterations,
+            maxConsecutiveFailures: incoming.maxConsecutiveFailures ?? config.agentLoopMaxConsecutiveFailures,
+            strictPlannerParsing: incoming.strictPlannerParsing ?? config.agentLoopStrictPlannerParsing
+          },
+          approvalSimulation: incoming.approvalSimulation ?? "pending"
+        });
+        logger.info("Agent runtime turn processed", {
+          runId: run.runId,
+          state: run.state,
+          outcome: run.outcome.status,
+          iterations: run.iterations,
+          sessionId: run.session.sessionId,
+          traceId: run.trace.traceId,
+          correlationId: run.trace.correlationId
+        });
+        respondJson(
+          res,
+          run.outcome.status === "completed"
+            ? 200
+            : run.outcome.status === "awaiting_approval"
+              ? 202
+              : run.outcome.status === "halted_denied"
+                ? 403
+                : 500,
+          {
+            schemaVersion: CONTRACT_SCHEMA_VERSION,
+            accepted: run.outcome.status === "completed",
+            run
+          }
+        );
         return true;
       }
       if (req.method === "POST" && req.url === "/orchestration/plan") {

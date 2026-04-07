@@ -31,6 +31,9 @@ export const orchestratorConfigSchema = baseServiceConfigSchema.extend({
   ]).default("per_user_isolated"),
   sessionContextTokenBudget: z.number().int().positive().default(2048),
   sessionRecentMessageLimit: z.number().int().positive().default(20),
+  agentLoopMaxIterations: z.number().int().positive().max(20).default(6),
+  agentLoopMaxConsecutiveFailures: z.number().int().positive().max(10).default(2),
+  agentLoopStrictPlannerParsing: z.boolean().default(true),
   internalAuthIssuer: z.string().min(1).default("manasvi.internal.auth"),
   internalAuthAudience: z.string().min(1).default("manasvi.internal.services"),
   internalAuthKeyId: z.string().min(1),
@@ -75,6 +78,9 @@ export async function loadOrchestratorServiceConfig(): Promise<OrchestratorServi
       sessionDefaultIsolationMode: env.SESSION_DEFAULT_ISOLATION_MODE ?? "per_user_isolated",
       sessionContextTokenBudget: Number(env.SESSION_CONTEXT_TOKEN_BUDGET ?? 2048),
       sessionRecentMessageLimit: Number(env.SESSION_RECENT_MESSAGE_LIMIT ?? 20),
+      agentLoopMaxIterations: Number(env.AGENT_LOOP_MAX_ITERATIONS ?? 6),
+      agentLoopMaxConsecutiveFailures: Number(env.AGENT_LOOP_MAX_CONSECUTIVE_FAILURES ?? 2),
+      agentLoopStrictPlannerParsing: env.AGENT_LOOP_STRICT_PLANNER_PARSING !== "false",
       eventSigningSecretsByKeyId: (env.EVENT_SIGNING_KEYS ?? "")
         .split(",")
         .map((entry) => entry.trim())
