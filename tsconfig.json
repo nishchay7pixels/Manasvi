@@ -8,6 +8,7 @@
     { "path": "packages/service-runtime" },
     { "path": "packages/event-bus" },
     { "path": "packages/model-adapter" },
+    { "path": "packages/memory-sdk" },
     { "path": "packages/policy-sdk" },
     { "path": "packages/executor-sdk" },
     { "path": "packages/tool-sdk" },

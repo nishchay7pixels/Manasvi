@@ -9,9 +9,17 @@
       "path": "../../packages/contracts"
     },
     {
+      "path": "../../packages/auth"
+    },
+    {
+      "path": "../../packages/memory-sdk"
+    },
+    {
+      "path": "../../packages/policy-sdk"
+    },
+    {
       "path": "../../packages/service-runtime"
     }
   ],
   "include": ["src/**/*.ts"]
 }
-

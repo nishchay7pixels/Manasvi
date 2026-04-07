@@ -1,24 +1,25 @@
 {
-  "name": "@manasvi/memory-service",
+  "name": "@manasvi/memory-sdk",
   "version": "0.1.0",
   "private": true,
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "dependencies": {
+    "@manasvi/contracts": "workspace:*"
+  },
   "scripts": {
     "build": "tsc -b",
     "dev": "tsx watch src/index.ts",
     "typecheck": "tsc -b --pretty false",
     "lint": "tsc --noEmit -p tsconfig.json --pretty false",
-    "test": "tsx --test src/**/*.test.ts",
+    "test": "node --test dist/**/*.test.js",
     "clean": "rm -rf dist tsconfig.tsbuildinfo"
-  },
-  "dependencies": {
-    "@manasvi/auth": "workspace:*",
-    "@manasvi/contracts": "workspace:*",
-    "@manasvi/memory-sdk": "workspace:*",
-    "@manasvi/policy-sdk": "workspace:*",
-    "@manasvi/service-runtime": "workspace:*",
-    "zod": "^3.24.3"
   }
 }

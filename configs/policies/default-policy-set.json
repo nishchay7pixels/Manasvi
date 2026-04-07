@@ -177,6 +177,85 @@
           }
         },
         {
+          "ruleId": "allow-orchestrator-read-memory-namespaces",
+          "description": "Orchestrator may read memory namespaces in the same tenant/workspace.",
+          "priority": 655,
+          "effect": "allow",
+          "enabled": true,
+          "selectors": {
+            "callerTypes": ["service"],
+            "actorTypes": ["human_user", "agent", "service"],
+            "callerIds": ["service:orchestrator-service"],
+            "actorIds": []
+          },
+          "actionClasses": ["read"],
+          "resourceClasses": ["memory-namespace"],
+          "resourceIdPatterns": ["session/*", "user/*", "org/*", "external/*", "audit/*", "memory/query"],
+          "requiredCapabilities": ["memory.read"],
+          "conditions": {
+            "requireTenantMatch": true,
+            "requireWorkspaceMatch": true,
+            "allowSkipApproval": false,
+            "maxRiskLevel": "high"
+          },
+          "metadata": {
+            "highRiskCoverage": false,
+            "tags": ["memory", "read"]
+          }
+        },
+        {
+          "ruleId": "allow-orchestrator-write-ephemeral-untrusted-memory",
+          "description": "Orchestrator may write session ephemeral and untrusted external memory.",
+          "priority": 660,
+          "effect": "allow",
+          "enabled": true,
+          "selectors": {
+            "callerTypes": ["service"],
+            "actorTypes": ["human_user", "agent", "service"],
+            "callerIds": ["service:orchestrator-service"],
+            "actorIds": []
+          },
+          "actionClasses": ["mutate-memory"],
+          "resourceClasses": ["memory-namespace"],
+          "resourceIdPatterns": ["session/*", "external/*", "audit/*"],
+          "requiredCapabilities": ["memory.write"],
+          "conditions": {
+            "requireTenantMatch": true,
+            "requireWorkspaceMatch": true,
+            "allowSkipApproval": false
+          },
+          "metadata": {
+            "highRiskCoverage": true,
+            "tags": ["memory", "write"]
+          }
+        },
+        {
+          "ruleId": "require-approval-memory-promotion-to-durable",
+          "description": "Promotion into durable user/org memory requires explicit approval path.",
+          "priority": 735,
+          "effect": "require_approval",
+          "enabled": true,
+          "selectors": {
+            "callerTypes": ["service"],
+            "actorTypes": ["human_user", "agent", "service"],
+            "callerIds": ["service:orchestrator-service"],
+            "actorIds": []
+          },
+          "actionClasses": ["mutate-memory", "approve"],
+          "resourceClasses": ["memory-namespace"],
+          "resourceIdPatterns": ["user/*", "org/*"],
+          "requiredCapabilities": ["memory.promote", "memory.promote.review"],
+          "conditions": {
+            "requireTenantMatch": true,
+            "requireWorkspaceMatch": true,
+            "allowSkipApproval": false
+          },
+          "metadata": {
+            "highRiskCoverage": true,
+            "tags": ["memory", "promotion", "approval"]
+          }
+        },
+        {
           "ruleId": "allow-orchestrator-read-tool-metadata",
           "description": "Orchestrator may perform low-risk read operations on tool endpoints without human approval.",
           "priority": 675,

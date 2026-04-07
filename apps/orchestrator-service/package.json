@@ -18,6 +18,7 @@
     "@manasvi/contracts": "workspace:*",
     "@manasvi/event-bus": "workspace:*",
     "@manasvi/model-adapter": "workspace:*",
+    "@manasvi/memory-sdk": "workspace:*",
     "@manasvi/policy-sdk": "workspace:*",
     "@manasvi/session-sdk": "workspace:*",
     "@manasvi/service-runtime": "workspace:*",

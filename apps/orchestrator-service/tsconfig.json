@@ -18,6 +18,9 @@
       "path": "../../packages/model-adapter"
     },
     {
+      "path": "../../packages/memory-sdk"
+    },
+    {
       "path": "../../packages/policy-sdk"
     },
     {

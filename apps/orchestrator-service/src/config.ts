@@ -19,6 +19,7 @@ export const orchestratorConfigSchema = baseServiceConfigSchema.extend({
   policyServiceBaseUrl: z.string().url().default("http://localhost:4103"),
   approvalServiceBaseUrl: z.string().url().default("http://localhost:4108"),
   executionManagerBaseUrl: z.string().url().default("http://localhost:4104"),
+  memoryServiceBaseUrl: z.string().url().default("http://localhost:4105"),
   executionIntentTtlSeconds: z.number().int().positive().max(86400).default(900),
   sessionDefaultIsolationMode: z.enum([
     "per_user_isolated",
@@ -69,6 +70,7 @@ export async function loadOrchestratorServiceConfig(): Promise<OrchestratorServi
       policyServiceBaseUrl: env.POLICY_SERVICE_BASE_URL ?? "http://localhost:4103",
       approvalServiceBaseUrl: env.APPROVAL_SERVICE_BASE_URL ?? "http://localhost:4108",
       executionManagerBaseUrl: env.EXECUTION_MANAGER_BASE_URL ?? "http://localhost:4104",
+      memoryServiceBaseUrl: env.MEMORY_SERVICE_BASE_URL ?? "http://localhost:4105",
       executionIntentTtlSeconds: Number(env.EXECUTION_INTENT_TTL_SECONDS ?? 900),
       sessionDefaultIsolationMode: env.SESSION_DEFAULT_ISOLATION_MODE ?? "per_user_isolated",
       sessionContextTokenBudget: Number(env.SESSION_CONTEXT_TOKEN_BUDGET ?? 2048),

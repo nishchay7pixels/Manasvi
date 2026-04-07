@@ -2,6 +2,7 @@ import {
   CONTRACT_SCHEMA_VERSION,
   actionClassSchema,
   executionIntentSchema,
+  type MemoryContextCandidatesResponse,
   policyResourceReferenceSchema,
   toolManifestSchema,
   resolvedPrincipalContextSchema
@@ -13,8 +14,9 @@ import {
 } from "@manasvi/auth";
 import { EventConsumer, InMemoryDeadLetterStore, RetryableError } from "@manasvi/event-bus";
 import { createModelAdapter } from "@manasvi/model-adapter";
+import { HttpMemoryClient } from "@manasvi/memory-sdk";
 import { HttpPolicyClient } from "@manasvi/policy-sdk";
-import { ContextAssembler, InMemorySessionStore } from "@manasvi/session-sdk";
+import { ContextAssembler, InMemorySessionStore, type ContextSourceInput } from "@manasvi/session-sdk";
 import {
   buildGovernedToolExecutionContract,
   createGovernedToolInvocation,
@@ -30,6 +32,72 @@ import { loadOrchestratorServiceConfig } from "./config.js";
 import { buildExecutionIntentFromPolicy } from "./intent-planner.js";
 import { buildHarnessEventResultRecord, buildModelInvocationRequest, type HarnessEventResultRecord } from "./model-integration.js";
 import { queryPolicyForOrchestration } from "./policy-integration.js";
+
+function memoryRecordToContextSource(input: {
+  record: {
+    recordId: string;
+    memoryClass: string;
+    trustClassification: ContextSourceInput["trustClassification"];
+    contentType: string;
+    content: { text?: string | undefined; data: Record<string, unknown> };
+    provenance: {
+      sourceType: string;
+      sourceId: string;
+      sourceRef: string;
+      originatingPrincipal?: ContextSourceInput["originatingPrincipal"] | undefined;
+      originatingService?: string | undefined;
+      createdAt: string;
+      linkedSessionId?: string | undefined;
+      derivation: {
+        derived: boolean;
+        derivationType?: string | undefined;
+        derivedFromRecordIds: string[];
+        derivedFromSourceRefs: string[];
+      };
+    };
+  };
+  sessionId: string;
+}): ContextSourceInput {
+  const sourceType =
+    input.record.memoryClass === "UNTRUSTED_EXTERNAL"
+      ? "retrieved-web-content"
+      : input.record.memoryClass === "ORG_SHARED_TRUSTED"
+        ? "shared-memory"
+        : input.record.memoryClass === "AUDIT_ACTION_HISTORY"
+          ? "risk-annotation"
+          : "user-memory";
+  const content =
+    input.record.content.text ??
+    JSON.stringify(input.record.content.data ?? {});
+  return {
+    sourceType,
+    sourceId: input.record.recordId,
+    sourceRef: `memory:${input.record.recordId}`,
+    content,
+    contentCategory: "memory-fact",
+    trustClassification: input.record.trustClassification,
+    ...(input.record.provenance.originatingPrincipal
+      ? { originatingPrincipal: input.record.provenance.originatingPrincipal }
+      : {}),
+    ...(input.record.provenance.originatingService
+      ? { originatingService: input.record.provenance.originatingService }
+      : {}),
+    observedAt: input.record.provenance.createdAt,
+    sessionId: input.sessionId,
+    metadata: {
+      memoryClass: input.record.memoryClass,
+      contentType: input.record.contentType
+    },
+    transformation: {
+      transformed: input.record.provenance.derivation.derived,
+      ...(input.record.provenance.derivation.derivationType
+        ? { transformType: input.record.provenance.derivation.derivationType }
+        : {}),
+      derivedFromChunkIds: input.record.provenance.derivation.derivedFromRecordIds,
+      derivedFromSourceRefs: input.record.provenance.derivation.derivedFromSourceRefs
+    }
+  };
+}
 
 async function main(): Promise<void> {
   const config = await loadOrchestratorServiceConfig();
@@ -66,6 +134,16 @@ async function main(): Promise<void> {
       tokenService.issueToken({
         caller: servicePrincipal,
         scopes: ["policy.evaluate", "service:orchestrator"]
+      })
+  });
+  const memoryClient = new HttpMemoryClient({
+    baseUrl: config.memoryServiceBaseUrl,
+    getAuthToken: () =>
+      tokenService.issueToken({
+        caller: servicePrincipal,
+        scopes: ["memory.read", "memory.write", "memory.promote", "service:orchestrator"],
+        tenantId: "tenant-local",
+        workspaceId: "workspace-local"
       })
   });
   const modelAdapter = createModelAdapter({
@@ -146,6 +224,21 @@ async function main(): Promise<void> {
     if (!payload.text || payload.text.length === 0) {
       throw new RetryableError("Empty text payload is retryable while upstream normalizer settles");
     }
+    const memoryCandidates: MemoryContextCandidatesResponse = await memoryClient.getContextCandidates({
+      schemaVersion: "1.0",
+      tenantId: event.tenantId,
+      workspaceId: event.workspaceId,
+      actorPrincipal: principalContext.actor,
+      callerPrincipal: principalContext.caller,
+      ...(event.session.sessionId ? { sessionId: event.session.sessionId } : {}),
+      queryText: payload.text,
+      maxPerClass: 3,
+      trace: event.trace
+    }).catch(() => ({
+      schemaVersion: "1.0" as const,
+      records: [],
+      trace: event.trace
+    }));
     const assembledContext = await contextAssembler.assembleForMessage({
       message: {
         messageId: event.eventId,
@@ -182,6 +275,12 @@ async function main(): Promise<void> {
         "Session is context hygiene only. Authorization still requires principal and policy."
       ],
       policyNotes: [`policy-decision:${decision.decision}:${decision.reasonCodes.join(",")}`],
+      additionalSources: memoryCandidates.records.map((record) =>
+        memoryRecordToContextSource({
+          record,
+          sessionId: event.session.sessionId ?? `session:pending:${event.eventId}`
+        })
+      ),
       tokenBudget: config.sessionContextTokenBudget
     });
     const modelRequest = buildModelInvocationRequest({
@@ -194,6 +293,76 @@ async function main(): Promise<void> {
     });
     try {
       const modelResponse = await modelAdapter.invoke(modelRequest);
+      await memoryClient.createRecord({
+        schemaVersion: "1.0",
+        memoryClass: "EPHEMERAL_SESSION",
+        namespace: `session/${assembledContext.session.sessionId}`,
+        tenantId: event.tenantId,
+        workspaceId: event.workspaceId,
+        ownerPrincipal: principalContext.actor,
+        trustClassification: "USER_OWNED",
+        contentType: "text/plain",
+        content: {
+          text: payload.text,
+          data: {}
+        },
+        tags: ["session-message", "context-source"],
+        provenance: {
+          sourceType: "session-message",
+          sourceId: event.eventId,
+          sourceRef: `event:${event.eventId}`,
+          originatingPrincipal: principalContext.actor,
+          originatingService: "orchestrator-service",
+          createdAt: new Date().toISOString(),
+          linkedSessionId: assembledContext.session.sessionId,
+          linkedMessageId: event.eventId,
+          derivation: {
+            derived: false,
+            derivedFromRecordIds: [],
+            derivedFromSourceRefs: []
+          }
+        },
+        sourceReferences: [`event:${event.eventId}`],
+        trace: event.trace
+      }).catch(() => undefined);
+      await memoryClient.createRecord({
+        schemaVersion: "1.0",
+        memoryClass: "AUDIT_ACTION_HISTORY",
+        namespace: `audit/${event.eventId}`,
+        tenantId: event.tenantId,
+        workspaceId: event.workspaceId,
+        ownerPrincipal: principalContext.actor,
+        trustClassification: "AUDIT_SECURITY",
+        contentType: "application/json",
+        content: {
+          data: {
+            modelProvider: modelResponse.provider,
+            model: modelResponse.model,
+            latencyMs: modelResponse.latencyMs,
+            policyDecision: decision.decision
+          }
+        },
+        tags: ["audit-linked", "model-response"],
+        provenance: {
+          sourceType: "audit-event-reference",
+          sourceId: event.eventId,
+          sourceRef: `event:${event.eventId}`,
+          originatingPrincipal: principalContext.actor,
+          originatingService: "orchestrator-service",
+          createdAt: new Date().toISOString(),
+          linkedSessionId: assembledContext.session.sessionId,
+          linkedMessageId: event.eventId,
+          linkedAuditRecordId: decision.auditRecordId,
+          derivation: {
+            derived: true,
+            derivationType: "execution-summary",
+            derivedFromRecordIds: [],
+            derivedFromSourceRefs: [`event:${event.eventId}`]
+          }
+        },
+        sourceReferences: [`audit:${decision.auditRecordId}`],
+        trace: event.trace
+      }).catch(() => undefined);
       upsertHarnessEventResult(
         buildHarnessEventResultRecord({
           eventId: event.eventId,
@@ -747,6 +916,21 @@ async function main(): Promise<void> {
           ...(incoming.sessionId ? { sessionId: incoming.sessionId } : {}),
           riskFlags: incoming.riskFlags
         });
+        const memoryCandidates: MemoryContextCandidatesResponse = await memoryClient.getContextCandidates({
+          schemaVersion: "1.0",
+          tenantId: incoming.tenantId,
+          workspaceId: incoming.workspaceId,
+          actorPrincipal: principal.context.actor,
+          callerPrincipal: principal.context.caller,
+          ...(incoming.sessionId ? { sessionId: incoming.sessionId } : {}),
+          queryText: incoming.messageText,
+          maxPerClass: 2,
+          trace
+        }).catch(() => ({
+          schemaVersion: "1.0" as const,
+          records: [],
+          trace
+        }));
         const assembledContext = await contextAssembler.assembleForMessage({
           message: {
             messageId: `plan:${Date.now()}`,
@@ -775,6 +959,12 @@ async function main(): Promise<void> {
             "Session membership does not grant privileges. Policy evaluation governs authorization."
           ],
           policyNotes: [`policy-decision:${decision.decision}`],
+          additionalSources: memoryCandidates.records.map((record) =>
+            memoryRecordToContextSource({
+              record,
+              sessionId: incoming.sessionId ?? `session:pending:plan`
+            })
+          ),
           tokenBudget: config.sessionContextTokenBudget
         });
         logger.info("Policy evaluated orchestration plan request", {
