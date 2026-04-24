@@ -19,7 +19,8 @@ export type ServiceName =
   | "memory-service"
   | "node-manager"
   | "audit-service"
-  | "api-gateway";
+  | "api-gateway"
+  | "extension-runtime";
 
 export const serviceNameSchema = z.enum([
   "ingress-service",
@@ -30,7 +31,8 @@ export const serviceNameSchema = z.enum([
   "memory-service",
   "node-manager",
   "audit-service",
-  "api-gateway"
+  "api-gateway",
+  "extension-runtime"
 ]);
 
 export type ReadinessStatus = "ready" | "not_ready";

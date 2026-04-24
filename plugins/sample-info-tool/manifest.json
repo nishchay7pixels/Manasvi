@@ -1,0 +1,87 @@
+{
+  "manifestVersion": "1.0",
+  "pluginId": "com.manasvi.sample.info-tool",
+  "name": "sample-info-tool",
+  "displayName": "Manasvi Info Tool (Sample)",
+  "description": "A read-only sample plugin that provides system info and echo tools. Demonstrates low-risk plugin with auto-approvable capabilities.",
+  "version": "0.1.0",
+  "publisher": "manasvi-project",
+  "runtimeType": "node",
+  "entrypoint": "plugins/sample-info-tool/plugin.mjs",
+  "supportedApiVersion": "1.0",
+  "riskClass": "low",
+  "requestedCapabilities": [
+    {
+      "capabilityId": "sample-info-tool:provide-tools",
+      "family": "provide-tools",
+      "scope": {},
+      "justification": "Plugin provides two read-only informational tools",
+      "required": true
+    }
+  ],
+  "providedTools": [
+    {
+      "toolId": "manasvi.info.echo",
+      "name": "echo",
+      "description": "Returns the input message unchanged. Useful for connectivity testing.",
+      "inputSchema": {
+        "type": "object",
+        "required": ["message"],
+        "properties": {
+          "message": { "type": "string", "description": "The message to echo back" }
+        }
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "echo": { "type": "string" }
+        }
+      },
+      "sideEffects": [],
+      "requiresApproval": false
+    },
+    {
+      "toolId": "manasvi.info.plugin-status",
+      "name": "plugin-status",
+      "description": "Returns metadata about this plugin: id, version, granted capabilities.",
+      "inputSchema": { "type": "object", "properties": {} },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "pluginId": { "type": "string" },
+          "version": { "type": "string" },
+          "grantedCapabilityCount": { "type": "number" }
+        }
+      },
+      "sideEffects": [],
+      "requiresApproval": false
+    }
+  ],
+  "providedHooks": [],
+  "requiredSecretRefs": [],
+  "requiredNetworkDomains": [],
+  "requiredFilesystemZones": [],
+  "resourceProfile": {
+    "maxMemoryMb": 64,
+    "maxCpuPercent": 5,
+    "maxFileDescriptors": 16,
+    "maxLogSizeKb": 1024,
+    "healthTimeoutMs": 5000,
+    "rpcTimeoutMs": 3000
+  },
+  "healthCheck": {
+    "method": "http",
+    "path": "/health",
+    "intervalMs": 30000,
+    "timeoutMs": 3000
+  },
+  "provenance": {
+    "publisher": "manasvi-project",
+    "publisherUrl": "https://github.com/manasvi-project",
+    "publishedAt": "2026-04-25T00:00:00Z"
+  },
+  "enabled": true,
+  "deprecationState": "active",
+  "tags": ["sample", "read-only", "echo"],
+  "category": "utility"
+}

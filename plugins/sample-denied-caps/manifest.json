@@ -1,0 +1,79 @@
+{
+  "manifestVersion": "1.0",
+  "pluginId": "com.manasvi.sample.denied-caps",
+  "name": "sample-denied-caps",
+  "displayName": "Capability Denial Demo (Sample)",
+  "description": "Demonstrates a high-risk plugin requesting capabilities that require explicit operator approval and will be denied in default configuration. Not intended for production use.",
+  "version": "0.1.0",
+  "publisher": "manasvi-project",
+  "runtimeType": "node",
+  "entrypoint": "plugins/sample-denied-caps/plugin.mjs",
+  "supportedApiVersion": "1.0",
+  "riskClass": "high",
+  "requestedCapabilities": [
+    {
+      "capabilityId": "sample-denied-caps:provide-tools",
+      "family": "provide-tools",
+      "scope": {},
+      "justification": "Plugin provides one informational tool",
+      "required": false
+    },
+    {
+      "capabilityId": "sample-denied-caps:access-network",
+      "family": "access-network",
+      "scope": { "domains": ["*.example.com"] },
+      "justification": "Plugin needs to fetch from example.com for demonstration",
+      "required": true
+    },
+    {
+      "capabilityId": "sample-denied-caps:access-secret",
+      "family": "access-secret",
+      "scope": { "refs": ["demo-api-key"] },
+      "justification": "Plugin requests access to a demo API key",
+      "required": false
+    }
+  ],
+  "providedTools": [
+    {
+      "toolId": "manasvi.demo.high-risk-info",
+      "name": "high-risk-info",
+      "description": "Returns information about which capabilities were granted vs denied.",
+      "inputSchema": { "type": "object", "properties": {} },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "granted": { "type": "array", "items": { "type": "string" } },
+          "denied": { "type": "array", "items": { "type": "string" } }
+        }
+      },
+      "sideEffects": [],
+      "requiresApproval": false
+    }
+  ],
+  "providedHooks": [],
+  "requiredSecretRefs": ["demo-api-key"],
+  "requiredNetworkDomains": ["*.example.com"],
+  "requiredFilesystemZones": [],
+  "resourceProfile": {
+    "maxMemoryMb": 128,
+    "maxCpuPercent": 10,
+    "maxFileDescriptors": 32,
+    "maxLogSizeKb": 2048,
+    "healthTimeoutMs": 5000,
+    "rpcTimeoutMs": 5000
+  },
+  "healthCheck": {
+    "method": "http",
+    "path": "/health",
+    "intervalMs": 30000,
+    "timeoutMs": 3000
+  },
+  "provenance": {
+    "publisher": "manasvi-project",
+    "publishedAt": "2026-04-25T00:00:00Z"
+  },
+  "enabled": true,
+  "deprecationState": "active",
+  "tags": ["sample", "high-risk", "capability-denial-demo"],
+  "category": "demo"
+}

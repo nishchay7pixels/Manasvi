@@ -16,7 +16,8 @@ const serviceNameSchema = z.enum([
   "memory-service",
   "node-manager",
   "audit-service",
-  "api-gateway"
+  "api-gateway",
+  "extension-runtime"
 ]);
 
 export const baseServiceConfigSchema = z.object({
