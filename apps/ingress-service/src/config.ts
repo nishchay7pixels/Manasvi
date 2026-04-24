@@ -14,7 +14,20 @@ const ingressConfigSchema = baseServiceConfigSchema.extend({
   internalAuthAudience: z.string().min(1).default("manasvi.internal.services"),
   internalAuthKeyId: z.string().min(1),
   internalAuthSigningSecret: z.string().min(1),
-  internalAuthTokenTtlSeconds: z.number().int().positive().max(900).default(120)
+  internalAuthTokenTtlSeconds: z.number().int().positive().max(900).default(120),
+  orchestratorBaseUrl: z.string().url().default("http://localhost:4102"),
+  webUiAdapterRequireAuth: z.boolean().default(true),
+  ingressRateLimitWindowMs: z.number().int().positive().max(3600000).default(60000),
+  ingressRateLimitMaxPerSource: z.number().int().positive().max(10000).default(60),
+  ingressAntiSpamDuplicateTtlMs: z.number().int().positive().max(3600000).default(10000),
+  genericWebhookSharedSecret: z.string().min(1).optional(),
+  telegramBotToken: z.string().min(1).optional(),
+  telegramWebhookSecret: z.string().min(1).optional(),
+  telegramApiBaseUrl: z.string().url().default("https://api.telegram.org"),
+  replyPollTimeoutMs: z.number().int().positive().max(120000).default(12000),
+  replyPollIntervalMs: z.number().int().positive().max(5000).default(300),
+  slackSigningSecret: z.string().min(1).optional(),
+  slackBotToken: z.string().min(1).optional()
 });
 
 export type IngressServiceConfig = z.infer<typeof ingressConfigSchema>;
@@ -66,7 +79,20 @@ export async function loadIngressServiceConfig(): Promise<IngressServiceConfig> 
       internalAuthAudience: env.INTERNAL_AUTH_AUDIENCE ?? "manasvi.internal.services",
       internalAuthKeyId: await secrets.require("INTERNAL_AUTH_KEY_ID"),
       internalAuthSigningSecret: await secrets.require("INTERNAL_AUTH_SIGNING_SECRET"),
-      internalAuthTokenTtlSeconds: Number(env.INTERNAL_AUTH_TOKEN_TTL_SECONDS ?? 120)
+      internalAuthTokenTtlSeconds: Number(env.INTERNAL_AUTH_TOKEN_TTL_SECONDS ?? 120),
+      orchestratorBaseUrl: env.ORCHESTRATOR_BASE_URL ?? "http://localhost:4102",
+      webUiAdapterRequireAuth: env.WEBUI_ADAPTER_REQUIRE_AUTH !== "false",
+      ingressRateLimitWindowMs: Number(env.INGRESS_RATE_LIMIT_WINDOW_MS ?? 60000),
+      ingressRateLimitMaxPerSource: Number(env.INGRESS_RATE_LIMIT_MAX_PER_SOURCE ?? 60),
+      ingressAntiSpamDuplicateTtlMs: Number(env.INGRESS_ANTI_SPAM_DUPLICATE_TTL_MS ?? 10000),
+      genericWebhookSharedSecret: await secrets.optional("GENERIC_WEBHOOK_SHARED_SECRET"),
+      telegramBotToken: await secrets.optional("TELEGRAM_BOT_TOKEN"),
+      telegramWebhookSecret: await secrets.optional("TELEGRAM_WEBHOOK_SECRET"),
+      telegramApiBaseUrl: env.TELEGRAM_API_BASE_URL ?? "https://api.telegram.org",
+      replyPollTimeoutMs: Number(env.REPLY_POLL_TIMEOUT_MS ?? env.TELEGRAM_POLL_TIMEOUT_MS ?? 12000),
+      replyPollIntervalMs: Number(env.REPLY_POLL_INTERVAL_MS ?? env.TELEGRAM_POLL_INTERVAL_MS ?? 300),
+      slackSigningSecret: await secrets.optional("SLACK_SIGNING_SECRET"),
+      slackBotToken: await secrets.optional("SLACK_BOT_TOKEN")
     })
   });
 }

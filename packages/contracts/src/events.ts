@@ -46,7 +46,11 @@ export const authenticitySchema = z.object({
   verified: z.boolean(),
   method: z.enum(["none", "signature", "token", "mTLS", "internal-auth"]),
   authnStrength: z.enum(["none", "weak", "strong"]),
-  evidenceRef: z.string().min(1).optional()
+  evidenceRef: z.string().min(1).optional(),
+  verificationTimestamp: z.string().datetime({ offset: true }).optional(),
+  credentialType: z.enum(["shared-secret", "jwt", "hmac", "oauth-token", "web-session", "none"]).optional(),
+  failureReason: z.string().min(1).optional(),
+  trustNote: z.string().min(1).optional()
 });
 
 export const sourceSchema = z.object({

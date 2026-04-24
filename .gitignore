@@ -5,6 +5,6 @@ dist
 .DS_Store
 coverage
 .env
-.env.local
-.env.*.local
+.env.*
 pnpm-lock.yaml
+*.tsbuildinfo

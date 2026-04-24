@@ -69,3 +69,20 @@ test("integrity failure is detected", () => {
     assert.equal(result.reason, "HASH_MISMATCH");
   }
 });
+
+test("authenticity metadata accepts verification details", () => {
+  const event = createCanonicalEvent({
+    ...baseInput,
+    source: {
+      ...baseInput.source,
+      sourceAuthenticity: {
+        ...baseInput.source.sourceAuthenticity,
+        verificationTimestamp: new Date().toISOString(),
+        credentialType: "hmac",
+        trustNote: "slack signature verified"
+      }
+    }
+  });
+  const parsed = parseCanonicalEvent(event);
+  assert.equal(parsed.source.sourceAuthenticity.credentialType, "hmac");
+});
