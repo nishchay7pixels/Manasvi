@@ -18,6 +18,7 @@ export type ServiceName =
   | "execution-manager"
   | "memory-service"
   | "node-manager"
+  | "node-agent"
   | "audit-service"
   | "api-gateway"
   | "extension-runtime";
@@ -30,6 +31,7 @@ export const serviceNameSchema = z.enum([
   "execution-manager",
   "memory-service",
   "node-manager",
+  "node-agent",
   "audit-service",
   "api-gateway",
   "extension-runtime"

@@ -1,0 +1,28 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist"
+  },
+  "references": [
+    {
+      "path": "../../packages/auth"
+    },
+    {
+      "path": "../../packages/contracts"
+    },
+    {
+      "path": "../../packages/executor-sdk"
+    },
+    {
+      "path": "../../packages/sandbox-runtime"
+    },
+    {
+      "path": "../../packages/service-runtime"
+    },
+    {
+      "path": "../../packages/tool-sdk"
+    }
+  ],
+  "include": ["src/**/*.ts"]
+}

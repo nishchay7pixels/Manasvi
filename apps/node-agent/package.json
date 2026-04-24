@@ -1,5 +1,5 @@
 {
-  "name": "@manasvi/node-manager",
+  "name": "@manasvi/node-agent",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -16,7 +16,10 @@
   "dependencies": {
     "@manasvi/auth": "workspace:*",
     "@manasvi/contracts": "workspace:*",
+    "@manasvi/executor-sdk": "workspace:*",
+    "@manasvi/sandbox-runtime": "workspace:*",
     "@manasvi/service-runtime": "workspace:*",
+    "@manasvi/tool-sdk": "workspace:*",
     "zod": "^3.24.3"
   }
 }

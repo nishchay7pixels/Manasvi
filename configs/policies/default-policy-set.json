@@ -450,6 +450,86 @@
           }
         },
         {
+          "ruleId": "allow-node-manager-register-nodes",
+          "description": "Node manager can register and pair execution nodes in scoped tenant/workspace.",
+          "priority": 705,
+          "effect": "allow",
+          "enabled": true,
+          "selectors": {
+            "callerTypes": ["service"],
+            "actorTypes": ["service", "human_user", "agent"],
+            "callerIds": ["service:node-manager"],
+            "actorIds": []
+          },
+          "actionClasses": ["register"],
+          "resourceClasses": ["execution-node"],
+          "resourceIdPatterns": ["node:*"],
+          "requiredCapabilities": ["node.pair"],
+          "conditions": {
+            "requireTenantMatch": true,
+            "requireWorkspaceMatch": true,
+            "allowSkipApproval": false,
+            "maxRiskLevel": "high"
+          },
+          "metadata": {
+            "highRiskCoverage": true,
+            "tags": ["node", "pairing"]
+          }
+        },
+        {
+          "ruleId": "allow-node-manager-dispatch-execution",
+          "description": "Node manager can dispatch scoped execution workloads to eligible nodes.",
+          "priority": 710,
+          "effect": "allow",
+          "enabled": true,
+          "selectors": {
+            "callerTypes": ["service"],
+            "actorTypes": ["service", "agent", "human_user"],
+            "callerIds": ["service:node-manager"],
+            "actorIds": []
+          },
+          "actionClasses": ["execute"],
+          "resourceClasses": ["execution-node"],
+          "resourceIdPatterns": ["node:*"],
+          "requiredCapabilities": ["node.execute"],
+          "conditions": {
+            "requireTenantMatch": true,
+            "requireWorkspaceMatch": true,
+            "allowSkipApproval": false,
+            "maxRiskLevel": "high"
+          },
+          "metadata": {
+            "highRiskCoverage": true,
+            "tags": ["node", "dispatch"]
+          }
+        },
+        {
+          "ruleId": "allow-node-manager-quarantine-revoke",
+          "description": "Node manager can quarantine or revoke compromised nodes with explicit admin capability.",
+          "priority": 720,
+          "effect": "allow",
+          "enabled": true,
+          "selectors": {
+            "callerTypes": ["service"],
+            "actorTypes": ["service", "human_user"],
+            "callerIds": ["service:node-manager"],
+            "actorIds": []
+          },
+          "actionClasses": ["administer-policy"],
+          "resourceClasses": ["execution-node"],
+          "resourceIdPatterns": ["node:*"],
+          "requiredCapabilities": ["node.revoke"],
+          "conditions": {
+            "requireTenantMatch": true,
+            "requireWorkspaceMatch": true,
+            "allowSkipApproval": false
+          },
+          "metadata": {
+            "highRiskCoverage": true,
+            "tags": ["node", "containment"]
+          }
+        },
+        {
           "ruleId": "require-approval-secret-access",
           "description": "Secret reference access requires explicit approval.",
           "priority": 800,
