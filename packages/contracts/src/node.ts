@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
 
 import { CONTRACT_SCHEMA_VERSION } from "./base.js";
@@ -153,10 +153,47 @@ export const nodeDispatchRequestSchema = z.object({
   scopedExecutionToken: z.string().min(1),
   expiresAt: z.string().datetime({ offset: true }),
   policyDecisionId: z.string().min(1),
+  /**
+   * One-time nonce scoped to this dispatch attempt.
+   * The receiving node agent must reject duplicate nonces to prevent
+   * replayed dispatch messages from triggering repeated executions.
+   */
+  dispatchNonce: z.string().min(1),
+  /**
+   * SHA-256 of the canonical dispatch payload (intent payloadHash + artifactId + nodeId + dispatchId + expiresAt).
+   * The node agent verifies this hash before accepting the dispatch.
+   * Mutation of any linked field produces a mismatch and is rejected.
+   */
+  dispatchPayloadHash: z.string().min(1),
   trace: policyTraceSchema,
   metadata: z.record(z.unknown()).default({})
 });
 export type NodeDispatchRequest = z.infer<typeof nodeDispatchRequestSchema>;
+
+/**
+ * Compute the canonical dispatch payload hash for a node dispatch.
+ * Covers the fields that uniquely identify and scope the dispatch.
+ * The hash is verified by the node agent before accepting the workload.
+ *
+ * Canonicalization: fields joined with "|" in a fixed, documented order.
+ * This is stable across serialization and does not depend on JSON key order.
+ */
+export function computeDispatchPayloadHash(input: {
+  intentPayloadHash: string;
+  artifactId: string;
+  nodeId: string;
+  dispatchId: string;
+  expiresAt: string;
+}): string {
+  const canonical = [
+    input.intentPayloadHash,
+    input.artifactId,
+    input.nodeId,
+    input.dispatchId,
+    input.expiresAt
+  ].join("|");
+  return createHash("sha256").update(canonical, "utf8").digest("hex");
+}
 
 export const nodeDispatchResultSchema = z.object({
   schemaVersion: z.literal(NODE_CONTRACT_VERSION),

@@ -88,6 +88,13 @@ export const executionIntentSchema = z.object({
   intentVersion: z.literal("1.0"),
   snapshot: executionIntentSnapshotSchema,
   payloadHash: z.string().min(1),
+  integrity: z.object({
+    algorithm: z.literal("hmac-sha256"),
+    keyId: z.string().min(1),
+    value: z.string().min(1),
+    signedAt: z.string().datetime({ offset: true }),
+    tokenVersion: z.literal("1.0")
+  }),
   approval: z.object({
     state: intentApprovalStateSchema,
     required: z.boolean(),
@@ -149,6 +156,7 @@ export const approvedIntentArtifactSchema = z.object({
   approvalRequestId: z.string().min(1).optional(),
   approvalRecordId: z.string().min(1),
   policyDecisionId: z.string().min(1),
+  nonce: z.string().min(1),
   trace: policyTraceSchema,
   signature: z.object({
     algorithm: z.literal("hmac-sha256"),
@@ -200,6 +208,7 @@ export function computeExecutionIntentPayloadHash(snapshot: ExecutionIntentSnaps
 
 export function createExecutionIntent(input: {
   snapshot: ExecutionIntentSnapshot;
+  integrity?: ExecutionIntent["integrity"];
   approval: ExecutionIntent["approval"];
   lifecycle: ExecutionIntentLifecycleState;
   parentIntentId?: string;
@@ -213,6 +222,15 @@ export function createExecutionIntent(input: {
     intentVersion: "1.0",
     snapshot: executionIntentSnapshotSchema.parse(input.snapshot),
     payloadHash: computeExecutionIntentPayloadHash(input.snapshot),
+    integrity:
+      input.integrity ??
+      {
+        algorithm: "hmac-sha256",
+        keyId: "unsigned",
+        value: "unsigned",
+        signedAt: now,
+        tokenVersion: "1.0"
+      },
     approval: input.approval,
     lifecycle: input.lifecycle,
     updatedAt: now,

@@ -101,6 +101,20 @@ async function main(): Promise<void> {
     }
   });
   const consumedArtifacts = new Set<string>();
+  const consumedArtifactNonces = new Set<string>();
+  const processedIdempotencyKeys = new Set<string>();
+  const integrityAuditEvents: Array<Record<string, unknown>> = [];
+
+  const appendIntegrityAudit = (event: Record<string, unknown>): void => {
+    integrityAuditEvents.unshift({
+      timestamp: new Date().toISOString(),
+      service: "execution-manager",
+      ...event
+    });
+    if (integrityAuditEvents.length > 1000) {
+      integrityAuditEvents.pop();
+    }
+  };
 
   const dispatchRequestSchema = z.object({
     tenantId: z.string().min(1),
@@ -135,6 +149,13 @@ async function main(): Promise<void> {
           service: config.serviceName,
           plane: "execution",
           trace
+        });
+        return true;
+      }
+      if (req.method === "GET" && req.url === "/execution/audit/integrity") {
+        respondJson(res, 200, {
+          schemaVersion: CONTRACT_SCHEMA_VERSION,
+          events: integrityAuditEvents
         });
         return true;
       }
@@ -204,13 +225,44 @@ async function main(): Promise<void> {
           return true;
         }
         const incoming = executeIntentSchema.parse(await readJsonBody(req));
+        const idempotencyToken = `${incoming.intent.snapshot.tenantId}:${incoming.intent.snapshot.workspaceId}:${incoming.intent.snapshot.idempotencyKey}`;
+        if (processedIdempotencyKeys.has(idempotencyToken)) {
+          appendIntegrityAudit({
+            eventType: "execution.idempotency.duplicate_detected",
+            intentId: incoming.intent.intentId,
+            artifactId: incoming.artifact.artifactId,
+            idempotencyToken,
+            traceId: trace.traceId,
+            correlationId: trace.correlationId
+          });
+          respondJson(res, 200, {
+            schemaVersion: CONTRACT_SCHEMA_VERSION,
+            accepted: true,
+            duplicate: true,
+            idempotencyToken,
+            intentId: incoming.intent.intentId,
+            artifactId: incoming.artifact.artifactId
+          });
+          return true;
+        }
         const validation = validateExecutionAuthorization({
           intent: incoming.intent,
           artifact: incoming.artifact,
           verificationSecretsByKeyId: config.approvalVerificationKeys,
-          consumedArtifactIds: consumedArtifacts
+          intentVerificationSecretsByKeyId: config.internalAuthVerificationKeys,
+          consumedArtifactIds: consumedArtifacts,
+          consumedArtifactNonces
         });
         if (!validation.ok) {
+          appendIntegrityAudit({
+            eventType: "execution.integrity.validation_failed",
+            intentId: incoming.intent.intentId,
+            artifactId: incoming.artifact.artifactId,
+            code: validation.code,
+            message: validation.message,
+            traceId: trace.traceId,
+            correlationId: trace.correlationId
+          });
           logger.warn("Execution intent validation failed", {
             intentId: incoming.intent.intentId,
             artifactId: incoming.artifact.artifactId,
@@ -352,6 +404,18 @@ async function main(): Promise<void> {
         }
         if (incoming.dryRun) {
           consumedArtifacts.add(incoming.artifact.artifactId);
+          consumedArtifactNonces.add(incoming.artifact.nonce);
+          processedIdempotencyKeys.add(idempotencyToken);
+          appendIntegrityAudit({
+            eventType: "execution.integrity.artifact_consumed",
+            intentId: incoming.intent.intentId,
+            artifactId: incoming.artifact.artifactId,
+            nonce: incoming.artifact.nonce,
+            idempotencyToken,
+            dryRun: true,
+            traceId: trace.traceId,
+            correlationId: trace.correlationId
+          });
           respondJson(res, 202, {
             schemaVersion: CONTRACT_SCHEMA_VERSION,
             accepted: true,
@@ -378,6 +442,18 @@ async function main(): Promise<void> {
           maxOutputBytes: config.sandboxMaxOutputBytes
         });
         consumedArtifacts.add(incoming.artifact.artifactId);
+        consumedArtifactNonces.add(incoming.artifact.nonce);
+        processedIdempotencyKeys.add(idempotencyToken);
+        appendIntegrityAudit({
+          eventType: "execution.integrity.artifact_consumed",
+          intentId: incoming.intent.intentId,
+          artifactId: incoming.artifact.artifactId,
+          nonce: incoming.artifact.nonce,
+          idempotencyToken,
+          dryRun: false,
+          traceId: trace.traceId,
+          correlationId: trace.correlationId
+        });
         for (const logEvent of run.logs) {
           logger.info("Execution runtime event", {
             runId,
@@ -414,6 +490,26 @@ async function main(): Promise<void> {
           return true;
         }
         const incoming = executeToolContractRequestSchema.parse(await readJsonBody(req));
+        const idempotencyToken = `${incoming.contract.intent.snapshot.tenantId}:${incoming.contract.intent.snapshot.workspaceId}:${incoming.contract.intent.snapshot.idempotencyKey}`;
+        if (processedIdempotencyKeys.has(idempotencyToken)) {
+          appendIntegrityAudit({
+            eventType: "execution.idempotency.duplicate_detected",
+            intentId: incoming.contract.intent.intentId,
+            artifactId: incoming.contract.artifact.artifactId,
+            idempotencyToken,
+            traceId: trace.traceId,
+            correlationId: trace.correlationId
+          });
+          respondJson(res, 200, {
+            schemaVersion: CONTRACT_SCHEMA_VERSION,
+            accepted: true,
+            duplicate: true,
+            idempotencyToken,
+            intentId: incoming.contract.intent.intentId,
+            artifactId: incoming.contract.artifact.artifactId
+          });
+          return true;
+        }
         if (incoming.contract.invocation.caller.principalId !== principal.context.caller.principalId) {
           respondJson(res, 403, {
             schemaVersion: CONTRACT_SCHEMA_VERSION,
@@ -434,9 +530,20 @@ async function main(): Promise<void> {
           intent: incoming.contract.intent,
           artifact: incoming.contract.artifact,
           verificationSecretsByKeyId: config.approvalVerificationKeys,
-          consumedArtifactIds: consumedArtifacts
+          intentVerificationSecretsByKeyId: config.internalAuthVerificationKeys,
+          consumedArtifactIds: consumedArtifacts,
+          consumedArtifactNonces
         });
         if (!validation.ok) {
+          appendIntegrityAudit({
+            eventType: "execution.integrity.validation_failed",
+            intentId: incoming.contract.intent.intentId,
+            artifactId: incoming.contract.artifact.artifactId,
+            code: validation.code,
+            message: validation.message,
+            traceId: trace.traceId,
+            correlationId: trace.correlationId
+          });
           respondJson(res, 422, {
             schemaVersion: CONTRACT_SCHEMA_VERSION,
             accepted: false,
@@ -588,6 +695,18 @@ async function main(): Promise<void> {
         }
         if (incoming.dryRun) {
           consumedArtifacts.add(incoming.contract.artifact.artifactId);
+          consumedArtifactNonces.add(incoming.contract.artifact.nonce);
+          processedIdempotencyKeys.add(idempotencyToken);
+          appendIntegrityAudit({
+            eventType: "execution.integrity.artifact_consumed",
+            intentId: incoming.contract.intent.intentId,
+            artifactId: incoming.contract.artifact.artifactId,
+            nonce: incoming.contract.artifact.nonce,
+            idempotencyToken,
+            dryRun: true,
+            traceId: trace.traceId,
+            correlationId: trace.correlationId
+          });
           respondJson(res, 202, {
             schemaVersion: CONTRACT_SCHEMA_VERSION,
             accepted: true,
@@ -611,6 +730,18 @@ async function main(): Promise<void> {
           maxOutputBytes: config.sandboxMaxOutputBytes
         });
         consumedArtifacts.add(incoming.contract.artifact.artifactId);
+        consumedArtifactNonces.add(incoming.contract.artifact.nonce);
+        processedIdempotencyKeys.add(idempotencyToken);
+        appendIntegrityAudit({
+          eventType: "execution.integrity.artifact_consumed",
+          intentId: incoming.contract.intent.intentId,
+          artifactId: incoming.contract.artifact.artifactId,
+          nonce: incoming.contract.artifact.nonce,
+          idempotencyToken,
+          dryRun: false,
+          traceId: trace.traceId,
+          correlationId: trace.correlationId
+        });
         let validatedOutput: Record<string, unknown> | undefined;
         if (run.artifact.status === "completed") {
           try {

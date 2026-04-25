@@ -19,12 +19,33 @@ export interface IntentValidationResult {
   message?: string;
 }
 
+function intentSigningPayload(input: {
+  intentId: string;
+  intentVersion: string;
+  payloadHash: string;
+  expiresAt: string;
+  idempotencyKey: string;
+  traceId: string;
+  tokenVersion: string;
+}): string {
+  return [
+    input.intentId,
+    input.intentVersion,
+    input.payloadHash,
+    input.expiresAt,
+    input.idempotencyKey,
+    input.traceId,
+    input.tokenVersion
+  ].join("|");
+}
+
 function artifactSigningPayload(input: {
   intentId: string;
   intentPayloadHash: string;
   expiresAt: string;
   approvalState: "approved" | "not_required";
   policyDecisionId: string;
+  nonce: string;
   tokenVersion: string;
 }): string {
   return [
@@ -33,6 +54,7 @@ function artifactSigningPayload(input: {
     input.expiresAt,
     input.approvalState,
     input.policyDecisionId,
+    input.nonce,
     input.tokenVersion
   ].join("|");
 }
@@ -47,6 +69,7 @@ export function signApprovedIntentArtifact(
     expiresAt: artifactWithoutSignature.expiresAt,
     approvalState: artifactWithoutSignature.approvalState,
     policyDecisionId: artifactWithoutSignature.policyDecisionId,
+    nonce: artifactWithoutSignature.nonce,
     tokenVersion: artifactWithoutSignature.tokenVersion
   });
   const signature = createHmac("sha256", signing.secret).update(payload, "utf8").digest("hex");
@@ -58,6 +81,58 @@ export function signApprovedIntentArtifact(
       value: signature
     }
   });
+}
+
+export function signExecutionIntent(
+  intent: Omit<ExecutionIntent, "integrity">,
+  signing: { keyId: string; secret: string; signedAt?: string }
+): ExecutionIntent {
+  const signedAt = signing.signedAt ?? new Date().toISOString();
+  const payload = intentSigningPayload({
+    intentId: intent.intentId,
+    intentVersion: intent.intentVersion,
+    payloadHash: intent.payloadHash,
+    expiresAt: intent.snapshot.expiresAt,
+    idempotencyKey: intent.snapshot.idempotencyKey,
+    traceId: intent.snapshot.trace.traceId,
+    tokenVersion: "1.0"
+  });
+  const signature = createHmac("sha256", signing.secret).update(payload, "utf8").digest("hex");
+  return executionIntentSchema.parse({
+    ...intent,
+    integrity: {
+      algorithm: "hmac-sha256",
+      keyId: signing.keyId,
+      value: signature,
+      signedAt,
+      tokenVersion: "1.0"
+    }
+  });
+}
+
+export function verifyExecutionIntentSignature(
+  intent: ExecutionIntent,
+  verificationSecretsByKeyId: Record<string, string>
+): IntentValidationResult {
+  const keyId = intent.integrity.keyId;
+  const secret = verificationSecretsByKeyId[keyId];
+  if (!secret) {
+    return { ok: false, code: "INTENT_SIGNING_KEY_UNKNOWN", message: `Unknown intent signing key id ${keyId}` };
+  }
+  const payload = intentSigningPayload({
+    intentId: intent.intentId,
+    intentVersion: intent.intentVersion,
+    payloadHash: intent.payloadHash,
+    expiresAt: intent.snapshot.expiresAt,
+    idempotencyKey: intent.snapshot.idempotencyKey,
+    traceId: intent.snapshot.trace.traceId,
+    tokenVersion: intent.integrity.tokenVersion
+  });
+  const expected = createHmac("sha256", secret).update(payload, "utf8").digest("hex");
+  if (expected !== intent.integrity.value) {
+    return { ok: false, code: "INTENT_SIGNATURE_INVALID", message: "Intent signature verification failed" };
+  }
+  return { ok: true };
 }
 
 export function verifyApprovedIntentArtifact(
@@ -83,6 +158,7 @@ export function verifyApprovedIntentArtifact(
     expiresAt: artifact.expiresAt,
     approvalState: artifact.approvalState,
     policyDecisionId: artifact.policyDecisionId,
+    nonce: artifact.nonce,
     tokenVersion: artifact.tokenVersion
   });
   const expected = createHmac("sha256", secret).update(payload, "utf8").digest("hex");
@@ -96,8 +172,10 @@ export function validateExecutionAuthorization(input: {
   intent: unknown;
   artifact: unknown;
   verificationSecretsByKeyId: Record<string, string>;
+  intentVerificationSecretsByKeyId?: Record<string, string>;
   now?: Date;
   consumedArtifactIds?: Set<string>;
+  consumedArtifactNonces?: Set<string>;
 }): IntentValidationResult {
   const parsedIntent = executionIntentSchema.safeParse(input.intent);
   if (!parsedIntent.success) {
@@ -138,6 +216,14 @@ export function validateExecutionAuthorization(input: {
     };
   }
 
+  const intentSignatureVerification = verifyExecutionIntentSignature(
+    intent,
+    input.intentVerificationSecretsByKeyId ?? input.verificationSecretsByKeyId
+  );
+  if (!intentSignatureVerification.ok) {
+    return intentSignatureVerification;
+  }
+
   const signatureVerification = verifyApprovedIntentArtifact(artifact, input.verificationSecretsByKeyId);
   if (!signatureVerification.ok) {
     return signatureVerification;
@@ -153,6 +239,9 @@ export function validateExecutionAuthorization(input: {
 
   if (input.consumedArtifactIds?.has(artifact.artifactId)) {
     return { ok: false, code: "ARTIFACT_ALREADY_CONSUMED", message: "Approval artifact already consumed" };
+  }
+  if (input.consumedArtifactNonces?.has(artifact.nonce)) {
+    return { ok: false, code: "ARTIFACT_NONCE_REPLAYED", message: "Approval artifact nonce already consumed" };
   }
 
   if (intent.lifecycle === "denied" || intent.lifecycle === "rejected" || intent.lifecycle === "invalid") {

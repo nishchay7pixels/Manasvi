@@ -589,7 +589,11 @@ async function main(): Promise<void> {
     servicePrincipal,
     createApprovalRequest,
     issueSystemArtifact,
-    executeToolContract
+    executeToolContract,
+    intentSigning: {
+      keyId: config.intentSigningKeyId,
+      secret: config.intentSigningSecret
+    }
   });
 
   await startHttpService({
@@ -851,7 +855,8 @@ async function main(): Promise<void> {
           },
           requiredCapabilities: registryEntry.manifest.capabilities.map((item) => item.capabilityId),
           ttlSeconds: config.executionIntentTtlSeconds,
-          idempotencyKey: invocation.invocationId
+          idempotencyKey: invocation.invocationId,
+          signing: { keyId: config.intentSigningKeyId, secret: config.intentSigningSecret }
         });
         executionIntents.set(intent.intentId, intent);
         if (decision.approvalRequired) {
@@ -1203,7 +1208,8 @@ async function main(): Promise<void> {
           target: incoming.target,
           requiredCapabilities: incoming.requiredCapabilities,
           ttlSeconds: config.executionIntentTtlSeconds,
-          ...(incoming.idempotencyKey ? { idempotencyKey: incoming.idempotencyKey } : {})
+          ...(incoming.idempotencyKey ? { idempotencyKey: incoming.idempotencyKey } : {}),
+          signing: { keyId: config.intentSigningKeyId, secret: config.intentSigningSecret }
         });
         let intent = baseIntent;
         executionIntents.set(intent.intentId, intent);

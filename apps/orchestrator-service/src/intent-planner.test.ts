@@ -62,7 +62,8 @@ test("planner creates pending approval intent when policy requires approval", ()
       attributes: {}
     },
     requiredCapabilities: ["tool.invoke"],
-    ttlSeconds: 900
+    ttlSeconds: 900,
+    signing: { keyId: "test-k1", secret: "test-signing-secret" }
   });
   assert.equal(intent.approval.state, "pending");
   assert.equal(intent.lifecycle, "pending_approval");
@@ -102,7 +103,8 @@ test("planner creates denied intent when policy denies", () => {
       attributes: {}
     },
     requiredCapabilities: ["tool.read"],
-    ttlSeconds: 900
+    ttlSeconds: 900,
+    signing: { keyId: "test-k1", secret: "test-signing-secret" }
   });
   assert.equal(intent.lifecycle, "denied");
 });

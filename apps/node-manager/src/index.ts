@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import {
   CONTRACT_SCHEMA_VERSION,
+  computeDispatchPayloadHash,
   createNodePairingGrant,
   createPolicyEvaluationRequest,
   nodeAttestationMetadataSchema,
@@ -63,6 +64,10 @@ async function main(): Promise<void> {
   );
   const principalResolver = new PrincipalResolver(tokenService);
   const nodePlane = new NodeRegistry(config.heartbeatStaleSeconds * 1000);
+  // Track consumed dispatch nonces to prevent replay of dispatch artifacts.
+  // Scoped to this process lifetime — sufficient for replay resistance within
+  // the time window of a dispatch (nodeDispatchTimeoutMs).
+  const consumedDispatchNonces = new Set<string>();
 
   const pairingRequestSchema = z.object({
     nodeId: z.string().min(1),
@@ -538,6 +543,14 @@ async function main(): Promise<void> {
         const expiresAt = new Date(
           Math.min(Date.parse(artifact.expiresAt), Date.now() + config.nodeDispatchTimeoutMs)
         ).toISOString();
+        const dispatchNonce = `dnonce:${randomUUID()}`;
+        const dispatchPayloadHash = computeDispatchPayloadHash({
+          intentPayloadHash: intent.payloadHash,
+          artifactId: artifact.artifactId,
+          nodeId: payload.nodeId,
+          dispatchId,
+          expiresAt
+        });
         const nodePrincipal = buildExecutionNodePrincipalReference(payload.nodeId);
         const dispatchToken = nodeCredentialTokenService.issueToken({
           caller: servicePrincipal,
@@ -558,11 +571,16 @@ async function main(): Promise<void> {
           scopedExecutionToken: dispatchToken,
           expiresAt,
           policyDecisionId: policy.decisionId,
+          dispatchNonce,
+          dispatchPayloadHash,
           trace,
           metadata: {
             requestingPrincipalId: principal.context.caller.principalId
           }
         });
+        // Record the nonce as consumed immediately — if the HTTP send fails, the
+        // dispatch will not be retried with the same nonce (node agent rejects it).
+        consumedDispatchNonces.add(dispatchNonce);
         if (payload.dryRun) {
           respondJson(res, 202, {
           schemaVersion: "1.0",

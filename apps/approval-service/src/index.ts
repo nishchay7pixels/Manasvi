@@ -12,7 +12,11 @@ import {
   type ApprovedIntentArtifact,
   type ExecutionIntent
 } from "@manasvi/contracts";
-import { createApprovalRecord, signApprovedIntentArtifact } from "@manasvi/executor-sdk";
+import {
+  createApprovalRecord,
+  signApprovedIntentArtifact,
+  verifyExecutionIntentSignature
+} from "@manasvi/executor-sdk";
 import { readJsonBody, respondJson, startHttpService } from "@manasvi/service-runtime";
 import { z } from "zod";
 
@@ -83,6 +87,7 @@ async function main(): Promise<void> {
         ...(input.approvalRequestId ? { approvalRequestId: input.approvalRequestId } : {}),
         approvalRecordId: input.approvalRecordId,
         policyDecisionId: input.intent.snapshot.policy.decisionId,
+        nonce: `approval-nonce:${randomUUID()}`,
         trace: input.intent.snapshot.trace,
         tokenVersion: "1.0"
       },
@@ -192,6 +197,16 @@ async function main(): Promise<void> {
           })
           .parse(await readJsonBody(req));
         const intent = body.intent;
+        const signatureVerification = verifyExecutionIntentSignature(intent, config.internalAuthVerificationKeys);
+        if (!signatureVerification.ok) {
+          respondJson(res, 422, {
+            schemaVersion: CONTRACT_SCHEMA_VERSION,
+            error: "intent signature verification failed",
+            errorCode: signatureVerification.code,
+            detail: signatureVerification.message
+          });
+          return true;
+        }
         if (!intent.approval.required) {
           respondJson(res, 400, {
             schemaVersion: CONTRACT_SCHEMA_VERSION,
@@ -282,6 +297,19 @@ async function main(): Promise<void> {
             decision: approvalDecisionInputSchema
           })
           .parse(await readJsonBody(req));
+        const signatureVerification = verifyExecutionIntentSignature(
+          body.intent,
+          config.internalAuthVerificationKeys
+        );
+        if (!signatureVerification.ok) {
+          respondJson(res, 422, {
+            schemaVersion: CONTRACT_SCHEMA_VERSION,
+            error: "intent signature verification failed",
+            errorCode: signatureVerification.code,
+            detail: signatureVerification.message
+          });
+          return true;
+        }
         const approvalRequest = requests.get(body.approvalRequestId);
         if (!approvalRequest) {
           respondJson(res, 404, {
@@ -393,6 +421,19 @@ async function main(): Promise<void> {
             reason: z.string().min(1).optional()
           })
           .parse(await readJsonBody(req));
+        const signatureVerification = verifyExecutionIntentSignature(
+          body.intent,
+          config.internalAuthVerificationKeys
+        );
+        if (!signatureVerification.ok) {
+          respondJson(res, 422, {
+            schemaVersion: CONTRACT_SCHEMA_VERSION,
+            error: "intent signature verification failed",
+            errorCode: signatureVerification.code,
+            detail: signatureVerification.message
+          });
+          return true;
+        }
         if (body.intent.approval.required) {
           respondJson(res, 400, {
             schemaVersion: CONTRACT_SCHEMA_VERSION,

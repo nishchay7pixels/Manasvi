@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHmac, randomUUID } from "node:crypto";
 
 import {
   type ActionClass,
@@ -26,9 +26,13 @@ export function buildExecutionIntentFromPolicy(input: {
   requiredCapabilities: string[];
   ttlSeconds: number;
   idempotencyKey?: string;
+  signing: {
+    keyId: string;
+    secret: string;
+  };
 }) {
   const expiresAt = new Date(Date.now() + input.ttlSeconds * 1000).toISOString();
-  return createExecutionIntent({
+  const unsignedIntent = createExecutionIntent({
     snapshot: {
       tenantId: input.tenantId,
       workspaceId: input.workspaceId,
@@ -80,4 +84,24 @@ export function buildExecutionIntentFromPolicy(input: {
           ? "pending_approval"
           : "execution_authorized"
   });
+  const payload = [
+    unsignedIntent.intentId,
+    unsignedIntent.intentVersion,
+    unsignedIntent.payloadHash,
+    unsignedIntent.snapshot.expiresAt,
+    unsignedIntent.snapshot.idempotencyKey,
+    unsignedIntent.snapshot.trace.traceId,
+    "1.0"
+  ].join("|");
+  const signature = createHmac("sha256", input.signing.secret).update(payload, "utf8").digest("hex");
+  return {
+    ...unsignedIntent,
+    integrity: {
+      algorithm: "hmac-sha256" as const,
+      keyId: input.signing.keyId,
+      value: signature,
+      signedAt: new Date().toISOString(),
+      tokenVersion: "1.0" as const
+    }
+  };
 }

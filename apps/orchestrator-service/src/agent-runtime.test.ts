@@ -245,6 +245,7 @@ function createRuntime(options: {
     toolRegistry: new InMemoryToolRegistry({ preloadBuiltIns: true }),
     servicePrincipal: { principalType: "service", principalId: "service:orchestrator-service" },
     createApprovalRequest: async () => ({ approvalRequestId: `approval:${randomUUID()}` }),
+    intentSigning: { keyId: "test-k1", secret: "test-signing-secret" },
     issueSystemArtifact: async () => ({
       artifact: {
         schemaVersion: "1.0",
@@ -258,6 +259,7 @@ function createRuntime(options: {
         issuedByService: "approval-service",
         approvalRecordId: "approval-record:1",
         policyDecisionId: "decision:1",
+        nonce: `nonce:${randomUUID()}`,
         trace: {
           traceId: randomUUID(),
           correlationId: randomUUID()

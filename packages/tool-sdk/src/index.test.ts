@@ -89,6 +89,13 @@ test("execution contract rejects undeclared secret refs", () => {
           idempotencyKey: "idempotency:test"
         },
         payloadHash: "placeholder-hash",
+        integrity: {
+          algorithm: "hmac-sha256",
+          keyId: "test-k1",
+          value: "test-sig",
+          signedAt: new Date().toISOString(),
+          tokenVersion: "1.0"
+        },
         approval: { state: "not_required", required: false },
         lifecycle: "execution_authorized",
         updatedAt: new Date().toISOString()
@@ -105,6 +112,7 @@ test("execution contract rejects undeclared secret refs", () => {
         issuedByService: "approval-service",
         approvalRecordId: "approval-record:test",
         policyDecisionId: "decision:test",
+        nonce: "nonce:test-1",
         trace: invocation.trace,
         signature: {
           algorithm: "hmac-sha256",

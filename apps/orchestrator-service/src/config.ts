@@ -40,7 +40,11 @@ export const orchestratorConfigSchema = baseServiceConfigSchema.extend({
   internalAuthSigningSecret: z.string().min(1),
   internalAuthVerificationKeys: z.record(z.string().min(1)).refine((value) => Object.keys(value).length > 0, {
     message: "At least one internal auth verification key is required"
-  })
+  }),
+  /** HMAC-SHA256 key id used to sign execution intents at creation time. */
+  intentSigningKeyId: z.string().min(1),
+  /** HMAC-SHA256 secret used to sign execution intents at creation time. */
+  intentSigningSecret: z.string().min(1)
 });
 
 export type OrchestratorServiceConfig = z.infer<typeof orchestratorConfigSchema>;
@@ -110,10 +114,10 @@ export async function loadOrchestratorServiceConfig(): Promise<OrchestratorServi
           acc[keyId] = secret;
           return acc;
         }, {}),
-      orchestratorSigningKey:
-        profile === "staging" || profile === "production"
-          ? await secrets.require("ORCHESTRATOR_SIGNING_KEY")
-          : await secrets.optional("ORCHESTRATOR_SIGNING_KEY")
+      intentSigningKeyId:
+        (await secrets.optional("INTENT_SIGNING_KEY_ID")) ?? (await secrets.require("INTERNAL_AUTH_KEY_ID")),
+      intentSigningSecret:
+        (await secrets.optional("INTENT_SIGNING_SECRET")) ?? (await secrets.require("INTERNAL_AUTH_SIGNING_SECRET"))
     })
   });
 }

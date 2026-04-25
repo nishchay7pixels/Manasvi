@@ -1,5 +1,6 @@
 import {
   CONTRACT_SCHEMA_VERSION,
+  computeDispatchPayloadHash,
   executorApiRequestSchema,
   nodeDispatchRequestSchema,
   nodeDispatchResultSchema
@@ -44,6 +45,10 @@ async function main(): Promise<void> {
     }
   );
   const principalResolver = new PrincipalResolver(runtimeTokenService);
+  // One-time dispatch nonce store — prevents replay of dispatch artifacts.
+  const consumedDispatchNonces = new Set<string>();
+  // In-memory artifact id store — prevents replay of the same approval artifact.
+  const consumedArtifactIds = new Set<string>();
 
   await startHttpService({
     config,
@@ -91,11 +96,45 @@ async function main(): Promise<void> {
           });
           return true;
         }
+        // Replay resistance: reject if this dispatch nonce has already been consumed.
+        if (consumedDispatchNonces.has(incoming.dispatchNonce)) {
+          logger.warn("Duplicate dispatch nonce rejected", {
+            dispatchId: incoming.dispatchId,
+            nonce: incoming.dispatchNonce,
+            traceId: trace.traceId
+          });
+          respondJson(res, 409, {
+            schemaVersion: "1.0",
+            accepted: false,
+            errorCode: "DISPATCH_NONCE_REPLAYED"
+          });
+          return true;
+        }
+        // Tamper detection: verify the dispatch payload hash matches the derived hash.
+        const expectedDispatchHash = computeDispatchPayloadHash({
+          intentPayloadHash: incoming.executionIntent.payloadHash,
+          artifactId: incoming.approvedArtifact.artifactId,
+          nodeId: incoming.nodeId,
+          dispatchId: incoming.dispatchId,
+          expiresAt: incoming.expiresAt
+        });
+        if (incoming.dispatchPayloadHash !== expectedDispatchHash) {
+          logger.warn("Dispatch payload hash mismatch — possible tampering", {
+            dispatchId: incoming.dispatchId,
+            traceId: trace.traceId
+          });
+          respondJson(res, 422, {
+            schemaVersion: "1.0",
+            accepted: false,
+            errorCode: "DISPATCH_PAYLOAD_HASH_MISMATCH"
+          });
+          return true;
+        }
         const validation = validateExecutionAuthorization({
           intent: incoming.executionIntent,
           artifact: incoming.approvedArtifact,
           verificationSecretsByKeyId: config.runtimeTokenVerificationKeys,
-          consumedArtifactIds: new Set<string>()
+          consumedArtifactIds
         });
         if (!validation.ok) {
           respondJson(res, 422, {
@@ -105,6 +144,10 @@ async function main(): Promise<void> {
           });
           return true;
         }
+        // Mark both nonce and artifact as consumed before execution begins.
+        // This ensures idempotent rejection even if execution throws.
+        consumedDispatchNonces.add(incoming.dispatchNonce);
+        consumedArtifactIds.add(incoming.approvedArtifact.artifactId);
         try {
           const input = validateToolInput(
             incoming.toolContract.manifest.toolId,

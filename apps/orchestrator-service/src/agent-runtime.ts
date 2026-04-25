@@ -152,6 +152,10 @@ export interface GovernedAgentRuntimeDependencies {
   createApprovalRequest: (intent: AgentRunRecord["intents"][number]) => Promise<ApprovalRequestResult>;
   issueSystemArtifact: (intent: AgentRunRecord["intents"][number]) => Promise<SystemArtifactResult>;
   executeToolContract: (contract: ToolExecutionContract, dryRun: boolean) => Promise<ToolExecutionResponse>;
+  intentSigning: {
+    keyId: string;
+    secret: string;
+  };
   now?: () => Date;
 }
 
@@ -487,7 +491,8 @@ export class GovernedAgentRuntime {
         },
         requiredCapabilities: toolEntry.manifest.capabilities.map((item) => item.capabilityId),
         ttlSeconds: 900,
-        idempotencyKey: invocation.invocationId
+        idempotencyKey: invocation.invocationId,
+        signing: this.deps.intentSigning
       });
       intents.push(intent);
 
