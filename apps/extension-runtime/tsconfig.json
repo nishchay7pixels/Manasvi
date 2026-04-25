@@ -8,6 +8,8 @@
     { "path": "../../packages/auth" },
     { "path": "../../packages/contracts" },
     { "path": "../../packages/logging" },
+    { "path": "../../packages/policy-sdk" },
+    { "path": "../../packages/secrets-sdk" },
     { "path": "../../packages/service-runtime" },
     { "path": "../../packages/tracing" }
   ],

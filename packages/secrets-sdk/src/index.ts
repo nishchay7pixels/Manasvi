@@ -78,15 +78,25 @@ export class EnvMapSecretProvider implements SecretProvider {
     if (!hasValue) {
       return undefined;
     }
-    return {
+    const metadata: SecretMetadata = {
       reference,
       provider: this.name,
       category: "runtime_secret",
-      sensitivity: "high",
-      ...(this.env[`${envKey}_VERSION`] ? { version: this.env[`${envKey}_VERSION`] } : {}),
-      ...(this.env[`${envKey}_ROTATED_AT`] ? { rotatedAt: this.env[`${envKey}_ROTATED_AT`] } : {}),
-      ...(this.env[`${envKey}_UPDATED_AT`] ? { updatedAt: this.env[`${envKey}_UPDATED_AT`] } : {})
+      sensitivity: "high"
     };
+    const version = this.env[`${envKey}_VERSION`];
+    const rotatedAt = this.env[`${envKey}_ROTATED_AT`];
+    const updatedAt = this.env[`${envKey}_UPDATED_AT`];
+    if (version) {
+      metadata.version = version;
+    }
+    if (rotatedAt) {
+      metadata.rotatedAt = rotatedAt;
+    }
+    if (updatedAt) {
+      metadata.updatedAt = updatedAt;
+    }
+    return metadata;
   }
 
   async getSecretValue(reference: SecretReferenceString): Promise<string | undefined> {
@@ -203,7 +213,7 @@ export class SecretBroker {
                 tenantId: input.tenantId,
                 workspaceId: input.workspaceId,
                 resourceClass: "secret-reference",
-                resourceId: reference
+                resourcePattern: reference
               },
               constraints: {
                 consumerType: input.consumerType
@@ -409,4 +419,3 @@ export function redactSecretsInObject(input: Record<string, unknown>): Record<st
   };
   return walk(input) as Record<string, unknown>;
 }
-

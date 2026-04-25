@@ -306,7 +306,7 @@ export class PluginLifecycleManager {
 
   async start(
     pluginId: string,
-    opts: { handshakeTimeoutMs: number }
+    opts: { handshakeTimeoutMs: number; injectedSecretsEnv?: Record<string, string> }
   ): Promise<{ ok: boolean; error?: string }> {
     const entry = this.registry.get(pluginId);
     if (!entry) return { ok: false, error: `Plugin '${pluginId}' not found` };
@@ -329,7 +329,8 @@ export class PluginLifecycleManager {
     try {
       const { launchToken } = await this.host.launch(entry.manifest, entry.grantedCapabilities, {
         callbackPort,
-        pluginBaseDir: this.pluginBaseDir
+        pluginBaseDir: this.pluginBaseDir,
+        ...(opts.injectedSecretsEnv ? { injectedEnv: opts.injectedSecretsEnv } : {})
       });
 
       // Wait for plugin to complete handshake

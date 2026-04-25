@@ -30,11 +30,22 @@ import { randomUUID } from "node:crypto";
 import { type IncomingMessage } from "node:http";
 
 import { respondJson, readJsonBody, startHttpService } from "@manasvi/service-runtime";
-import { buildServicePrincipalReference } from "@manasvi/auth";
+import {
+  InternalTokenService,
+  buildServicePrincipalReference
+} from "@manasvi/auth";
+import { HttpPolicyClient } from "@manasvi/policy-sdk";
+import {
+  EnvMapSecretProvider,
+  SecretBroker,
+  parseSecretReferenceMapping,
+  redactSecretsInObject
+} from "@manasvi/secrets-sdk";
 
 import {
   type PluginHandshakeRequest,
   type PluginHandshakeResponse,
+  type SecretUsageRecord,
   type PrincipalReference,
   pluginHandshakeRequestSchema
 } from "@manasvi/contracts";
@@ -44,10 +55,63 @@ import { PluginRegistry } from "./plugin-registry.js";
 import { CapabilityApprover } from "./capability-approver.js";
 import { PluginHost } from "./plugin-host.js";
 import { PluginLifecycleManager } from "./plugin-lifecycle.js";
+import { allowPluginRawSecretExposure, pluginSecretEnvName } from "./plugin-secrets.js";
 
 async function main(): Promise<void> {
   const config = await loadExtensionRuntimeConfig();
   const servicePrincipal = buildServicePrincipalReference(config.serviceName);
+  const requestingService = {
+    principalId: servicePrincipal.principalId,
+    principalType: "service" as const
+  };
+  const tokenService = new InternalTokenService(
+    {
+      issuer: config.internalAuthIssuer,
+      audience: config.internalAuthAudience,
+      keyId: config.internalAuthKeyId,
+      secret: config.internalAuthSigningSecret,
+      ttlSeconds: config.internalAuthTokenTtlSeconds
+    },
+    {
+      issuer: config.internalAuthIssuer,
+      audience: config.internalAuthAudience,
+      secretsByKeyId: {
+        [config.internalAuthKeyId]: config.internalAuthSigningSecret
+      }
+    }
+  );
+  const policyClient = new HttpPolicyClient({
+    baseUrl: config.policyServiceBaseUrl,
+    getAuthToken: () =>
+      tokenService.issueToken({
+        caller: servicePrincipal,
+        scopes: ["policy.evaluate", "service:extension-runtime"]
+      })
+  });
+  const secretBroker = new SecretBroker({
+    policyClient,
+    provider: new EnvMapSecretProvider(process.env, parseSecretReferenceMapping(config.secretRefEnvMapJson)),
+    requestingService,
+    onUsageRecord: (record: SecretUsageRecord) => {
+      console.log(
+        JSON.stringify({
+          timestamp: new Date().toISOString(),
+          level: "info",
+          service: "extension-runtime",
+          message: "Plugin secret usage record",
+          record: redactSecretsInObject({
+            usageId: record.usageId,
+            eventType: record.eventType,
+            reference: record.reference,
+            consumerType: record.consumerType,
+            consumerId: record.consumerId,
+            traceId: record.trace.traceId,
+            reasonCodes: record.reasonCodes
+          })
+        })
+      );
+    }
+  });
 
   // ── Wire up subsystems ────────────────────────────────────────────────────
 
@@ -264,8 +328,69 @@ async function main(): Promise<void> {
 
         // POST /plugins/:id/start
         if (method === "POST" && subpath === "start") {
+          const body = await readJsonBody<{
+            secretRefs?: string[];
+            allowRawSecretExposure?: boolean;
+          }>(req);
+          let injectedSecretsEnv: Record<string, string> | undefined;
+          if (body.secretRefs && body.secretRefs.length > 0) {
+            if (
+              !allowPluginRawSecretExposure({
+                runtimeFlagEnabled: config.allowPluginRawSecretExposure,
+                requestFlagEnabled: body.allowRawSecretExposure === true
+              })
+            ) {
+              respondJson(res, 403, {
+                ok: false,
+                error: "PLUGIN_RAW_SECRET_EXPOSURE_DISABLED"
+              });
+              return true;
+            }
+            try {
+              const resolved = await secretBroker.resolveForRuntime({
+                principalContext: {
+                  caller: servicePrincipal,
+                  actor: servicePrincipal,
+                  tenantId: "tenant-local",
+                  workspaceId: "workspace-local",
+                  authnStrength: "strong",
+                  authenticated: true,
+                  scopes: []
+                },
+                trace: extractTrace(req),
+                tenantId: "tenant-local",
+                workspaceId: "workspace-local",
+                consumerType: "plugin-runtime",
+                consumerId: pluginId,
+                purpose: "plugin_launch_secret_injection",
+                references: body.secretRefs,
+                requestRawExposure: true,
+                allowRawExposureForConsumer: true,
+                runtimeContext: {
+                  pluginId
+                }
+              });
+              injectedSecretsEnv = Object.entries(resolved.secretValuesByRef).reduce<Record<string, string>>(
+                (acc, [reference, value]) => {
+                  const envName = pluginSecretEnvName(reference);
+                  if (typeof value === "string") {
+                    acc[envName] = value;
+                  }
+                  return acc;
+                },
+                {}
+              );
+            } catch (error) {
+              respondJson(res, 403, {
+                ok: false,
+                error: error instanceof Error ? error.message : "PLUGIN_SECRET_ACCESS_DENIED"
+              });
+              return true;
+            }
+          }
           const result = await lifecycle.start(pluginId, {
-            handshakeTimeoutMs: config.pluginHandshakeTimeoutMs
+            handshakeTimeoutMs: config.pluginHandshakeTimeoutMs,
+            ...(injectedSecretsEnv ? { injectedSecretsEnv } : {})
           });
           respondJson(res, result.ok ? 200 : 422, result);
           return true;

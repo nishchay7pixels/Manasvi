@@ -17,6 +17,8 @@
     "@manasvi/auth": "workspace:*",
     "@manasvi/contracts": "workspace:*",
     "@manasvi/logging": "workspace:*",
+    "@manasvi/policy-sdk": "workspace:*",
+    "@manasvi/secrets-sdk": "workspace:*",
     "@manasvi/service-runtime": "workspace:*",
     "@manasvi/tracing": "workspace:*",
     "zod": "^3.24.3"

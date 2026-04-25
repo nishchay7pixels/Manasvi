@@ -55,13 +55,9 @@ function principalContext(): ResolvedPrincipalContext {
   return {
     caller: { principalId: "service:execution-manager", principalType: "service" },
     actor: { principalId: "user:alice", principalType: "human_user" },
-    sourceChannel: { principalId: "channel:dev-cli", principalType: "channel" },
-    trustClass: "CONTROL_TRUSTED",
-    authentication: {
-      authenticated: true,
-      authnMethod: "internal_token",
-      authnStrength: "strong"
-    }
+    authenticated: true,
+    authnStrength: "strong",
+    scopes: []
   };
 }
 
@@ -155,6 +151,87 @@ test("plugin/orchestrator raw exposure is blocked by default", async () => {
         allowRawExposureForConsumer: false
       }),
     /RAW_SECRET_EXPOSURE_DISABLED_FOR_CONSUMER/
+  );
+});
+
+test("plugin raw exposure can be allowed only when explicitly enabled", async () => {
+  const provider = new EnvMapSecretProvider({ MANASVI_SECRET_REF_SECRET_DEMO: "secret-value" });
+  const broker = new SecretBroker({
+    provider,
+    policyClient: new StubPolicyClient("allow"),
+    requestingService: { principalId: "service:extension-runtime", principalType: "service" }
+  });
+  const result = await broker.resolveForRuntime({
+    principalContext: principalContext(),
+    trace: {
+      traceId: "9ccb8d8a-e9f8-4f73-a07b-834f4f6e86b0",
+      correlationId: "7fcbc1af-bf2c-4f8f-a51e-cf0df390d982"
+    },
+    tenantId: "tenant-local",
+    workspaceId: "workspace-local",
+    consumerType: "plugin-runtime",
+    consumerId: "plugin:demo",
+    purpose: "plugin_launch",
+    references: ["secret:demo"],
+    requestRawExposure: true,
+    allowRawExposureForConsumer: true
+  });
+  assert.equal(result.grants.length, 1);
+  assert.equal(result.grants[0]?.rawValueExposureAllowed, true);
+  assert.equal(result.secretValuesByRef["secret:demo"], "secret-value");
+});
+
+test("orchestrator raw exposure is blocked by default", async () => {
+  const provider = new EnvMapSecretProvider({ MANASVI_SECRET_REF_SECRET_DEMO: "secret-value" });
+  const broker = new SecretBroker({
+    provider,
+    policyClient: new StubPolicyClient("allow"),
+    requestingService: { principalId: "service:orchestrator-service", principalType: "service" }
+  });
+  await assert.rejects(
+    () =>
+      broker.resolveForRuntime({
+        principalContext: principalContext(),
+        trace: {
+          traceId: "2f67d435-53ad-40c9-bc72-d357db95bd50",
+          correlationId: "6f411ed6-b1fb-435f-bf7f-d709650f7975"
+        },
+        tenantId: "tenant-local",
+        workspaceId: "workspace-local",
+        consumerType: "orchestrator",
+        consumerId: "service:orchestrator-service",
+        purpose: "direct_raw_access_attempt",
+        references: ["secret:demo"],
+        requestRawExposure: true,
+        allowRawExposureForConsumer: false
+      }),
+    /RAW_SECRET_EXPOSURE_DISABLED_FOR_CONSUMER/
+  );
+});
+
+test("provider lookup failure is fail-closed", async () => {
+  const provider = new EnvMapSecretProvider({});
+  const broker = new SecretBroker({
+    provider,
+    policyClient: new StubPolicyClient("allow"),
+    requestingService: { principalId: "service:execution-manager", principalType: "service" }
+  });
+  await assert.rejects(
+    () =>
+      broker.resolveForRuntime({
+        principalContext: principalContext(),
+        trace: {
+          traceId: "38149a68-8cb9-406f-906f-5b2b369f0064",
+          correlationId: "8b7ab8d2-50b6-4f49-b655-d0246f520371"
+        },
+        tenantId: "tenant-local",
+        workspaceId: "workspace-local",
+        consumerType: "tool-runtime",
+        consumerId: "tool:http_fetch",
+        purpose: "runtime_execution",
+        references: ["secret:missing"]
+      }),
+    /SECRET_REFERENCE_NOT_FOUND|SECRET_VALUE_UNAVAILABLE/
   );
 });
 

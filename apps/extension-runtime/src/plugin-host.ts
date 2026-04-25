@@ -80,6 +80,7 @@ export class PluginHost {
       callbackPort: number;
       allowedEnvKeys?: string[];
       pluginBaseDir?: string;
+      injectedEnv?: Record<string, string>;
     }
   ): Promise<{ launchToken: string }> {
     if (this.running.has(manifest.pluginId)) {
@@ -101,7 +102,8 @@ export class PluginHost {
       PLUGIN_HOST_RPC_URL: this.options.hostRpcUrl,
       PLUGIN_ID: manifest.pluginId,
       PLUGIN_LAUNCH_TOKEN: launchToken,
-      PLUGIN_CALLBACK_PORT: String(opts.callbackPort)
+      PLUGIN_CALLBACK_PORT: String(opts.callbackPort),
+      ...(opts.injectedEnv ?? {})
     };
 
     const [cmd, ...args] = this.resolveEntrypoint(manifest, opts.pluginBaseDir);

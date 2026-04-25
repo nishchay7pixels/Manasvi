@@ -4,7 +4,7 @@ import {
   executorApiRequestSchema,
   executionIntentSchema,
   runtimePolicySchema,
-  secretReferenceStringSchema,
+  type SecretUsageRecord,
   toolExecutionContractSchema
 } from "@manasvi/contracts";
 import {
@@ -68,11 +68,15 @@ async function main(): Promise<void> {
     process.env,
     parseSecretReferenceMapping(config.secretRefEnvMapJson)
   );
+  const requestingService = {
+    principalId: config.serviceName,
+    principalType: "service" as const
+  };
   const secretBroker = new SecretBroker({
     policyClient,
     provider: secretProvider,
-    requestingService: buildServicePrincipalReference(config.serviceName),
-    onUsageRecord: (record) => {
+    requestingService,
+    onUsageRecord: (record: SecretUsageRecord) => {
       console.log(
         JSON.stringify({
           timestamp: new Date().toISOString(),
@@ -111,12 +115,12 @@ async function main(): Promise<void> {
     intent: executionIntentSchema,
     artifact: approvedIntentArtifactSchema,
     dryRun: z.boolean().default(false),
-    secretValuesByRef: z.record(z.string().min(1)).optional()
+    secretValuesByRef: z.record(z.string().min(1), z.string().min(1)).optional()
   });
   const executeToolContractRequestSchema = z.object({
     contract: toolExecutionContractSchema,
     dryRun: z.boolean().default(false),
-    secretValuesByRef: z.record(z.string().min(1)).optional()
+    secretValuesByRef: z.record(z.string().min(1), z.string().min(1)).optional()
   });
 
   await startHttpService({
