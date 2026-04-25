@@ -14,8 +14,11 @@ const extensionRuntimeConfigSchema = baseServiceConfigSchema.extend({
 
   // Policy service
   policyServiceBaseUrl: z.string().url().default("http://localhost:4103"),
+  defaultTenantId: z.string().min(1).default("tenant-local"),
+  defaultWorkspaceId: z.string().min(1).default("workspace-local"),
   allowPluginRawSecretExposure: z.boolean().default(false),
   secretRefEnvMapJson: z.string().default("{}"),
+  tenantPluginRestrictionsJson: z.string().default("[]"),
 
   // Plugin process limits
   maxConcurrentPlugins: z.number().int().positive().default(10),
@@ -55,8 +58,11 @@ export async function loadExtensionRuntimeConfig(): Promise<ExtensionRuntimeConf
       internalAuthTokenTtlSeconds: Number(env["INTERNAL_AUTH_TOKEN_TTL_SECONDS"] ?? 120),
 
       policyServiceBaseUrl: env["POLICY_SERVICE_BASE_URL"] ?? "http://localhost:4103",
+      defaultTenantId: env["DEFAULT_TENANT_ID"] ?? "tenant-local",
+      defaultWorkspaceId: env["DEFAULT_WORKSPACE_ID"] ?? "workspace-local",
       allowPluginRawSecretExposure: env["EXTENSION_ALLOW_PLUGIN_RAW_SECRET_EXPOSURE"] === "true",
       secretRefEnvMapJson: env["SECRET_REF_ENV_MAP_JSON"] ?? "{}",
+      tenantPluginRestrictionsJson: env["TENANT_PLUGIN_RESTRICTIONS_JSON"] ?? "[]",
 
       maxConcurrentPlugins: Number(env["EXTENSION_MAX_CONCURRENT_PLUGINS"] ?? 10),
       pluginHandshakeTimeoutMs: Number(env["EXTENSION_PLUGIN_HANDSHAKE_TIMEOUT_MS"] ?? 15000),

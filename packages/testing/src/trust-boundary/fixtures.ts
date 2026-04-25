@@ -128,7 +128,7 @@ export function fixturePoisonedMemoryWrite(
   return {
     schemaVersion: "1.0",
     memoryClass: "USER_DURABLE",
-    namespace: "user/user:alice/profile",
+    namespace: "tenant/tenant-local/workspace/workspace-local/user/user:alice/profile",
     tenantId: "tenant-local",
     workspaceId: "workspace-local",
     ownerPrincipal: { principalId: "user:alice", principalType: "human_user" },

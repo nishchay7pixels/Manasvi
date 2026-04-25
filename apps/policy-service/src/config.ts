@@ -7,6 +7,7 @@ export const policyConfigSchema = baseServiceConfigSchema.extend({
   port: z.number().int().min(1).max(65535).default(4103),
   defaultDecisionTtlSeconds: z.number().int().positive().default(300),
   policySetPath: z.string().min(1).default("configs/policies/default-policy-set.json"),
+  policySetMapJson: z.string().default("{}"),
   internalAuthIssuer: z.string().min(1).default("manasvi.internal.auth"),
   internalAuthAudience: z.string().min(1).default("manasvi.internal.services"),
   internalAuthVerificationKeys: z.record(z.string().min(1)).refine((value) => Object.keys(value).length > 0, {
@@ -31,6 +32,7 @@ export async function loadPolicyServiceConfig(): Promise<PolicyServiceConfig> {
       humanReadableLogs: env.HUMAN_LOGS === "true",
       defaultDecisionTtlSeconds: Number(env.DEFAULT_DECISION_TTL_SECONDS ?? 300),
       policySetPath: env.POLICY_SET_PATH ?? "configs/policies/default-policy-set.json",
+      policySetMapJson: env.POLICY_SET_MAP_JSON ?? "{}",
       internalAuthIssuer: env.INTERNAL_AUTH_ISSUER ?? "manasvi.internal.auth",
       internalAuthAudience: env.INTERNAL_AUTH_AUDIENCE ?? "manasvi.internal.services",
       internalAuthVerificationKeys: (await secrets.require("INTERNAL_AUTH_VERIFICATION_KEYS"))

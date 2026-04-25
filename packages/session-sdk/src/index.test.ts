@@ -63,6 +63,16 @@ test("per-user and shared sessions remain separated", async () => {
   assert.notEqual(perUser.session.sessionId, shared.session.sessionId);
 });
 
+test("workspace boundary prevents accidental session reuse", async () => {
+  const store = new InMemorySessionStore();
+  const first = await store.resolveOrCreateSession(sessionResolveInput("per_user_isolated"));
+  const second = await store.resolveOrCreateSession({
+    ...sessionResolveInput("per_user_isolated"),
+    workspaceId: "workspace-b"
+  });
+  assert.notEqual(first.session.sessionId, second.session.sessionId);
+});
+
 test("context chunk provenance tagging and trust preservation", async () => {
   const store = new InMemorySessionStore();
   const assembler = new ContextAssembler(store);

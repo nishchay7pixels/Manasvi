@@ -19,18 +19,57 @@ import {
   type TrustClass
 } from "@manasvi/contracts";
 
+const TENANT_WORKSPACE_PREFIX_REGEX = /^tenant\/([^/]+)\/workspace\/([^/]+)\/(.+)$/;
+
+export interface ParsedScopedNamespace {
+  tenantId: string;
+  workspaceId: string;
+  suffix: string;
+}
+
+export function parseTenantWorkspaceNamespace(namespace: string): ParsedScopedNamespace | undefined {
+  const match = namespace.match(TENANT_WORKSPACE_PREFIX_REGEX);
+  if (!match) {
+    return undefined;
+  }
+  const tenantId = match[1];
+  const workspaceId = match[2];
+  const suffix = match[3];
+  if (!tenantId || !workspaceId || !suffix) {
+    return undefined;
+  }
+  return {
+    tenantId,
+    workspaceId,
+    suffix
+  };
+}
+
+export function buildTenantWorkspaceMemoryNamespace(input: {
+  tenantId: string;
+  workspaceId: string;
+  suffix: string;
+}): string {
+  return `tenant/${input.tenantId}/workspace/${input.workspaceId}/${input.suffix}`;
+}
+
 export function isNamespaceCompatible(memoryClass: MemoryClass, namespace: string): boolean {
+  const scoped = parseTenantWorkspaceNamespace(namespace);
+  if (!scoped) {
+    return false;
+  }
+  const suffix = scoped.suffix;
   switch (memoryClass) {
     case "EPHEMERAL_SESSION":
-      return /^session\/[^/]+(\/.*)?$/.test(namespace);
+      return /^session\/[^/]+(\/.*)?$/.test(suffix);
     case "USER_DURABLE":
-      return /^user\/[^/]+\/[^/]+(\/.*)?$/.test(namespace);
+      return /^user\/[^/]+\/[^/]+(\/.*)?$/.test(suffix);
     case "ORG_SHARED_TRUSTED":
-      return /^org\/[^/]+\/[^/]+(\/.*)?$/.test(namespace);
+      return /^shared\/[^/]+(\/.*)?$/.test(suffix);
     case "UNTRUSTED_EXTERNAL":
-      return /^external\/[^/]+\/[^/]+(\/.*)?$/.test(namespace);
+      return /^external\/[^/]+\/[^/]+(\/.*)?$/.test(suffix);
     case "AUDIT_ACTION_HISTORY":
-      return /^audit\/[^/]+(\/.*)?$/.test(namespace);
+      return /^audit\/[^/]+(\/.*)?$/.test(suffix);
     default:
       return false;
   }
@@ -63,6 +102,15 @@ export function isSensitiveMemoryClass(memoryClass: MemoryClass): boolean {
 
 export function assertWriteCompatibility(input: MemoryWriteRequest): void {
   const parsed = memoryWriteRequestSchema.parse(input);
+  const scoped = parseTenantWorkspaceNamespace(parsed.namespace);
+  if (!scoped) {
+    throw new Error(`Namespace ${parsed.namespace} must include tenant/workspace prefix`);
+  }
+  if (scoped.tenantId !== parsed.tenantId || scoped.workspaceId !== parsed.workspaceId) {
+    throw new Error(
+      `Namespace ${parsed.namespace} tenant/workspace mismatch for ${parsed.tenantId}/${parsed.workspaceId}`
+    );
+  }
   if (!isNamespaceCompatible(parsed.memoryClass, parsed.namespace)) {
     throw new Error(
       `Namespace ${parsed.namespace} is not compatible with memory class ${parsed.memoryClass}`
@@ -80,6 +128,13 @@ export function assertPromotionCompatibility(input: {
   targetClass: MemoryClass;
   targetNamespace: string;
 }): void {
+  const scoped = parseTenantWorkspaceNamespace(input.targetNamespace);
+  if (!scoped) {
+    throw new Error(`Target namespace ${input.targetNamespace} must include tenant/workspace prefix`);
+  }
+  if (scoped.tenantId !== input.source.tenantId || scoped.workspaceId !== input.source.workspaceId) {
+    throw new Error("Promotion cannot cross tenant/workspace boundaries");
+  }
   if (!isNamespaceCompatible(input.targetClass, input.targetNamespace)) {
     throw new Error(`Target namespace ${input.targetNamespace} is not compatible with ${input.targetClass}`);
   }

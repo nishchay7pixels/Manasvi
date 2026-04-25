@@ -40,7 +40,7 @@ test("[TB-MEMORY-001][memory][control] untrusted content can be stored in UNTRUS
   const plane = createPlane();
   const write = fixturePoisonedMemoryWrite({
     memoryClass: "UNTRUSTED_EXTERNAL",
-    namespace: "external/web/attacker.example",
+    namespace: "tenant/tenant-local/workspace/workspace-local/external/web/attacker.example",
     trustClassification: "EXTERNAL_UNTRUSTED"
   });
   const record = plane.createRecord({

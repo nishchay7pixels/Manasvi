@@ -14,7 +14,7 @@ import {
 } from "@manasvi/auth";
 import { EventConsumer, InMemoryDeadLetterStore, RetryableError } from "@manasvi/event-bus";
 import { createModelAdapter } from "@manasvi/model-adapter";
-import { HttpMemoryClient } from "@manasvi/memory-sdk";
+import { HttpMemoryClient, buildTenantWorkspaceMemoryNamespace } from "@manasvi/memory-sdk";
 import { HttpPolicyClient } from "@manasvi/policy-sdk";
 import { ContextAssembler, InMemorySessionStore, type ContextSourceInput } from "@manasvi/session-sdk";
 import {
@@ -297,7 +297,11 @@ async function main(): Promise<void> {
       await memoryClient.createRecord({
         schemaVersion: "1.0",
         memoryClass: "EPHEMERAL_SESSION",
-        namespace: `session/${assembledContext.session.sessionId}`,
+        namespace: buildTenantWorkspaceMemoryNamespace({
+          tenantId: event.tenantId,
+          workspaceId: event.workspaceId,
+          suffix: `session/${assembledContext.session.sessionId}`
+        }),
         tenantId: event.tenantId,
         workspaceId: event.workspaceId,
         ownerPrincipal: principalContext.actor,
@@ -329,7 +333,11 @@ async function main(): Promise<void> {
       await memoryClient.createRecord({
         schemaVersion: "1.0",
         memoryClass: "AUDIT_ACTION_HISTORY",
-        namespace: `audit/${event.eventId}`,
+        namespace: buildTenantWorkspaceMemoryNamespace({
+          tenantId: event.tenantId,
+          workspaceId: event.workspaceId,
+          suffix: `audit/${event.eventId}`
+        }),
         tenantId: event.tenantId,
         workspaceId: event.workspaceId,
         ownerPrincipal: principalContext.actor,

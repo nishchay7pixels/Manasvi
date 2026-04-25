@@ -190,7 +190,14 @@
           },
           "actionClasses": ["read"],
           "resourceClasses": ["memory-namespace"],
-          "resourceIdPatterns": ["session/*", "user/*", "org/*", "external/*", "audit/*", "memory/query"],
+          "resourceIdPatterns": [
+            "tenant/*/workspace/*/session/*",
+            "tenant/*/workspace/*/user/*",
+            "tenant/*/workspace/*/shared/*",
+            "tenant/*/workspace/*/external/*",
+            "tenant/*/workspace/*/audit/*",
+            "memory/query"
+          ],
           "requiredCapabilities": ["memory.read"],
           "conditions": {
             "requireTenantMatch": true,
@@ -217,7 +224,11 @@
           },
           "actionClasses": ["mutate-memory"],
           "resourceClasses": ["memory-namespace"],
-          "resourceIdPatterns": ["session/*", "external/*", "audit/*"],
+          "resourceIdPatterns": [
+            "tenant/*/workspace/*/session/*",
+            "tenant/*/workspace/*/external/*",
+            "tenant/*/workspace/*/audit/*"
+          ],
           "requiredCapabilities": ["memory.write"],
           "conditions": {
             "requireTenantMatch": true,
@@ -243,7 +254,7 @@
           },
           "actionClasses": ["mutate-memory", "approve"],
           "resourceClasses": ["memory-namespace"],
-          "resourceIdPatterns": ["user/*", "org/*"],
+          "resourceIdPatterns": ["tenant/*/workspace/*/user/*", "tenant/*/workspace/*/shared/*"],
           "requiredCapabilities": ["memory.promote", "memory.promote.review"],
           "conditions": {
             "requireTenantMatch": true,

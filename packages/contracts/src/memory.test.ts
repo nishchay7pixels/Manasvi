@@ -7,7 +7,7 @@ test("memory write schema requires provenance", () => {
   const parsed = memoryWriteRequestSchema.safeParse({
     schemaVersion: "1.0",
     memoryClass: "UNTRUSTED_EXTERNAL",
-    namespace: "external/web/example.com",
+    namespace: "tenant/tenant-local/workspace/workspace-local/external/web/example.com",
     tenantId: "tenant-local",
     workspaceId: "workspace-local",
     trustClassification: "EXTERNAL_UNTRUSTED",
@@ -30,7 +30,7 @@ test("memory record supports encryption metadata", () => {
     contractVersion: "1.0.0",
     recordId: "memory:test",
     memoryClass: "USER_DURABLE",
-    namespace: "user/user:alice/profile",
+    namespace: "tenant/tenant-local/workspace/workspace-local/user/user:alice/profile",
     tenantId: "tenant-local",
     workspaceId: "workspace-local",
     ownerPrincipal: {

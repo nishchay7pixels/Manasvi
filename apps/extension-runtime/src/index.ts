@@ -47,7 +47,8 @@ import {
   type PluginHandshakeResponse,
   type SecretUsageRecord,
   type PrincipalReference,
-  pluginHandshakeRequestSchema
+  pluginHandshakeRequestSchema,
+  pluginManifestSchema
 } from "@manasvi/contracts";
 
 import { loadExtensionRuntimeConfig } from "./config.js";
@@ -56,6 +57,11 @@ import { CapabilityApprover } from "./capability-approver.js";
 import { PluginHost } from "./plugin-host.js";
 import { PluginLifecycleManager } from "./plugin-lifecycle.js";
 import { allowPluginRawSecretExposure, pluginSecretEnvName } from "./plugin-secrets.js";
+import {
+  evaluateTenantPluginRestriction,
+  parseTenantPluginRestrictions,
+  type TenantScope
+} from "./tenant-restrictions.js";
 
 async function main(): Promise<void> {
   const config = await loadExtensionRuntimeConfig();
@@ -151,9 +157,27 @@ async function main(): Promise<void> {
     hostRpcUrl,
     pluginBaseDir: config.pluginBaseDir
   });
+  const tenantPluginRestrictions = parseTenantPluginRestrictions(config.tenantPluginRestrictionsJson);
 
   // ── Active session tokens (pluginId → sessionToken) ───────────────────────
   const activeSessions = new Map<string, string>();
+
+  const resolveTenantScope = (req: IncomingMessage, body?: Record<string, unknown>): TenantScope => {
+    const headerTenant = req.headers["x-tenant-id"];
+    const headerWorkspace = req.headers["x-workspace-id"];
+    const bodyTenant = typeof body?.tenantId === "string" ? body.tenantId : undefined;
+    const bodyWorkspace = typeof body?.workspaceId === "string" ? body.workspaceId : undefined;
+    return {
+      tenantId:
+        bodyTenant ??
+        (Array.isArray(headerTenant) ? headerTenant[0] : headerTenant) ??
+        config.defaultTenantId,
+      workspaceId:
+        bodyWorkspace ??
+        (Array.isArray(headerWorkspace) ? headerWorkspace[0] : headerWorkspace) ??
+        config.defaultWorkspaceId
+    };
+  };
 
   // ── HTTP service ──────────────────────────────────────────────────────────
 
@@ -246,7 +270,34 @@ async function main(): Promise<void> {
 
       if (method === "POST" && url === "/plugins/register") {
         try {
-          const rawManifest = await readJsonBody<unknown>(req);
+          const raw = await readJsonBody<unknown>(req);
+          const envelope =
+            raw && typeof raw === "object" && raw !== null && "manifest" in raw
+              ? (raw as { manifest: unknown } & Record<string, unknown>)
+              : undefined;
+          const rawManifest = envelope?.manifest ?? raw;
+          const scope = resolveTenantScope(
+            req,
+            envelope ?? (raw && typeof raw === "object" ? (raw as Record<string, unknown>) : undefined)
+          );
+          const parsedManifest = pluginManifestSchema.safeParse(rawManifest);
+          if (parsedManifest.success) {
+            const restriction = evaluateTenantPluginRestriction({
+              restrictions: tenantPluginRestrictions,
+              scope,
+              manifest: parsedManifest.data,
+              action: "register"
+            });
+            if (!restriction.allowed) {
+              respondJson(res, 403, {
+                error: "PLUGIN_RESTRICTED_FOR_TENANT",
+                tenantId: scope.tenantId,
+                workspaceId: scope.workspaceId,
+                reason: restriction.reason
+              });
+              return true;
+            }
+          }
           const result = await lifecycle.register(rawManifest);
           const statusCode = result.errors.length > 0 ? 422 : 201;
           respondJson(res, statusCode, result);
@@ -328,10 +379,34 @@ async function main(): Promise<void> {
 
         // POST /plugins/:id/start
         if (method === "POST" && subpath === "start") {
+          const entry = registry.get(pluginId);
+          if (!entry) {
+            respondJson(res, 404, { error: "PLUGIN_NOT_FOUND" });
+            return true;
+          }
           const body = await readJsonBody<{
             secretRefs?: string[];
             allowRawSecretExposure?: boolean;
+            tenantId?: string;
+            workspaceId?: string;
           }>(req);
+          const scope = resolveTenantScope(req, body as unknown as Record<string, unknown>);
+          const startRestriction = evaluateTenantPluginRestriction({
+            restrictions: tenantPluginRestrictions,
+            scope,
+            manifest: entry.manifest,
+            action: "start"
+          });
+          if (!startRestriction.allowed) {
+            respondJson(res, 403, {
+              ok: false,
+              error: "PLUGIN_RESTRICTED_FOR_TENANT",
+              tenantId: scope.tenantId,
+              workspaceId: scope.workspaceId,
+              reason: startRestriction.reason
+            });
+            return true;
+          }
           let injectedSecretsEnv: Record<string, string> | undefined;
           if (body.secretRefs && body.secretRefs.length > 0) {
             if (
@@ -351,15 +426,15 @@ async function main(): Promise<void> {
                 principalContext: {
                   caller: servicePrincipal,
                   actor: servicePrincipal,
-                  tenantId: "tenant-local",
-                  workspaceId: "workspace-local",
+                  tenantId: scope.tenantId,
+                  workspaceId: scope.workspaceId,
                   authnStrength: "strong",
                   authenticated: true,
                   scopes: []
                 },
                 trace: extractTrace(req),
-                tenantId: "tenant-local",
-                workspaceId: "workspace-local",
+                tenantId: scope.tenantId,
+                workspaceId: scope.workspaceId,
                 consumerType: "plugin-runtime",
                 consumerId: pluginId,
                 purpose: "plugin_launch_secret_injection",
@@ -443,6 +518,22 @@ async function main(): Promise<void> {
           }
 
           const body = await readJsonBody<Record<string, unknown>>(req);
+          const scope = resolveTenantScope(req, body);
+          const invokeRestriction = evaluateTenantPluginRestriction({
+            restrictions: tenantPluginRestrictions,
+            scope,
+            manifest: entry.manifest,
+            action: "invoke"
+          });
+          if (!invokeRestriction.allowed) {
+            respondJson(res, 403, {
+              error: "PLUGIN_RESTRICTED_FOR_TENANT",
+              tenantId: scope.tenantId,
+              workspaceId: scope.workspaceId,
+              reason: invokeRestriction.reason
+            });
+            return true;
+          }
           const trace = extractTrace(req);
 
           const invokeResult = await host.invokePlugin(pluginId, {

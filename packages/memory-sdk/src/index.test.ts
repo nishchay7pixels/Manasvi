@@ -4,17 +4,37 @@ import test from "node:test";
 import {
   assertPromotionCompatibility,
   assertWriteCompatibility,
+  buildTenantWorkspaceMemoryNamespace,
   isNamespaceCompatible,
+  parseTenantWorkspaceNamespace,
   isTrustAllowedForClass
 } from "./index.js";
 
 test("namespace compatibility validates per class", () => {
-  assert.equal(isNamespaceCompatible("EPHEMERAL_SESSION", "session/session:1"), true);
-  assert.equal(isNamespaceCompatible("USER_DURABLE", "user/user:alice/profile"), true);
-  assert.equal(isNamespaceCompatible("ORG_SHARED_TRUSTED", "org/workspace-local/shared-notes"), true);
-  assert.equal(isNamespaceCompatible("UNTRUSTED_EXTERNAL", "external/web/example.com"), true);
-  assert.equal(isNamespaceCompatible("AUDIT_ACTION_HISTORY", "audit/run:1"), true);
-  assert.equal(isNamespaceCompatible("USER_DURABLE", "external/web/example.com"), false);
+  assert.equal(
+    isNamespaceCompatible("EPHEMERAL_SESSION", "tenant/tenant-local/workspace/workspace-local/session/session:1"),
+    true
+  );
+  assert.equal(
+    isNamespaceCompatible("USER_DURABLE", "tenant/tenant-local/workspace/workspace-local/user/user:alice/profile"),
+    true
+  );
+  assert.equal(
+    isNamespaceCompatible("ORG_SHARED_TRUSTED", "tenant/tenant-local/workspace/workspace-local/shared/shared-notes"),
+    true
+  );
+  assert.equal(
+    isNamespaceCompatible("UNTRUSTED_EXTERNAL", "tenant/tenant-local/workspace/workspace-local/external/web/example.com"),
+    true
+  );
+  assert.equal(
+    isNamespaceCompatible("AUDIT_ACTION_HISTORY", "tenant/tenant-local/workspace/workspace-local/audit/run:1"),
+    true
+  );
+  assert.equal(
+    isNamespaceCompatible("USER_DURABLE", "tenant/tenant-local/workspace/workspace-local/external/web/example.com"),
+    false
+  );
 });
 
 test("trust compatibility is class-aware", () => {
@@ -29,7 +49,7 @@ test("write compatibility rejects invalid namespace/class combinations", () => {
     assertWriteCompatibility({
       schemaVersion: "1.0",
       memoryClass: "USER_DURABLE",
-      namespace: "external/web/example.com",
+      namespace: "tenant/tenant-local/workspace/workspace-local/external/web/example.com",
       tenantId: "tenant-local",
       workspaceId: "workspace-local",
       trustClassification: "USER_OWNED",
@@ -67,7 +87,7 @@ test("promotion compatibility blocks untrusted direct promotion", () => {
         contractVersion: "1.0.0",
         recordId: "memory:1",
         memoryClass: "UNTRUSTED_EXTERNAL",
-        namespace: "external/web/example.com",
+        namespace: "tenant/tenant-local/workspace/workspace-local/external/web/example.com",
         tenantId: "tenant-local",
         workspaceId: "workspace-local",
         trustClassification: "EXTERNAL_UNTRUSTED",
@@ -107,7 +127,20 @@ test("promotion compatibility blocks untrusted direct promotion", () => {
         auditLinkage: {}
       },
       targetClass: "USER_DURABLE",
-      targetNamespace: "user/user:alice/profile"
+      targetNamespace: "tenant/tenant-local/workspace/workspace-local/user/user:alice/profile"
     })
   );
+});
+
+test("tenant/workspace namespace parser and builder round-trip", () => {
+  const namespace = buildTenantWorkspaceMemoryNamespace({
+    tenantId: "tenant-a",
+    workspaceId: "workspace-a",
+    suffix: "session/session:123"
+  });
+  assert.equal(namespace, "tenant/tenant-a/workspace/workspace-a/session/session:123");
+  const parsed = parseTenantWorkspaceNamespace(namespace);
+  assert.equal(parsed?.tenantId, "tenant-a");
+  assert.equal(parsed?.workspaceId, "workspace-a");
+  assert.equal(parsed?.suffix, "session/session:123");
 });

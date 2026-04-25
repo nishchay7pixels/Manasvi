@@ -8,7 +8,11 @@ import { readJsonBody, respondJson, startHttpService } from "@manasvi/service-ru
 
 import { loadPolicyServiceConfig } from "./config.js";
 import { evaluatePolicy } from "./policy-engine.js";
-import { loadPolicySetFromFile } from "./policy-loader.js";
+import {
+  loadPolicySetRegistry,
+  parseScopedPolicySetMap,
+  resolvePolicySetForScope
+} from "./policy-loader.js";
 
 async function main(): Promise<void> {
   const config = await loadPolicyServiceConfig();
@@ -35,10 +39,12 @@ async function main(): Promise<void> {
     }
   );
   const principalResolver = new PrincipalResolver(tokenService);
-  const loadedPolicy = await loadPolicySetFromFile({
-    filePath: config.policySetPath,
+  const policyRegistry = await loadPolicySetRegistry({
+    defaultPolicySetPath: config.policySetPath,
+    scopedPolicySetPaths: parseScopedPolicySetMap(config.policySetMapJson),
     loadedByService: config.serviceName
   });
+  const loadedPolicy = policyRegistry.defaultPolicySet;
   const decisionAuditBuffer: unknown[] = [];
 
   await startHttpService({
@@ -65,7 +71,8 @@ async function main(): Promise<void> {
           policySetVersion: loadedPolicy.policySet.policySetVersion,
           policySourceRef: loadedPolicy.policySet.sourceRef,
           policyDigest: loadedPolicy.digest,
-          loadAuditRecord: loadedPolicy.loadAuditRecord
+          loadAuditRecord: loadedPolicy.loadAuditRecord,
+          scopedPolicySetKeys: policyRegistry.scopedPolicySets.map((item) => item.scopeKey)
         });
         return true;
       }
@@ -90,7 +97,11 @@ async function main(): Promise<void> {
         }
         const raw = await readJsonBody(req);
         const request = policyEvaluationRequestSchema.parse(raw);
-        const result = evaluatePolicy(loadedPolicy.policySet, request, {
+        const scoped = resolvePolicySetForScope(policyRegistry, {
+          tenantId: request.tenantId,
+          workspaceId: request.workspaceId
+        });
+        const result = evaluatePolicy(scoped.loaded.policySet, request, {
           defaultDecisionTtlSeconds: config.defaultDecisionTtlSeconds
         });
         const response = policyEvaluationResponseSchema.parse(result.response);
@@ -110,6 +121,7 @@ async function main(): Promise<void> {
           actionClass: request.action.actionClass,
           resourceClass: request.resource.resourceClass,
           resourceId: request.resource.resourceId,
+          policyScopeKey: scoped.scopeKey,
           traceId: trace.traceId,
           correlationId: trace.correlationId
         });

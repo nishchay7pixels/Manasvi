@@ -25,7 +25,7 @@ function writeRequest(overrides?: Partial<MemoryWriteRequest>): MemoryWriteReque
   return {
     schemaVersion: "1.0",
     memoryClass: "EPHEMERAL_SESSION",
-    namespace: "session/session:1",
+    namespace: "tenant/tenant-local/workspace/workspace-local/session/session:1",
     tenantId: "tenant-local",
     workspaceId: "workspace-local",
     trustClassification: "USER_OWNED",
@@ -76,7 +76,7 @@ test("create/read/query per memory class works", () => {
   const userDurable = plane.createRecord({
     write: writeRequest({
       memoryClass: "USER_DURABLE",
-      namespace: "user/user:alice/profile",
+      namespace: "tenant/tenant-local/workspace/workspace-local/user/user:alice/profile",
       ownerPrincipal: { principalId: "user:alice", principalType: "human_user" },
       trustClassification: "USER_OWNED"
     }),
@@ -85,7 +85,7 @@ test("create/read/query per memory class works", () => {
   const shared = plane.createRecord({
     write: writeRequest({
       memoryClass: "ORG_SHARED_TRUSTED",
-      namespace: "org/workspace-local/shared-notes",
+      namespace: "tenant/tenant-local/workspace/workspace-local/shared/shared-notes",
       trustClassification: "CONTROL_TRUSTED"
     }),
     principalContext: ctx
@@ -93,7 +93,7 @@ test("create/read/query per memory class works", () => {
   const untrusted = plane.createRecord({
     write: writeRequest({
       memoryClass: "UNTRUSTED_EXTERNAL",
-      namespace: "external/web/example.com",
+      namespace: "tenant/tenant-local/workspace/workspace-local/external/web/example.com",
       trustClassification: "EXTERNAL_UNTRUSTED"
     }),
     principalContext: ctx
@@ -101,7 +101,7 @@ test("create/read/query per memory class works", () => {
   const audit = plane.createRecord({
     write: writeRequest({
       memoryClass: "AUDIT_ACTION_HISTORY",
-      namespace: "audit/run:1",
+      namespace: "tenant/tenant-local/workspace/workspace-local/audit/run:1",
       trustClassification: "AUDIT_SECURITY",
       provenance: {
         sourceType: "audit-event-reference",
@@ -158,13 +158,34 @@ test("namespace and tenant boundary enforcement rejects invalid access", () => {
       plane.createRecord({
         write: writeRequest({
           memoryClass: "USER_DURABLE",
-          namespace: "user/user:bob/profile",
+          namespace: "tenant/tenant-local/workspace/workspace-local/user/user:bob/profile",
           ownerPrincipal: { principalId: "user:alice", principalType: "human_user" }
         }),
         principalContext: ctx
       }),
     (error: unknown) =>
       error instanceof MemoryPlaneError && error.code === "NAMESPACE_OWNER_MISMATCH"
+  );
+
+  const created = plane.createRecord({
+    write: writeRequest({
+      memoryClass: "UNTRUSTED_EXTERNAL",
+      namespace: "tenant/tenant-local/workspace/workspace-local/external/web/example.com",
+      trustClassification: "EXTERNAL_UNTRUSTED"
+    }),
+    principalContext: ctx
+  });
+  assert.throws(
+    () =>
+      plane.getRecord({
+        recordId: created.recordId,
+        principalContext: {
+          ...ctx,
+          tenantId: "tenant-other"
+        },
+        trace: writeRequest().trace
+      }),
+    (error: unknown) => error instanceof MemoryPlaneError && error.code === "TENANT_SCOPE_VIOLATION"
   );
 });
 
@@ -186,7 +207,7 @@ test("no silent trust promotion from untrusted to trusted durable", () => {
       plane.createRecord({
         write: writeRequest({
           memoryClass: "USER_DURABLE",
-          namespace: "user/user:alice/profile",
+          namespace: "tenant/tenant-local/workspace/workspace-local/user/user:alice/profile",
           ownerPrincipal: { principalId: "user:alice", principalType: "human_user" },
           trustClassification: "EXTERNAL_UNTRUSTED"
         }),
@@ -216,7 +237,7 @@ test("derived content with untrusted lineage cannot be directly written to durab
       plane.createRecord({
         write: writeRequest({
           memoryClass: "USER_DURABLE",
-          namespace: "user/user:alice/profile",
+          namespace: "tenant/tenant-local/workspace/workspace-local/user/user:alice/profile",
           ownerPrincipal: { principalId: "user:alice", principalType: "human_user" },
           trustClassification: "USER_OWNED",
           provenance: {
@@ -255,7 +276,7 @@ test("promotion workflow preserves lineage and enforces review", () => {
   const source = plane.createRecord({
     write: writeRequest({
       memoryClass: "UNTRUSTED_EXTERNAL",
-      namespace: "external/web/example.com",
+      namespace: "tenant/tenant-local/workspace/workspace-local/external/web/example.com",
       trustClassification: "EXTERNAL_UNTRUSTED",
       provenance: {
         sourceType: "retrieved-web-content",
@@ -277,7 +298,7 @@ test("promotion workflow preserves lineage and enforces review", () => {
         schemaVersion: "1.0",
         recordId: source.recordId,
         targetClass: "USER_DURABLE",
-        targetNamespace: "user/user:alice/profile",
+        targetNamespace: "tenant/tenant-local/workspace/workspace-local/user/user:alice/profile",
         reason: "attempt direct",
         trace: writeRequest().trace
       },
@@ -288,7 +309,7 @@ test("promotion workflow preserves lineage and enforces review", () => {
   const trustedCandidate = plane.createRecord({
     write: writeRequest({
       memoryClass: "EPHEMERAL_SESSION",
-      namespace: "session/session:1",
+      namespace: "tenant/tenant-local/workspace/workspace-local/session/session:1",
       trustClassification: "USER_OWNED"
     }),
     principalContext: context()
@@ -298,7 +319,7 @@ test("promotion workflow preserves lineage and enforces review", () => {
       schemaVersion: "1.0",
       recordId: trustedCandidate.recordId,
       targetClass: "USER_DURABLE",
-      targetNamespace: "user/user:alice/profile",
+      targetNamespace: "tenant/tenant-local/workspace/workspace-local/user/user:alice/profile",
       reason: "promote to durable",
       trace: writeRequest().trace
     },
@@ -338,7 +359,7 @@ test("retention expiration prunes ephemeral and untrusted entries", async () => 
   const oldIso = new Date(Date.now() - 10_000).toISOString();
   const ephemeral = plane.createRecord({
     write: writeRequest({
-      namespace: "session/session:retention",
+      namespace: "tenant/tenant-local/workspace/workspace-local/session/session:retention",
       retentionOverrideTtlSeconds: 1,
       provenance: {
         sourceType: "session-message",
@@ -357,7 +378,7 @@ test("retention expiration prunes ephemeral and untrusted entries", async () => 
   const untrusted = plane.createRecord({
     write: writeRequest({
       memoryClass: "UNTRUSTED_EXTERNAL",
-      namespace: "external/web/retention",
+      namespace: "tenant/tenant-local/workspace/workspace-local/external/web/retention",
       trustClassification: "EXTERNAL_UNTRUSTED",
       retentionOverrideTtlSeconds: 1,
       provenance: {
@@ -398,7 +419,7 @@ test("context retrieval preserves trust labels across classes", () => {
   plane.createRecord({
     write: writeRequest({
       memoryClass: "USER_DURABLE",
-      namespace: "user/user:alice/profile",
+      namespace: "tenant/tenant-local/workspace/workspace-local/user/user:alice/profile",
       ownerPrincipal: { principalId: "user:alice", principalType: "human_user" },
       trustClassification: "USER_OWNED"
     }),
@@ -407,7 +428,7 @@ test("context retrieval preserves trust labels across classes", () => {
   plane.createRecord({
     write: writeRequest({
       memoryClass: "UNTRUSTED_EXTERNAL",
-      namespace: "external/web/example.com",
+      namespace: "tenant/tenant-local/workspace/workspace-local/external/web/example.com",
       trustClassification: "EXTERNAL_UNTRUSTED",
       provenance: {
         sourceType: "retrieved-web-content",

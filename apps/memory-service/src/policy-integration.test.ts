@@ -44,7 +44,7 @@ test("memory policy query builds evaluable request", async () => {
     },
     actionClass: "read",
     actionId: "memory.query",
-    namespace: "user/user:alice/profile",
+    namespace: "tenant/tenant-local/workspace/workspace-local/user/user:alice/profile",
     tenantId: "tenant-local",
     workspaceId: "workspace-local",
     requestedCapabilities: ["memory.read"],
@@ -54,5 +54,5 @@ test("memory policy query builds evaluable request", async () => {
     }
   });
   assert.equal(decision.decision, "ALLOW");
-  assert.equal(capturedNamespace, "user/user:alice/profile");
+  assert.equal(capturedNamespace, "tenant/tenant-local/workspace/workspace-local/user/user:alice/profile");
 });

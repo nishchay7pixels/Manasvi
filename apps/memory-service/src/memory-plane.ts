@@ -25,7 +25,8 @@ import {
 import {
   assertPromotionCompatibility,
   assertWriteCompatibility,
-  isSensitiveMemoryClass
+  isSensitiveMemoryClass,
+  parseTenantWorkspaceNamespace
 } from "@manasvi/memory-sdk";
 
 export class MemoryPlaneError extends Error {
@@ -174,16 +175,27 @@ export class InMemoryTrustClassifiedMemoryPlane {
   }
 
   private enforceClassSpecificRules(input: MemoryWriteRequest): void {
+    const scoped = parseTenantWorkspaceNamespace(input.namespace);
+    if (!scoped) {
+      throw new MemoryPlaneError("NAMESPACE_SCOPE_MISSING", 422, "Namespace must include tenant/workspace scope");
+    }
+    if (scoped.tenantId !== input.tenantId || scoped.workspaceId !== input.workspaceId) {
+      throw new MemoryPlaneError("NAMESPACE_SCOPE_MISMATCH", 422, "Namespace scope must match write tenant/workspace");
+    }
     if (input.memoryClass === "USER_DURABLE") {
       if (!input.ownerPrincipal) {
         throw new MemoryPlaneError("OWNER_REQUIRED", 422, "USER_DURABLE memory requires ownerPrincipal");
       }
-      if (!input.namespace.startsWith(`user/${input.ownerPrincipal.principalId}/`)) {
+      if (!scoped.suffix.startsWith(`user/${input.ownerPrincipal.principalId}/`)) {
         throw new MemoryPlaneError("NAMESPACE_OWNER_MISMATCH", 422, "User namespace must match owner principal");
       }
     }
-    if (input.memoryClass === "ORG_SHARED_TRUSTED" && !input.namespace.startsWith(`org/${input.workspaceId}/`)) {
-      throw new MemoryPlaneError("NAMESPACE_WORKSPACE_MISMATCH", 422, "Org namespace must match workspace id");
+    if (input.memoryClass === "ORG_SHARED_TRUSTED" && !scoped.suffix.startsWith("shared/")) {
+      throw new MemoryPlaneError(
+        "NAMESPACE_WORKSPACE_MISMATCH",
+        422,
+        "Org shared namespace must use tenant/workspace scoped shared/* suffix"
+      );
     }
   }
 
@@ -609,7 +621,10 @@ export class InMemoryTrustClassifiedMemoryPlane {
   }) {
     const parsed = memoryContextCandidatesRequestSchema.parse(input.request);
     mustMatchTenantWorkspace(input.principalContext, parsed.tenantId, parsed.workspaceId);
-    const ownerNamespacePrefix = `user/${parsed.actorPrincipal.principalId}/`;
+    const ownerNamespacePrefix = `tenant/${parsed.tenantId}/workspace/${parsed.workspaceId}/user/${parsed.actorPrincipal.principalId}/`;
+    const sessionNamespacePrefix = parsed.sessionId
+      ? `tenant/${parsed.tenantId}/workspace/${parsed.workspaceId}/session/${parsed.sessionId}`
+      : undefined;
     const records = Array.from(this.byId.values())
       .map((stored) => this.toExposedRecord(stored))
       .filter((record) => {
@@ -622,8 +637,8 @@ export class InMemoryTrustClassifiedMemoryPlane {
         if (record.memoryClass === "USER_DURABLE" && !record.namespace.startsWith(ownerNamespacePrefix)) {
           return false;
         }
-        if (record.memoryClass === "EPHEMERAL_SESSION" && parsed.sessionId) {
-          return record.namespace.startsWith(`session/${parsed.sessionId}`);
+        if (record.memoryClass === "EPHEMERAL_SESSION" && sessionNamespacePrefix) {
+          return record.namespace.startsWith(sessionNamespacePrefix);
         }
         return true;
       })
@@ -658,7 +673,7 @@ export class InMemoryTrustClassifiedMemoryPlane {
         caller: input.principalContext.caller,
         tenantId: parsed.tenantId,
         workspaceId: parsed.workspaceId,
-        namespace: parsed.sessionId ? `session/${parsed.sessionId}` : "context-candidates",
+        namespace: parsed.sessionId ? sessionNamespacePrefix ?? "context-candidates" : "context-candidates",
         trace: parsed.trace,
         policyDecisionId: input.policyDecisionId,
         metadata: {
