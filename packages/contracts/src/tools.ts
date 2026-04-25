@@ -5,6 +5,7 @@ import { CONTRACT_SCHEMA_VERSION, trustClassSchema } from "./base.js";
 import { approvedIntentArtifactSchema, executionIntentSchema } from "./execution-intent.js";
 import { principalReferenceSchema } from "./identity.js";
 import { actionClassSchema, policyResourceReferenceSchema, policyTraceSchema } from "./policy.js";
+import { secretReferenceStringSchema } from "./secrets.js";
 
 export const TOOL_CONTRACT_VERSION = "1.0" as const;
 
@@ -105,7 +106,7 @@ export const toolRuntimeHintsSchema = z.object({
   defaultSandboxMode: toolRuntimeProfileSchema.default("read_only_local"),
   egressProfiles: z.array(z.string().min(1)).default([]),
   filesystemProfile: z.enum(["none", "read_only_inputs", "scratch_write", "privileged_bounded"]).default("none"),
-  declaredSecretRefs: z.array(z.string().min(1)).default([]),
+  declaredSecretRefs: z.array(secretReferenceStringSchema).default([]),
   requireExecutorPath: z.boolean().default(true),
   approvalSensitive: z.boolean().default(false)
 });
@@ -169,7 +170,7 @@ export const toolInvocationRequestSchema = z.object({
   caller: principalReferenceSchema,
   sessionId: z.string().min(1).optional(),
   input: z.record(z.unknown()),
-  requestedSecretRefs: z.array(z.string().min(1)).default([]),
+  requestedSecretRefs: z.array(secretReferenceStringSchema).default([]),
   trace: policyTraceSchema
 });
 export type ToolInvocationRequest = z.infer<typeof toolInvocationRequestSchema>;

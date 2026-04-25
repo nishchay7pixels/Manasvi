@@ -50,3 +50,7 @@ export function assertPolicyDecision(
     throw new Error("Policy response missing decision/audit identifiers");
   }
 }
+
+export * from "./trust-boundary/assumptions.js";
+export * from "./trust-boundary/fixtures.js";
+export * from "./trust-boundary/oracles.js";

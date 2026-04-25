@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { CONTRACT_SCHEMA_VERSION } from "./base.js";
 import { actionClassSchema, policyResourceReferenceSchema, policyTraceSchema } from "./policy.js";
+import { secretReferenceStringSchema } from "./secrets.js";
 
 export const EXECUTION_RUNTIME_CONTRACT_VERSION = "1.0" as const;
 
@@ -42,7 +43,7 @@ export const networkPolicySchema = z.object({
 export type NetworkPolicy = z.infer<typeof networkPolicySchema>;
 
 export const secretInjectionPolicySchema = z.object({
-  allowedSecretRefs: z.array(z.string().min(1)).default([]),
+  allowedSecretRefs: z.array(secretReferenceStringSchema).default([]),
   injectedSecretEnvNames: z.array(z.string().min(1)).default([])
 });
 export type SecretInjectionPolicy = z.infer<typeof secretInjectionPolicySchema>;

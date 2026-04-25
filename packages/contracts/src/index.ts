@@ -10,4 +10,5 @@ export * from "./node.js";
 export * from "./plugin.js";
 export * from "./policy.js";
 export * from "./session-context.js";
+export * from "./secrets.js";
 export * from "./tools.js";

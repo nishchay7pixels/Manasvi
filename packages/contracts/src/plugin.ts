@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { policyTraceSchema } from "./policy.js";
 import { principalReferenceSchema } from "./identity.js";
+import { secretReferenceStringSchema } from "./secrets.js";
 
 export const PLUGIN_CONTRACT_VERSION = "1.0" as const;
 export const PLUGIN_PROTOCOL_VERSION = "1.0" as const;
@@ -150,7 +151,7 @@ export const pluginManifestSchema = z.object({
   providedHooks: z.array(pluginHookDeclarationSchema).default([]),
 
   // ── Required external access (requests, not guarantees) ─────────────────
-  requiredSecretRefs: z.array(z.string().min(1)).default([]),
+  requiredSecretRefs: z.array(secretReferenceStringSchema).default([]),
   requiredNetworkDomains: z.array(z.string().min(1)).default([]),
   requiredFilesystemZones: z.array(z.string().min(1)).default([]),
 

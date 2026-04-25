@@ -12,14 +12,23 @@
     }
   },
   "dependencies": {
-    "@manasvi/contracts": "workspace:*"
+    "@manasvi/contracts": "workspace:*",
+    "@manasvi/event-bus": "workspace:*",
+    "@manasvi/executor-sdk": "workspace:*"
   },
   "scripts": {
     "build": "tsc -b",
     "dev": "tsx watch src/index.ts",
     "typecheck": "tsc -b --pretty false",
     "lint": "tsc --noEmit -p tsconfig.json --pretty false",
-    "test": "node -e \"console.log('no tests for testing package')\"",
+    "test": "node --loader tsx --test src/**/*.test.ts",
+    "test:trust-boundary": "node --loader tsx --test src/trust-boundary/**/*.test.ts",
+    "test:plugin": "node --loader tsx --test src/trust-boundary/malicious-plugin.test.ts",
+    "test:event-integrity": "node --loader tsx --test src/trust-boundary/forged-events.test.ts",
+    "test:approval": "node --loader tsx --test src/trust-boundary/approval-bypass.test.ts",
+    "test:node": "node --loader tsx --test src/trust-boundary/node-impersonation.test.ts",
+    "test:session": "node --loader tsx --test src/trust-boundary/cross-session-leak.test.ts",
+    "test:memory": "node --loader tsx --test src/trust-boundary/memory-poisoning.test.ts",
     "clean": "rm -rf dist tsconfig.tsbuildinfo"
   }
 }

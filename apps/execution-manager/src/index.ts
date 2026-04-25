@@ -4,6 +4,7 @@ import {
   executorApiRequestSchema,
   executionIntentSchema,
   runtimePolicySchema,
+  secretReferenceStringSchema,
   toolExecutionContractSchema
 } from "@manasvi/contracts";
 import {
@@ -12,6 +13,12 @@ import {
   buildServicePrincipalReference
 } from "@manasvi/auth";
 import { HttpPolicyClient } from "@manasvi/policy-sdk";
+import {
+  EnvMapSecretProvider,
+  SecretBroker,
+  parseSecretReferenceMapping,
+  redactSecretsInObject
+} from "@manasvi/secrets-sdk";
 import { validateExecutionAuthorization } from "@manasvi/executor-sdk";
 import { runSandboxedExecution } from "@manasvi/sandbox-runtime";
 import { validateToolInput, validateToolOutput } from "@manasvi/tool-sdk";
@@ -22,6 +29,7 @@ import { z } from "zod";
 import { loadExecutionManagerConfig } from "./config.js";
 import { queryPolicyForExecution } from "./policy-integration.js";
 import { deriveRuntimePolicy } from "./runtime-policy.js";
+import { parseSecretErrorCode, sanitizeIncomingSecretValues } from "./secrets.js";
 import { mergeRuntimePolicyWithToolHints } from "./tool-runtime-policy.js";
 
 async function main(): Promise<void> {
@@ -55,6 +63,38 @@ async function main(): Promise<void> {
         caller: buildServicePrincipalReference(config.serviceName),
         scopes: ["policy.evaluate", "service:execution-manager"]
       })
+  });
+  const secretProvider = new EnvMapSecretProvider(
+    process.env,
+    parseSecretReferenceMapping(config.secretRefEnvMapJson)
+  );
+  const secretBroker = new SecretBroker({
+    policyClient,
+    provider: secretProvider,
+    requestingService: buildServicePrincipalReference(config.serviceName),
+    onUsageRecord: (record) => {
+      console.log(
+        JSON.stringify({
+          timestamp: new Date().toISOString(),
+          level: "info",
+          service: "execution-manager",
+          message: "Secret usage record",
+          secretUsage: redactSecretsInObject({
+            usageId: record.usageId,
+            eventType: record.eventType,
+            reference: record.reference,
+            consumerType: record.consumerType,
+            consumerId: record.consumerId,
+            tenantId: record.tenantId,
+            workspaceId: record.workspaceId,
+            traceId: record.trace.traceId,
+            correlationId: record.trace.correlationId,
+            reasonCodes: record.reasonCodes,
+            metadata: record.metadata
+          })
+        })
+      );
+    }
   });
   const consumedArtifacts = new Set<string>();
 
@@ -245,6 +285,67 @@ async function main(): Promise<void> {
           cpuTimeLimitSeconds: runtimePolicy.cpuTimeLimitSeconds,
           memoryLimitMb: runtimePolicy.memoryLimitMb
         });
+        let runtimeSecretValuesByRef: Record<string, string> = {};
+        if (incoming.secretValuesByRef) {
+          if (!config.allowIncomingRawSecretValues) {
+            respondJson(res, 422, {
+              schemaVersion: CONTRACT_SCHEMA_VERSION,
+              accepted: false,
+              errorCode: "RAW_SECRET_VALUES_NOT_ACCEPTED"
+            });
+            return true;
+          }
+          try {
+            runtimeSecretValuesByRef = sanitizeIncomingSecretValues(
+              incoming.secretValuesByRef,
+              runtimePolicy.secrets.allowedSecretRefs
+            );
+          } catch (error) {
+            respondJson(res, 422, {
+              schemaVersion: CONTRACT_SCHEMA_VERSION,
+              accepted: false,
+              errorCode: parseSecretErrorCode(error),
+              error: error instanceof Error ? error.message : "invalid incoming secret reference"
+            });
+            return true;
+          }
+        }
+        if (!incoming.dryRun && runtimePolicy.secrets.allowedSecretRefs.length > 0) {
+          const missingRefs = runtimePolicy.secrets.allowedSecretRefs.filter(
+            (reference) => !runtimeSecretValuesByRef[reference]
+          );
+          if (missingRefs.length > 0) {
+            try {
+              const resolved = await secretBroker.resolveForRuntime({
+                principalContext: principal.context,
+                trace,
+                tenantId: incoming.intent.snapshot.tenantId,
+                workspaceId: incoming.intent.snapshot.workspaceId,
+                consumerType: "tool-runtime",
+                consumerId: incoming.intent.snapshot.action.toolRef ?? "tool:unknown",
+                purpose: "execution_runtime_injection",
+                references: missingRefs,
+                requestRawExposure: false,
+                runtimeContext: {
+                  sandboxMode: runtimePolicy.sandboxMode,
+                  toolId: incoming.intent.snapshot.action.toolRef ?? "tool:unknown"
+                }
+              });
+              runtimeSecretValuesByRef = {
+                ...runtimeSecretValuesByRef,
+                ...resolved.secretValuesByRef
+              };
+            } catch (error) {
+              respondJson(res, 403, {
+                schemaVersion: CONTRACT_SCHEMA_VERSION,
+                accepted: false,
+                errorCode: parseSecretErrorCode(error),
+                error: error instanceof Error ? error.message : "secret access denied"
+              });
+              return true;
+            }
+          }
+        }
         if (incoming.dryRun) {
           consumedArtifacts.add(incoming.artifact.artifactId);
           respondJson(res, 202, {
@@ -266,7 +367,9 @@ async function main(): Promise<void> {
           tokenService,
           decisionAuditRecordId: decision.auditRecordId,
           executionAuditEventId: `exec-audit:${runId}`,
-          ...(incoming.secretValuesByRef ? { secretValuesByRef: incoming.secretValuesByRef } : {}),
+          ...(Object.keys(runtimeSecretValuesByRef).length > 0
+            ? { secretValuesByRef: runtimeSecretValuesByRef }
+            : {}),
           sandboxRootDir: config.sandboxRootDir,
           maxOutputBytes: config.sandboxMaxOutputBytes
         });
@@ -418,6 +521,67 @@ async function main(): Promise<void> {
           executionToken,
           trace
         });
+        let runtimeSecretValuesByRef: Record<string, string> = {};
+        if (incoming.secretValuesByRef) {
+          if (!config.allowIncomingRawSecretValues) {
+            respondJson(res, 422, {
+              schemaVersion: CONTRACT_SCHEMA_VERSION,
+              accepted: false,
+              errorCode: "RAW_SECRET_VALUES_NOT_ACCEPTED"
+            });
+            return true;
+          }
+          try {
+            runtimeSecretValuesByRef = sanitizeIncomingSecretValues(
+              incoming.secretValuesByRef,
+              runtimePolicy.secrets.allowedSecretRefs
+            );
+          } catch (error) {
+            respondJson(res, 422, {
+              schemaVersion: CONTRACT_SCHEMA_VERSION,
+              accepted: false,
+              errorCode: parseSecretErrorCode(error),
+              error: error instanceof Error ? error.message : "invalid incoming secret reference"
+            });
+            return true;
+          }
+        }
+        if (!incoming.dryRun && runtimePolicy.secrets.allowedSecretRefs.length > 0) {
+          const missingRefs = runtimePolicy.secrets.allowedSecretRefs.filter(
+            (reference) => !runtimeSecretValuesByRef[reference]
+          );
+          if (missingRefs.length > 0) {
+            try {
+              const resolved = await secretBroker.resolveForRuntime({
+                principalContext: principal.context,
+                trace,
+                tenantId: incoming.contract.intent.snapshot.tenantId,
+                workspaceId: incoming.contract.intent.snapshot.workspaceId,
+                consumerType: "tool-runtime",
+                consumerId: incoming.contract.manifest.toolId,
+                purpose: "tool_contract_runtime_injection",
+                references: missingRefs,
+                requestRawExposure: false,
+                runtimeContext: {
+                  sandboxMode: runtimePolicy.sandboxMode,
+                  toolId: incoming.contract.manifest.toolId
+                }
+              });
+              runtimeSecretValuesByRef = {
+                ...runtimeSecretValuesByRef,
+                ...resolved.secretValuesByRef
+              };
+            } catch (error) {
+              respondJson(res, 403, {
+                schemaVersion: CONTRACT_SCHEMA_VERSION,
+                accepted: false,
+                errorCode: parseSecretErrorCode(error),
+                error: error instanceof Error ? error.message : "secret access denied"
+              });
+              return true;
+            }
+          }
+        }
         if (incoming.dryRun) {
           consumedArtifacts.add(incoming.contract.artifact.artifactId);
           respondJson(res, 202, {
@@ -436,7 +600,9 @@ async function main(): Promise<void> {
           tokenService,
           decisionAuditRecordId: decision.auditRecordId,
           executionAuditEventId: `exec-audit:${runId}`,
-          ...(incoming.secretValuesByRef ? { secretValuesByRef: incoming.secretValuesByRef } : {}),
+          ...(Object.keys(runtimeSecretValuesByRef).length > 0
+            ? { secretValuesByRef: runtimeSecretValuesByRef }
+            : {}),
           sandboxRootDir: config.sandboxRootDir,
           maxOutputBytes: config.sandboxMaxOutputBytes
         });

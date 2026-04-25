@@ -20,6 +20,9 @@ export const executionConfigSchema = baseServiceConfigSchema.extend({
   executionTokenTtlSeconds: z.number().int().positive().max(600).default(90),
   sandboxRootDir: z.string().min(1).default("/tmp/manasvi-runs"),
   sandboxMaxOutputBytes: z.number().int().positive().max(512 * 1024).default(64 * 1024),
+  allowIncomingRawSecretValues: z.boolean().default(false),
+  secretRefEnvMapJson: z.string().default("{}"),
+  auditServiceBaseUrl: z.string().url().default("http://localhost:4107"),
   egressWhitelistPolicy: egressWhitelistPolicySchema,
   sandboxProfileDefault: z
     .enum(["read_only", "bounded_egress", "mutation_limited", "privileged_reviewed"])
@@ -99,6 +102,9 @@ export async function loadExecutionManagerConfig(): Promise<ExecutionManagerConf
       executionTokenTtlSeconds: Number(env.EXECUTION_TOKEN_TTL_SECONDS ?? 90),
       sandboxRootDir: env.SANDBOX_ROOT_DIR ?? "/tmp/manasvi-runs",
       sandboxMaxOutputBytes: Number(env.SANDBOX_MAX_OUTPUT_BYTES ?? 64 * 1024),
+      allowIncomingRawSecretValues: env.EXECUTION_ALLOW_INCOMING_RAW_SECRET_VALUES === "true",
+      secretRefEnvMapJson: env.SECRET_REF_ENV_MAP_JSON ?? "{}",
+      auditServiceBaseUrl: env.AUDIT_SERVICE_BASE_URL ?? "http://localhost:4107",
       sandboxProfileDefault: env.SANDBOX_PROFILE_DEFAULT ?? "read_only",
       executionControlToken:
         profile === "staging" || profile === "production"
