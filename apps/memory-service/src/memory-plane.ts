@@ -155,15 +155,20 @@ export class InMemoryTrustClassifiedMemoryPlane {
   }
 
   private ensureNoSilentPromotion(input: MemoryWriteRequest): void {
+    const durableTarget = input.memoryClass === "USER_DURABLE" || input.memoryClass === "ORG_SHARED_TRUSTED";
+    const lineageUntrusted =
+      input.provenance.originalTrustClassification === "EXTERNAL_UNTRUSTED" ||
+      input.provenance.originalTrustClassification === "MODEL_INTERMEDIATE";
     if (
-      (input.memoryClass === "USER_DURABLE" || input.memoryClass === "ORG_SHARED_TRUSTED") &&
+      durableTarget &&
       (input.trustClassification === "EXTERNAL_UNTRUSTED" ||
-        input.trustClassification === "MODEL_INTERMEDIATE")
+        input.trustClassification === "MODEL_INTERMEDIATE" ||
+        (input.provenance.derivation.derived && lineageUntrusted))
     ) {
       throw new MemoryPlaneError(
         "SILENT_TRUST_PROMOTION_BLOCKED",
         422,
-        "Untrusted content cannot be directly written into trusted durable memory"
+        "Untrusted or derived-untrusted content cannot be directly written into trusted durable memory"
       );
     }
   }

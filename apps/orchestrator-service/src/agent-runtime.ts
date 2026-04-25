@@ -57,6 +57,12 @@ interface ToolExecutionResponse {
   toolOutput?: Record<string, unknown>;
 }
 
+interface ProposalSuspicionAssessment {
+  suspicious: boolean;
+  riskFlags: string[];
+  reasons: string[];
+}
+
 export interface PlannerModelProvider {
   invokePlanner(input: {
     plannerRequest: PlannerRequest;
@@ -381,11 +387,30 @@ export class GovernedAgentRuntime {
       transition("awaiting_policy", "policy_evaluation_requested", {
         toolId: toolEntry.toolId
       });
+      const suspicion = this.assessProposalForInjection({
+        proposal: decision.proposal,
+        assembledContext
+      });
+      if (suspicion.suspicious) {
+        observations.push(
+          this.createObservation({
+            type: "runtime_failure",
+            summary: "Suspicious proposal markers detected from untrusted context",
+            trustClassification: "CONTROL_TRUSTED",
+            data: {
+              toolId: toolEntry.toolId,
+              reasons: suspicion.reasons
+            },
+            trace: input.trace
+          })
+        );
+      }
       const decisionResponse = await this.evaluateToolPolicy({
         input,
         principalContext,
         toolEntry,
-        proposal: decision.proposal
+        proposal: decision.proposal,
+        additionalRiskFlags: suspicion.riskFlags
       });
       observations.push(
         this.createObservation({
@@ -410,6 +435,18 @@ export class GovernedAgentRuntime {
           status: "halted_denied",
           reasonCode: "POLICY_DENIED",
           responseText: "I cannot perform that action under current policy."
+        };
+        break;
+      }
+      if (suspicion.suspicious && !decisionResponse.approvalRequired) {
+        transition("halted_denied", "suspicious_proposal_blocked", {
+          toolId: toolEntry.toolId,
+          reasons: suspicion.reasons
+        });
+        finalOutcome = {
+          status: "halted_denied",
+          reasonCode: "SUSPICIOUS_PROPOSAL_BLOCKED",
+          responseText: "I cannot execute that request because untrusted content attempted to influence control flow."
         };
         break;
       }
@@ -691,6 +728,7 @@ export class GovernedAgentRuntime {
     principalContext: ResolvedPrincipalContext;
     toolEntry: ToolRegistryEntry;
     proposal: Extract<ActionProposal, { proposalType: "tool_invocation" }>;
+    additionalRiskFlags?: string[];
   }): Promise<PolicyEvaluationResponse> {
     return queryPolicyForOrchestration(this.deps.policyClient, {
       principalContext: input.principalContext,
@@ -710,8 +748,48 @@ export class GovernedAgentRuntime {
       workspaceId: input.input.workspaceId,
       trace: input.input.trace,
       ...(input.input.sessionId ? { sessionId: input.input.sessionId } : {}),
-      riskFlags: [input.toolEntry.manifest.sideEffectClass, ...input.toolEntry.manifest.tags]
+      riskFlags: [
+        input.toolEntry.manifest.sideEffectClass,
+        ...input.toolEntry.manifest.tags,
+        ...(input.additionalRiskFlags ?? [])
+      ]
     });
+  }
+
+  private assessProposalForInjection(input: {
+    proposal: Extract<ActionProposal, { proposalType: "tool_invocation" }>;
+    assembledContext: AssembledContext;
+  }): ProposalSuspicionAssessment {
+    const suspectPatterns = [
+      /ignore\s+(all|previous|prior)\s+instructions/i,
+      /system\s+instruction/i,
+      /policy\s+already\s+approved/i,
+      /approval\s+already\s+granted/i,
+      /exfiltrat/i,
+      /secret/i
+    ];
+    const proposalPayload = JSON.stringify({
+      purpose: input.proposal.purpose,
+      input: input.proposal.input
+    });
+    const containsControlClaim = suspectPatterns.some((pattern) => pattern.test(proposalPayload));
+    const untrustedContextPresent = input.assembledContext.chunks.some(
+      (chunk) =>
+        chunk.provenance.trustClassification === "EXTERNAL_UNTRUSTED" ||
+        chunk.provenance.authority === "untrusted_external"
+    );
+    if (!containsControlClaim || !untrustedContextPresent) {
+      return {
+        suspicious: false,
+        riskFlags: [],
+        reasons: []
+      };
+    }
+    return {
+      suspicious: true,
+      riskFlags: ["prompt_injection_suspected", "untrusted_context_control_claim"],
+      reasons: ["proposal_contains_control_claims", "untrusted_context_present"]
+    };
   }
 
   private injectObservationIntoContext(assembledContext: AssembledContext, observation: AgentObservation): AssembledContext {
@@ -725,12 +803,14 @@ export class GovernedAgentRuntime {
       createdAt: observation.createdAt,
       sticky: false,
       stale: false,
+      role: "tool_observation",
       provenance: {
         sourceType: "tool-result",
         sourceId: observation.observationId,
         sourceRef: `observation:${observation.observationId}`,
         observedAt: observation.createdAt,
         trustClassification: observation.trustClassification,
+        authority: "informational",
         tenantId: assembledContext.session.tenantId,
         workspaceId: assembledContext.session.workspaceId,
         sessionId: assembledContext.session.sessionId,
@@ -798,6 +878,13 @@ function memoryRecordToContextSource(input: {
       : {}),
     observedAt: input.record.provenance.createdAt,
     sessionId: input.sessionId,
+    role:
+      input.record.memoryClass === "UNTRUSTED_EXTERNAL"
+        ? "evidence_untrusted"
+        : input.record.memoryClass === "AUDIT_ACTION_HISTORY"
+          ? "policy_runtime"
+          : "memory_continuity",
+    authority: input.record.trustClassification === "EXTERNAL_UNTRUSTED" ? "untrusted_external" : "informational",
     metadata: {
       memoryClass: input.record.memoryClass,
       contentType: input.record.contentType

@@ -100,7 +100,9 @@ test("context trace schema captures include/exclude decisions", () => {
         chunkId: "chunk:1",
         sourceRef: "message:1",
         sourceType: "session-message",
+        role: "user_goal",
         trustClassification: "USER_OWNED",
+        authority: "informational",
         outcome: "included",
         reasonCode: "INCLUDED_RECENT_SESSION_MESSAGE"
       },
@@ -108,7 +110,9 @@ test("context trace schema captures include/exclude decisions", () => {
         chunkId: "chunk:2",
         sourceRef: "message:2",
         sourceType: "session-message",
+        role: "user_goal",
         trustClassification: "USER_OWNED",
+        authority: "informational",
         outcome: "excluded",
         reasonCode: "EXCLUDED_TOKEN_BUDGET"
       }

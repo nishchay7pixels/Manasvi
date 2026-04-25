@@ -32,7 +32,9 @@ export interface HarnessEventResultRecord {
 
 export interface ContextChunkSummary {
   chunkId: string;
+  role: string;
   sourceType: string;
+  authority: string;
   trustClassification: string;
   contentCategory: string;
   tokenEstimate: number;
@@ -108,7 +110,9 @@ export function buildHarnessEventResultRecord(input: {
 function summarizeChunk(chunk: ContextChunk): ContextChunkSummary {
   return {
     chunkId: chunk.chunkId,
+    role: chunk.role,
     sourceType: chunk.provenance.sourceType,
+    authority: chunk.provenance.authority,
     trustClassification: chunk.provenance.trustClassification,
     contentCategory: chunk.provenance.contentCategory,
     tokenEstimate: chunk.tokenEstimate,

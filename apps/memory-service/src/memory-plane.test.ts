@@ -198,6 +198,47 @@ test("no silent trust promotion from untrusted to trusted durable", () => {
   );
 });
 
+test("derived content with untrusted lineage cannot be directly written to durable memory", () => {
+  const plane = new InMemoryTrustClassifiedMemoryPlane({
+    serviceName: "memory-service",
+    encryptionKey: "manasvi-local-memory-encryption-key",
+    encryptionKeyRef: "memory-key:local",
+    ttlByClass: {
+      EPHEMERAL_SESSION: 60,
+      USER_DURABLE: undefined,
+      ORG_SHARED_TRUSTED: undefined,
+      UNTRUSTED_EXTERNAL: 600,
+      AUDIT_ACTION_HISTORY: undefined
+    }
+  });
+  assert.throws(
+    () =>
+      plane.createRecord({
+        write: writeRequest({
+          memoryClass: "USER_DURABLE",
+          namespace: "user/user:alice/profile",
+          ownerPrincipal: { principalId: "user:alice", principalType: "human_user" },
+          trustClassification: "USER_OWNED",
+          provenance: {
+            sourceType: "model-summary",
+            sourceId: "summary:1",
+            sourceRef: "summary:1",
+            originalTrustClassification: "EXTERNAL_UNTRUSTED",
+            createdAt: new Date().toISOString(),
+            derivation: {
+              derived: true,
+              derivationType: "summarize",
+              derivedFromRecordIds: ["memory:external:1"],
+              derivedFromSourceRefs: ["https://evil.example"]
+            }
+          }
+        }),
+        principalContext: context()
+      }),
+    (error: unknown) => error instanceof MemoryPlaneError && error.code === "SILENT_TRUST_PROMOTION_BLOCKED"
+  );
+});
+
 test("promotion workflow preserves lineage and enforces review", () => {
   const plane = new InMemoryTrustClassifiedMemoryPlane({
     serviceName: "memory-service",

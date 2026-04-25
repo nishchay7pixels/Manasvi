@@ -12,6 +12,8 @@ import {
   type AssembledContext,
   type ContextChunk,
   type ContextContentCategory,
+  type ContextRole,
+  type ContextAuthority,
   type ContextProvenance,
   type ContextSourceType,
   type MessageContextTrace,
@@ -218,6 +220,8 @@ export interface ContextSourceInput {
   sourceRef: string;
   content: string;
   contentCategory: ContextContentCategory;
+  role?: ContextRole;
+  authority?: ContextAuthority;
   trustClassification: TrustClass;
   originatingPrincipal?: PrincipalReference;
   originatingService?: string;
@@ -359,6 +363,7 @@ export class ContextAssembler {
           ).toISOString(),
           sticky: false,
           stale: false,
+          role: "user_goal",
           provenance: contextProvenanceSchema.parse({
             sourceType: "session-message",
             sourceId: previous.messageId,
@@ -370,6 +375,7 @@ export class ContextAssembler {
             workspaceId: previous.workspaceId,
             sessionId: previous.sessionId,
             contentCategory: "user-input",
+            authority: "informational",
             transformation: {
               transformed: false,
               derivedFromChunkIds: [],
@@ -453,7 +459,9 @@ export class ContextAssembler {
         chunkId: chunk.chunkId,
         sourceRef: chunk.provenance.sourceRef,
         sourceType: chunk.provenance.sourceType,
+        role: chunk.role,
         trustClassification: chunk.provenance.trustClassification,
+        authority: chunk.provenance.authority,
         outcome: "included",
         reasonCode: "INCLUDED_METADATA"
       };
@@ -553,6 +561,17 @@ export class ContextAssembler {
 function toContextChunk(input: { source: ContextSourceInput; session: SessionEntity }): ContextChunk {
   const observedAt = input.source.observedAt ?? new Date().toISOString();
   const enforcedTrust = enforceTrustClassification(input.source.sourceType, input.source.trustClassification);
+  const derivedRole = deriveContextRole(
+    input.source.sourceType,
+    input.source.contentCategory,
+    enforcedTrust,
+    input.source.role
+  );
+  const authority = deriveContextAuthority(
+    input.source.sourceType,
+    enforcedTrust,
+    input.source.authority
+  );
   const expiresAt = input.source.ttlSeconds
     ? new Date(new Date(observedAt).getTime() + input.source.ttlSeconds * 1000).toISOString()
     : undefined;
@@ -568,6 +587,7 @@ function toContextChunk(input: { source: ContextSourceInput; session: SessionEnt
     workspaceId: input.source.workspaceId ?? input.session.workspaceId,
     sessionId: input.source.sessionId ?? input.session.sessionId,
     contentCategory: input.source.contentCategory,
+    authority,
     transformation: {
       transformed: input.source.transformation?.transformed ?? false,
       ...(input.source.transformation?.transformType
@@ -589,6 +609,7 @@ function toContextChunk(input: { source: ContextSourceInput; session: SessionEnt
     ...(expiresAt ? { expiresAt } : {}),
     sticky: input.source.sticky ?? false,
     stale: false,
+    role: derivedRole,
     provenance,
     metadata: input.source.metadata ?? {}
   });
@@ -602,6 +623,8 @@ function defaultTtlBySourceType(
     case "session-message":
       return ttl.recentSessionMessage;
     case "retrieved-web-content":
+    case "uploaded-document":
+    case "plugin-output":
     case "untrusted-external-upload":
       return ttl.untrustedRetrievedContent;
     case "tool-result":
@@ -735,11 +758,77 @@ function computeResolutionKey(input: SessionResolveInput): string | undefined {
 }
 
 function enforceTrustClassification(sourceType: ContextSourceType, requested: TrustClass): TrustClass {
-  if (sourceType === "retrieved-web-content" || sourceType === "untrusted-external-upload") {
+  if (
+    sourceType === "retrieved-web-content" ||
+    sourceType === "untrusted-external-upload" ||
+    sourceType === "uploaded-document" ||
+    sourceType === "plugin-output"
+  ) {
     return "EXTERNAL_UNTRUSTED";
   }
   if (sourceType === "model-generated-summary" && requested === "CONTROL_TRUSTED") {
     return "MODEL_INTERMEDIATE";
   }
   return requested;
+}
+
+function deriveContextRole(
+  sourceType: ContextSourceType,
+  contentCategory: ContextContentCategory,
+  trust: TrustClass,
+  requested?: ContextRole
+): ContextRole {
+  if (requested) {
+    if (trust === "EXTERNAL_UNTRUSTED" && requested === "control_instruction") {
+      return "evidence_untrusted";
+    }
+    return requested;
+  }
+  if (sourceType === "system-instruction") {
+    return "control_instruction";
+  }
+  if (sourceType === "policy-note" || sourceType === "risk-annotation") {
+    return "policy_runtime";
+  }
+  if (sourceType === "tool-result") {
+    return "tool_observation";
+  }
+  if (sourceType === "audit-linked-observation") {
+    return "policy_runtime";
+  }
+  if (sourceType === "user-memory" || sourceType === "shared-memory") {
+    return "memory_continuity";
+  }
+  if (
+    sourceType === "retrieved-web-content" ||
+    sourceType === "untrusted-external-upload" ||
+    sourceType === "uploaded-document" ||
+    sourceType === "plugin-output"
+  ) {
+    return "evidence_untrusted";
+  }
+  if (sourceType === "session-message" && contentCategory === "user-input") {
+    return "user_goal";
+  }
+  return "metadata";
+}
+
+function deriveContextAuthority(
+  sourceType: ContextSourceType,
+  trust: TrustClass,
+  requested?: ContextAuthority
+): ContextAuthority {
+  if (trust === "EXTERNAL_UNTRUSTED") {
+    return "untrusted_external";
+  }
+  if (requested) {
+    return requested;
+  }
+  if (sourceType === "system-instruction") {
+    return "authoritative_control";
+  }
+  if (sourceType === "policy-note") {
+    return "advisory_control";
+  }
+  return "informational";
 }

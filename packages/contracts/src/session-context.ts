@@ -94,7 +94,9 @@ export const contextSourceTypeSchema = z.enum([
   "session-message",
   "system-instruction",
   "retrieved-web-content",
+  "uploaded-document",
   "tool-result",
+  "plugin-output",
   "user-memory",
   "shared-memory",
   "untrusted-external-upload",
@@ -102,7 +104,8 @@ export const contextSourceTypeSchema = z.enum([
   "model-generated-summary",
   "session-metadata",
   "risk-annotation",
-  "channel-metadata"
+  "channel-metadata",
+  "audit-linked-observation"
 ]);
 export type ContextSourceType = z.infer<typeof contextSourceTypeSchema>;
 
@@ -119,6 +122,25 @@ export const contextContentCategorySchema = z.enum([
 ]);
 export type ContextContentCategory = z.infer<typeof contextContentCategorySchema>;
 
+export const contextRoleSchema = z.enum([
+  "control_instruction",
+  "user_goal",
+  "evidence_untrusted",
+  "tool_observation",
+  "policy_runtime",
+  "memory_continuity",
+  "metadata"
+]);
+export type ContextRole = z.infer<typeof contextRoleSchema>;
+
+export const contextAuthoritySchema = z.enum([
+  "authoritative_control",
+  "advisory_control",
+  "informational",
+  "untrusted_external"
+]);
+export type ContextAuthority = z.infer<typeof contextAuthoritySchema>;
+
 export const contextProvenanceSchema = z.object({
   sourceType: contextSourceTypeSchema,
   sourceId: z.string().min(1),
@@ -131,6 +153,7 @@ export const contextProvenanceSchema = z.object({
   workspaceId: z.string().min(1).optional(),
   sessionId: z.string().min(1).optional(),
   contentCategory: contextContentCategorySchema,
+  authority: contextAuthoritySchema.default("informational"),
   transformation: z
     .object({
       transformed: z.boolean().default(false),
@@ -157,6 +180,7 @@ export const contextChunkSchema = z.object({
   expiresAt: z.string().datetime({ offset: true }).optional(),
   sticky: z.boolean().default(false),
   stale: z.boolean().default(false),
+  role: contextRoleSchema.default("metadata"),
   provenance: contextProvenanceSchema,
   metadata: z.record(z.unknown()).default({})
 });
@@ -188,7 +212,9 @@ export const contextTraceEntrySchema = z.object({
   chunkId: z.string().min(1),
   sourceRef: z.string().min(1),
   sourceType: contextSourceTypeSchema,
+  role: contextRoleSchema,
   trustClassification: trustClassSchema,
+  authority: contextAuthoritySchema,
   outcome: contextTraceOutcomeSchema,
   reasonCode: contextTraceReasonCodeSchema,
   detail: z.string().optional()

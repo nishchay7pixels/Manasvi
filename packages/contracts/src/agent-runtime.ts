@@ -51,7 +51,8 @@ export const toolActionProposalSchema = z.object({
     .optional(),
   confidence: z.number().min(0).max(1).optional(),
   inferredActionClass: z.string().min(1).optional(),
-  inferredSideEffectClass: z.string().min(1).optional()
+  inferredSideEffectClass: z.string().min(1).optional(),
+  riskHints: z.array(z.string().min(1)).default([])
 });
 export type ToolActionProposal = z.infer<typeof toolActionProposalSchema>;
 
@@ -233,6 +234,7 @@ export const plannerOutputEnvelopeSchema = z.object({
       confidence: z.number().min(0).max(1).optional(),
       inferredActionClass: z.string().optional(),
       inferredSideEffectClass: z.string().optional(),
+      riskHints: z.array(z.string()).optional(),
       namespace: z.string().optional(),
       content: z.string().optional(),
       intentId: z.string().optional(),
@@ -268,7 +270,8 @@ export function parsePlannerDecisionEnvelope(input: unknown): PlannerDecision {
           expectedResource: parsed.proposal.expectedResource,
           confidence: parsed.proposal.confidence,
           inferredActionClass: parsed.proposal.inferredActionClass,
-          inferredSideEffectClass: parsed.proposal.inferredSideEffectClass
+          inferredSideEffectClass: parsed.proposal.inferredSideEffectClass,
+          riskHints: parsed.proposal.riskHints ?? []
         },
         reasoningSummary: parsed.reasoningSummary
       });

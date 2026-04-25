@@ -47,12 +47,14 @@ function sampleAssembledContext(): AssembledContext {
         createdAt: now,
         sticky: false,
         stale: false,
+        role: "user_goal",
         provenance: {
           sourceType: "session-message",
           sourceId: "msg:1",
           sourceRef: "msg:1",
           observedAt: now,
           trustClassification: "USER_OWNED",
+          authority: "informational",
           tenantId: "tenant-a",
           workspaceId: "workspace-a",
           sessionId: "session:test",
@@ -147,4 +149,5 @@ test("buildHarnessEventResultRecord captures context and principal metadata", ()
   assert.equal(record.sessionId, "session:test");
   assert.equal(record.principal.actorPrincipalId, "user:alice");
   assert.equal(record.context.includedChunkCount, 1);
+  assert.equal(record.context.includedChunks[0]?.role, "user_goal");
 });
