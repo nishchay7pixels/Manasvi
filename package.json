@@ -23,6 +23,11 @@
     "harness:smoke": "node scripts/milestone5-harness-smoke.mjs",
     "check": "pnpm lint && pnpm typecheck && pnpm test"
   },
+  "pnpm": {
+    "overrides": {
+      "webpackbar": "7.0.0"
+    }
+  },
   "devDependencies": {
     "@types/node": "^22.15.2",
     "prettier": "^3.5.3",

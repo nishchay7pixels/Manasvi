@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 40" fill="none">
+  <circle cx="20" cy="20" r="8" fill="#5B6EF5"/>
+  <circle cx="20" cy="20" r="4" fill="#ffffff"/>
+  <line x1="28" y1="20" x2="36" y2="14" stroke="#5B6EF5" stroke-width="2" stroke-linecap="round"/>
+  <line x1="28" y1="20" x2="36" y2="20" stroke="#5B6EF5" stroke-width="2" stroke-linecap="round"/>
+  <line x1="28" y1="20" x2="36" y2="26" stroke="#5B6EF5" stroke-width="2" stroke-linecap="round"/>
+  <circle cx="40" cy="14" r="4" fill="#818CF8" opacity="0.7"/>
+  <circle cx="40" cy="20" r="4" fill="#818CF8" opacity="0.7"/>
+  <circle cx="40" cy="26" r="4" fill="#818CF8" opacity="0.7"/>
+  <text x="56" y="26" font-family="Inter, system-ui, sans-serif" font-weight="700" font-size="18" fill="#0A0E1A" letter-spacing="-0.5">Manasvi</text>
+</svg>

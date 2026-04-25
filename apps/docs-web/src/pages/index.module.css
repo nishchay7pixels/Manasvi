@@ -1,0 +1,69 @@
+.heroBadge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  color: var(--ifm-font-color-secondary);
+  margin-bottom: 1.5rem;
+  font-weight: 500;
+}
+
+.heroButtons {
+  display: flex;
+  gap: 1rem;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.sectionHeader {
+  text-align: center;
+  max-width: 600px;
+  margin: 0 auto 3rem;
+}
+
+.sectionHeader h2 {
+  font-size: 1.875rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  margin-bottom: 0.75rem;
+}
+
+.sectionHeader p {
+  color: var(--ifm-font-color-secondary);
+  font-size: 1rem;
+  line-height: 1.7;
+  margin: 0;
+}
+
+.pillarsTitle {
+  font-size: 1.875rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  margin-bottom: 1rem;
+  line-height: 1.2;
+}
+
+.sectionTitle {
+  font-size: 1.5rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  margin-bottom: 2rem;
+}
+
+.quickCard {
+  padding: 1.5rem;
+  border: 1px solid var(--m-border);
+  border-radius: 10px;
+  background: var(--ifm-background-surface-color);
+  height: 100%;
+  transition: border-color 0.15s;
+}
+
+.quickCard:hover {
+  border-color: var(--ifm-color-primary);
+}
+
+[data-theme="dark"] .quickCard {
+  background: #111827;
+}
