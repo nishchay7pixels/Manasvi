@@ -33,13 +33,13 @@ async function fetchTools(orchestratorPort: number): Promise<ToolEntry[]> {
 }
 
 // Built-in tool definitions (fallback when orchestrator is not running)
-const BUILTIN_TOOLS = [
-  { toolId: "tool.web-search", name: "Web Search", status: "enabled", actionClass: "access-network", description: "Policy-governed web search" },
-  { toolId: "tool.http-fetch", name: "HTTP Fetch", status: "enabled", actionClass: "access-network", description: "Fetch remote content under egress policy" },
-  { toolId: "tool.local-file-read", name: "Local File Read", status: "enabled", actionClass: "access-filesystem", description: "Reads a local file through sandboxed paths" },
-  { toolId: "tool.shell-command", name: "Shell Command", status: "enabled", actionClass: "execute-shell", description: "Bounded shell execution under sandbox controls" },
-  { toolId: "tool.memory-note-write", name: "Memory Note Write", status: "enabled", actionClass: "write-memory", description: "Writes a note into memory namespace" },
-  { toolId: "tool.approval-request", name: "Approval Request", status: "enabled", actionClass: "workflow-control", description: "Creates a human approval request" }
+const BUILTIN_TOOLS: ToolEntry[] = [
+  { toolId: "tool.web-search", name: "Web Search", version: "1.0.0", status: "enabled", actionClass: "access-network", description: "Policy-governed web search" },
+  { toolId: "tool.http-fetch", name: "HTTP Fetch", version: "1.0.0", status: "enabled", actionClass: "access-network", description: "Fetch remote content under egress policy" },
+  { toolId: "tool.local-file-read", name: "Local File Read", version: "1.0.0", status: "enabled", actionClass: "access-filesystem", description: "Reads a local file through sandboxed paths" },
+  { toolId: "tool.shell-command", name: "Shell Command", version: "1.0.0", status: "enabled", actionClass: "execute-shell", description: "Bounded shell execution under sandbox controls" },
+  { toolId: "tool.memory-note-write", name: "Memory Note Write", version: "1.0.0", status: "enabled", actionClass: "write-memory", description: "Writes a note into memory namespace" },
+  { toolId: "tool.approval-request", name: "Approval Request", version: "1.0.0", status: "enabled", actionClass: "workflow-control", description: "Creates a human approval request" }
 ];
 
 export async function runToolsList(): Promise<void> {

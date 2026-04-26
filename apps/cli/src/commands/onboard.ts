@@ -152,6 +152,8 @@ export async function runOnboard(opts: OnboardOptions = {}): Promise<void> {
 
   let telegramEnabled = config.channels.telegram?.enabled ?? false;
   if (!opts.yes) {
+    info("Telegram is the easiest channel to start with.");
+    info("In polling mode, Manasvi checks Telegram for messages — no public URL needed.");
     telegramEnabled = await confirm("Connect a Telegram bot?", telegramEnabled);
   }
 
@@ -167,21 +169,70 @@ export async function runOnboard(opts: OnboardOptions = {}): Promise<void> {
     }
 
     if (botToken) {
+      // Mode selection
+      const existingMode = config.channels.telegram?.mode ?? "polling";
+      let mode: "polling" | "webhook" = existingMode;
+
+      if (!opts.yes) {
+        const modeChoice = await select(
+          "How should Manasvi receive Telegram messages?",
+          [
+            {
+              value: "polling",
+              label: "Polling mode (recommended for local)",
+              description: "Manasvi checks Telegram for new messages — no public URL needed"
+            },
+            {
+              value: "webhook",
+              label: "Webhook mode (for public servers)",
+              description: "Telegram pushes messages to your server — requires a public HTTPS URL"
+            }
+          ],
+          existingMode === "polling" ? 0 : 1
+        );
+        mode = modeChoice as "polling" | "webhook";
+      }
+
+      let webhookUrl: string | undefined;
+
+      if (mode === "webhook" && !opts.yes) {
+        const existingWebhookUrl = existingEnv.TELEGRAM_WEBHOOK_URL ?? config.channels.telegram?.webhookUrl ?? "";
+        webhookUrl = await input("Public HTTPS base URL (e.g., https://abc123.ngrok-free.app)", existingWebhookUrl);
+        if (!webhookUrl) {
+          warn("No webhook URL provided — falling back to polling mode");
+          mode = "polling";
+        } else {
+          envUpdates.TELEGRAM_WEBHOOK_URL = webhookUrl;
+        }
+      }
+
+      if (botToken !== existingToken) envUpdates.TELEGRAM_BOT_TOKEN = botToken;
+      envUpdates.TELEGRAM_ADAPTER_MODE = mode;
+
       config = {
         ...config,
-        channels: { ...config.channels, telegram: { enabled: true } }
+        channels: {
+          ...config.channels,
+          telegram: {
+            enabled: true,
+            mode,
+            ...(webhookUrl ? { webhookUrl } : {})
+          }
+        }
       };
-      if (botToken !== existingToken) {
-        envUpdates.TELEGRAM_BOT_TOKEN = botToken;
+
+      success(`Telegram channel configured (${mode} mode)`);
+      if (mode === "polling") {
+        hint("Polling starts automatically when you run: pnpm manasvi start");
+      } else {
+        hint("After starting, register the webhook: pnpm manasvi channels add telegram");
       }
-      success("Telegram channel configured");
-      hint("The ingress service polls Telegram for new messages — no public URL needed.");
     } else {
       warn("No token provided — Telegram not configured");
       telegramEnabled = false;
     }
   } else {
-    config = { ...config, channels: { ...config.channels, telegram: { enabled: false } } };
+    config = { ...config, channels: { ...config.channels, telegram: { enabled: false, mode: "polling" } } };
     if (!telegramEnabled) {
       info("Telegram not configured (add later: pnpm manasvi channels add telegram)");
     }
@@ -276,7 +327,9 @@ export async function runOnboard(opts: OnboardOptions = {}): Promise<void> {
     : provider === "openai"
       ? `OpenAI / ${config.model.openaiModel}`
       : "Mock (testing)");
-  step("Telegram", telegramEnabled ? "enabled" : "not configured");
+  step("Telegram", telegramEnabled
+    ? `enabled (${config.channels.telegram?.mode ?? "polling"} mode)`
+    : "not configured");
   step("Slack", slackEnabled ? "enabled" : "not configured");
   step("Web UI", docsEnabled ? `http://localhost:${config.ui.docsPort}` : "disabled");
 

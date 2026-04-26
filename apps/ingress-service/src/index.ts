@@ -17,7 +17,8 @@ import { respondJson, startHttpService } from "@manasvi/service-runtime";
 import { type IngressNormalizedMessage } from "./channel-adapter.js";
 import { loadIngressServiceConfig } from "./config.js";
 import { InMemoryDuplicateGuard, InMemoryRateLimiter } from "./edge-controls.js";
-import { extractResponseTextFromOrchestratorResult, parseTelegramWebhook } from "./telegram-adapter.js";
+import { extractResponseTextFromOrchestratorResult, normalizeTelegramUpdate, parseTelegramWebhook } from "./telegram-adapter.js";
+import { TelegramPoller } from "./telegram-poller.js";
 import { parseWebUiMessage, parseLegacyIngressEvent } from "./webui-adapter.js";
 import { parseGenericWebhook } from "./generic-webhook-adapter.js";
 import { parseSlackEvent, verifySlackSignature } from "./slack-adapter.js";
@@ -130,16 +131,32 @@ async function main(): Promise<void> {
     if (!config.telegramBotToken) {
       return;
     }
-    await fetch(`${config.telegramApiBaseUrl.replace(/\/$/, "")}/bot${config.telegramBotToken}/sendMessage`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json"
-      },
-      body: JSON.stringify({
-        chat_id: input.chatId,
-        text: input.text
-      })
-    });
+    try {
+      const response = await fetch(`${config.telegramApiBaseUrl.replace(/\/$/, "")}/bot${config.telegramBotToken}/sendMessage`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({
+          chat_id: input.chatId,
+          text: input.text
+        })
+      });
+      if (!response.ok) {
+        const body = await response.text().catch(() => "(unreadable)");
+        throw new Error(`Telegram sendMessage failed with status ${response.status}: ${body}`);
+      }
+    } catch (error) {
+      const causeCode =
+        error && typeof error === "object" && "cause" in error
+          ? (error as { cause?: { code?: string } }).cause?.code
+          : undefined;
+      throw new Error(
+        `Telegram sendMessage transport error${causeCode ? ` (${causeCode})` : ""}: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
+    }
   }
 
   async function sendSlackMessage(input: {
@@ -243,6 +260,141 @@ async function main(): Promise<void> {
     return { ok: true };
   }
 
+  // ── Telegram polling setup ───────────────────────────────────────────────────
+  // In polling mode, Manasvi initiates requests to Telegram — no public URL needed.
+  // In webhook mode, Telegram pushes to /ingress/telegram/webhook.
+
+  let telegramPoller: TelegramPoller | null = null;
+
+  if (config.telegramBotToken && config.telegramAdapterMode === "polling") {
+    telegramPoller = new TelegramPoller({
+      botToken: config.telegramBotToken,
+      apiBaseUrl: config.telegramApiBaseUrl,
+      longPollTimeoutSeconds: config.telegramPollingTimeoutSeconds,
+      tenantId: "tenant-local",
+      workspaceId: "workspace-local"
+    });
+
+    telegramPoller.start(async (rawUpdate, pollingTrace) => {
+      try {
+        const normalized = normalizeTelegramUpdate({
+          update: rawUpdate,
+          tenantId: "tenant-local",
+          workspaceId: "workspace-local"
+        });
+        if (!normalized) {
+          console.log(
+            JSON.stringify({
+              timestamp: new Date().toISOString(),
+              level: "info",
+              service: "ingress-service",
+              message: "Telegram polling update ignored (non-text or unsupported)",
+              traceId: pollingTrace.traceId,
+              correlationId: pollingTrace.correlationId
+            })
+          );
+          return; // non-text update — photo, sticker, etc.
+        }
+
+        // Mark polling-mode authenticity: Manasvi initiated the request using
+        // the bot token, so there is no spoofing vector for update delivery.
+        normalized.source.authenticity = {
+          verified: true,
+          method: "token",
+          authnStrength: "strong",
+          verificationTimestamp: new Date().toISOString(),
+          credentialType: "shared-secret",
+          trustNote: "Telegram update received via bot-initiated long polling. Token-authenticated."
+        };
+
+        const edge = evaluateEdgeControls(normalized);
+        if (!edge.ok) {
+          console.log(
+            JSON.stringify({
+              timestamp: new Date().toISOString(),
+              level: "info",
+              service: "ingress-service",
+              message: "Telegram polling update dropped by edge controls",
+              traceId: pollingTrace.traceId,
+              correlationId: pollingTrace.correlationId,
+              reason: edge.reason,
+              statusCode: edge.statusCode,
+              actorPrincipalId: normalized.actor.principalId,
+              channelPrincipalId: normalized.channel.principalId
+            })
+          );
+          return;
+        }
+
+        const event = await publishNormalizedInboundEvent({
+          normalized,
+          trace: {
+            traceId: pollingTrace.traceId,
+            correlationId: pollingTrace.correlationId
+          }
+        });
+        console.log(
+          JSON.stringify({
+            timestamp: new Date().toISOString(),
+            level: "info",
+            service: "ingress-service",
+            message: "Telegram polling update published",
+            traceId: pollingTrace.traceId,
+            correlationId: pollingTrace.correlationId,
+            eventId: event.eventId,
+            actorPrincipalId: normalized.actor.principalId,
+            channelPrincipalId: normalized.channel.principalId
+          })
+        );
+
+        const orchestratorResult = await pollForOrchestratorResult({
+          eventId: event.eventId,
+          traceId: pollingTrace.traceId,
+          correlationId: pollingTrace.correlationId
+        });
+
+        const replyText = orchestratorResult
+          ? extractResponseTextFromOrchestratorResult(orchestratorResult)
+          : "I received your message, but I could not produce a response in time.";
+
+        if (normalized.replyTarget?.chatId) {
+          await sendTelegramMessage({ chatId: normalized.replyTarget.chatId, text: replyText });
+          console.log(
+            JSON.stringify({
+              timestamp: new Date().toISOString(),
+              level: "info",
+              service: "ingress-service",
+              message: "Telegram polling reply delivered",
+              traceId: pollingTrace.traceId,
+              correlationId: pollingTrace.correlationId,
+              eventId: event.eventId,
+              chatId: normalized.replyTarget.chatId
+            })
+          );
+        }
+      } catch (error) {
+        console.error(
+          JSON.stringify({
+            timestamp: new Date().toISOString(),
+            level: "error",
+            service: "ingress-service",
+            message: "Telegram polling update handling failed",
+            traceId: pollingTrace.traceId,
+            correlationId: pollingTrace.correlationId,
+            error: error instanceof Error ? error.message : "unknown"
+          })
+        );
+      }
+    });
+  }
+
+  // Stop the poller on graceful shutdown signals
+  const stopPoller = (): void => {
+    void telegramPoller?.stop();
+  };
+  process.once("SIGTERM", stopPoller);
+  process.once("SIGINT", stopPoller);
+
   await startHttpService({
     config,
     serviceName: "ingress-service",
@@ -251,6 +403,19 @@ async function main(): Promise<void> {
       {
         name: "config_loaded",
         check: async () => ({ ok: true })
+      },
+      {
+        name: "telegram_adapter",
+        check: async () => {
+          if (!config.telegramBotToken) return { ok: true, note: "telegram not configured" };
+          if (config.telegramAdapterMode === "polling" && telegramPoller) {
+            const s = telegramPoller.getStatus();
+            if (s.consecutiveErrors >= 5) {
+              return { ok: false, note: `polling has ${s.consecutiveErrors} consecutive errors: ${s.lastError ?? "unknown"}` };
+            }
+          }
+          return { ok: true };
+        }
       }
     ],
     handleRequest: async ({ req, res, logger, trace }) => {
@@ -284,12 +449,23 @@ async function main(): Promise<void> {
               status: "enabled"
             },
             {
-              adapterId: "telegram-webhook",
+              adapterId: "telegram",
               transport: "telegram",
-              inboundPath: "/ingress/telegram/webhook",
+              mode: config.telegramAdapterMode,
+              inboundPath: config.telegramAdapterMode === "polling"
+                ? "long-polling (bot-initiated)"
+                : "/ingress/telegram/webhook",
               outboundMode: "telegram-sendMessage",
-              authenticity: "telegram webhook secret token",
-              status: config.telegramBotToken ? "enabled" : "disabled"
+              authenticity: config.telegramAdapterMode === "polling"
+                ? "bot-token (strong, bot-initiated)"
+                : "telegram webhook secret token",
+              status: !config.telegramBotToken
+                ? "disabled"
+                : config.telegramAdapterMode === "polling" && telegramPoller?.getStatus().running
+                  ? "polling-active"
+                  : config.telegramAdapterMode === "webhook"
+                    ? "webhook-ready"
+                    : "configured"
             },
             {
               adapterId: "slack-events",
@@ -637,6 +813,36 @@ async function main(): Promise<void> {
           accepted: true,
           eventId: event.eventId,
           trace
+        });
+        return true;
+      }
+      if (req.method === "GET" && req.url === "/ingress/telegram/status") {
+        if (!config.telegramBotToken) {
+          respondJson(res, 200, {
+            schemaVersion: CONTRACT_SCHEMA_VERSION,
+            configured: false,
+            reason: "TELEGRAM_NOT_CONFIGURED"
+          });
+          return true;
+        }
+        const pollerStatus = telegramPoller?.getStatus() ?? null;
+        respondJson(res, 200, {
+          schemaVersion: CONTRACT_SCHEMA_VERSION,
+          configured: true,
+          mode: config.telegramAdapterMode,
+          apiBaseUrl: config.telegramApiBaseUrl,
+          webhookSecretSet: Boolean(config.telegramWebhookSecret),
+          poller: pollerStatus
+            ? {
+                running: pollerStatus.running,
+                offset: pollerStatus.offset,
+                updatesReceived: pollerStatus.updatesReceived,
+                lastPollAt: pollerStatus.lastPollAt,
+                lastUpdateAt: pollerStatus.lastUpdateAt,
+                lastError: pollerStatus.lastError,
+                consecutiveErrors: pollerStatus.consecutiveErrors
+              }
+            : null
         });
         return true;
       }

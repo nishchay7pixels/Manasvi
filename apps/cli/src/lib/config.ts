@@ -27,7 +27,13 @@ export interface ManasviConfig {
     openaiModel: string;
   };
   channels: {
-    telegram?: { enabled: boolean };
+    telegram?: {
+      enabled: boolean;
+      /** "polling" = Manasvi polls Telegram (default, no public URL needed). "webhook" = Telegram pushes updates. */
+      mode: "polling" | "webhook";
+      /** Required only in webhook mode. The public HTTPS base URL where Telegram will deliver updates. */
+      webhookUrl?: string;
+    };
     slack?: { enabled: boolean };
   };
   ui: {

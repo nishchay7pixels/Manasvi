@@ -24,6 +24,14 @@ const ingressConfigSchema = baseServiceConfigSchema.extend({
   telegramBotToken: z.string().min(1).optional(),
   telegramWebhookSecret: z.string().min(1).optional(),
   telegramApiBaseUrl: z.string().url().default("https://api.telegram.org"),
+  /**
+   * polling  — Manasvi long-polls Telegram. Default for local/dev. No public URL needed.
+   * webhook  — Telegram pushes updates to a public HTTPS endpoint.
+   * disabled — Telegram not active even if token is set.
+   */
+  telegramAdapterMode: z.enum(["polling", "webhook", "disabled"]).default("polling"),
+  /** Long-poll timeout in seconds (0–50). Default 25. */
+  telegramPollingTimeoutSeconds: z.number().int().min(0).max(50).default(25),
   replyPollTimeoutMs: z.number().int().positive().max(120000).default(12000),
   replyPollIntervalMs: z.number().int().positive().max(5000).default(300),
   slackSigningSecret: z.string().min(1).optional(),
@@ -89,6 +97,8 @@ export async function loadIngressServiceConfig(): Promise<IngressServiceConfig> 
       telegramBotToken: await secrets.optional("TELEGRAM_BOT_TOKEN"),
       telegramWebhookSecret: await secrets.optional("TELEGRAM_WEBHOOK_SECRET"),
       telegramApiBaseUrl: env.TELEGRAM_API_BASE_URL ?? "https://api.telegram.org",
+      telegramAdapterMode: (env.TELEGRAM_ADAPTER_MODE as "polling" | "webhook" | "disabled" | undefined) ?? "polling",
+      telegramPollingTimeoutSeconds: Number(env.TELEGRAM_POLLING_TIMEOUT_SECONDS ?? 25),
       replyPollTimeoutMs: Number(env.REPLY_POLL_TIMEOUT_MS ?? env.TELEGRAM_POLL_TIMEOUT_MS ?? 12000),
       replyPollIntervalMs: Number(env.REPLY_POLL_INTERVAL_MS ?? env.TELEGRAM_POLL_INTERVAL_MS ?? 300),
       slackSigningSecret: await secrets.optional("SLACK_SIGNING_SECRET"),
