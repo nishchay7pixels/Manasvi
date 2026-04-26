@@ -1,0 +1,60 @@
+.settings-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.settings-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: 13px;
+}
+
+.settings-row:last-child { border-bottom: none; }
+
+.settings-row__label { color: var(--text-secondary); flex-shrink: 0; }
+
+.settings-row__value-col {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+.settings-row__value {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.settings-row__value.mono { font-family: var(--font-mono); font-size: 12px; }
+
+.settings-row__note {
+  font-size: 10px;
+  font-family: var(--font-mono);
+  color: var(--text-muted);
+}
+
+.service-port-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.service-port-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: 13px;
+}
+
+.service-port-row:last-child { border-bottom: none; }
+
+.service-port-row__name { flex: 1; color: var(--text-secondary); }
+.service-port-row__port { font-family: var(--font-mono); font-size: 12px; color: var(--cyan); }
+.service-port-row__status { width: 60px; text-align: right; font-size: 12px; }

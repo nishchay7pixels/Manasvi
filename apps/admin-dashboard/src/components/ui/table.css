@@ -1,0 +1,133 @@
+/* ── Table ──────────────────────────────────────────────────────────────── */
+
+.table-wrap {
+  width: 100%;
+  overflow-x: auto;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.data-table thead {
+  background: var(--bg-elevated);
+  border-bottom: 1px solid var(--border);
+}
+
+.data-table th {
+  padding: 10px 16px;
+  text-align: left;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.data-table td {
+  padding: 11px 16px;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border-subtle);
+  vertical-align: middle;
+}
+
+.data-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.data-table tbody tr {
+  transition: background var(--transition);
+}
+
+.data-table tbody tr:hover {
+  background: var(--bg-hover);
+}
+
+.data-table__row--clickable {
+  cursor: pointer;
+}
+
+.data-table__empty {
+  text-align: center;
+  padding: 40px !important;
+  color: var(--text-muted) !important;
+  font-size: 13px;
+}
+
+/* ── FilterBar ─────────────────────────────────────────────────────────── */
+
+.filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.filter-input {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 7px 12px;
+  color: var(--text-secondary);
+  transition: border-color var(--transition);
+  min-width: 220px;
+}
+
+.filter-input:focus-within {
+  border-color: var(--violet);
+  color: var(--text-primary);
+}
+
+.filter-input__icon { font-size: 16px; opacity: 0.5; }
+
+.filter-input input {
+  flex: 1;
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.filter-input input::placeholder { color: var(--text-muted); }
+
+.filter-select {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 7px 12px;
+  color: var(--text-secondary);
+  transition: border-color var(--transition);
+}
+
+.filter-select:focus-within { border-color: var(--violet); }
+
+.filter-select__label {
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.filter-select select {
+  font-size: 13px;
+  color: var(--text-primary);
+  background: transparent;
+  cursor: pointer;
+  outline: none;
+  -webkit-appearance: none;
+  padding-right: 4px;
+}
+
+.filter-select select option {
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+}

@@ -1,0 +1,94 @@
+.channels-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+}
+
+@media (max-width: 900px) { .channels-grid { grid-template-columns: 1fr; } }
+
+.channel-card { display: flex; flex-direction: column; gap: 14px; }
+
+.channel-card__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.channel-card__title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.channel-card__icon { font-size: 20px; }
+.channel-card__name { font-size: 16px; font-weight: 600; color: var(--text-primary); }
+.channel-card__badges { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.channel-card__desc { font-size: 13px; color: var(--text-secondary); line-height: 1.5; }
+
+.channel-card__stats {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+  background: var(--bg-elevated);
+  border-radius: var(--radius);
+  padding: 12px;
+  border: 1px solid var(--border-subtle);
+}
+
+.channel-card__stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.channel-card__stat-label { font-size: 10px; color: var(--text-muted); font-weight: 500; text-transform: uppercase; letter-spacing: 0.06em; }
+.channel-card__stat-value { font-size: 13px; font-weight: 600; color: var(--text-primary); font-family: var(--font-mono); }
+
+.channel-card__error {
+  font-size: 12px;
+  color: var(--error);
+  background: var(--error-muted);
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(248,113,113,0.15);
+}
+
+.channel-card__actions { display: flex; justify-content: flex-end; }
+
+/* ingress status */
+.ingress-status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  padding: 10px 16px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+/* hint */
+.channel-hint {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 16px;
+  background: var(--cyan-glow);
+  border: 1px solid rgba(103,242,255,0.15);
+  border-radius: var(--radius);
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.channel-hint__icon { font-size: 18px; flex-shrink: 0; }
+.channel-hint code {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--cyan);
+  background: rgba(103,242,255,0.1);
+  padding: 1px 5px;
+  border-radius: var(--radius-xs);
+}

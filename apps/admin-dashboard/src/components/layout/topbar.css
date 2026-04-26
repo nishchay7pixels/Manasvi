@@ -1,0 +1,105 @@
+/* ── TopBar ──────────────────────────────────────────────────────────────── */
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px var(--page-padding) 0;
+  gap: 16px;
+}
+
+.topbar__title-block {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.topbar__title {
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  color: var(--text-primary);
+}
+
+.topbar__subtitle {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.topbar__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ── GlobalStatusBar ─────────────────────────────────────────────────────── */
+
+.global-status-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 var(--page-padding);
+  height: 36px;
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+}
+
+.global-status-bar__left,
+.global-status-bar__right {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.global-status-bar__health {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 500;
+}
+
+.global-status-bar__health--ok    { color: var(--success); }
+.global-status-bar__health--warn  { color: var(--warning); }
+.global-status-bar__health--unknown { color: var(--text-muted); }
+
+.global-status-bar__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: pulse 2s ease infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.5; }
+}
+
+.global-status-bar__alert {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--amber);
+  font-weight: 600;
+  cursor: pointer;
+  padding: 3px 8px;
+  border-radius: var(--radius-sm);
+  transition: background var(--transition);
+}
+
+.global-status-bar__alert:hover {
+  background: var(--amber-muted);
+}
+
+.global-status-bar__env {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-muted);
+  background: var(--bg-elevated);
+  padding: 2px 8px;
+  border-radius: var(--radius-xs);
+  border: 1px solid var(--border);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}

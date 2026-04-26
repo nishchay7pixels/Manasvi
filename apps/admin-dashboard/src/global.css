@@ -1,0 +1,166 @@
+/* ── Manasvi Admin Dashboard — Global Theme ──────────────────────────────── */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+:root {
+  /* ── Brand palette ────────────────────────────── */
+  --amber:       #FFC067;
+  --amber-muted: rgba(255, 192, 103, 0.18);
+  --amber-glow:  rgba(255, 192, 103, 0.08);
+  --cyan:        #67F2FF;
+  --cyan-muted:  rgba(103, 242, 255, 0.15);
+  --cyan-glow:   rgba(103, 242, 255, 0.07);
+  --violet:      #7467FF;
+  --violet-muted:rgba(116, 103, 255, 0.18);
+  --violet-glow: rgba(116, 103, 255, 0.08);
+
+  /* ── Backgrounds ──────────────────────────────── */
+  --bg-base:    #0C0E13;
+  --bg-surface: #111520;
+  --bg-card:    #161B27;
+  --bg-elevated:#1C2130;
+  --bg-hover:   #1E2333;
+  --bg-active:  #212638;
+
+  /* ── Borders ──────────────────────────────────── */
+  --border-subtle: #181D2B;
+  --border:        #222840;
+  --border-strong: #2D3450;
+  --border-focus:  var(--violet);
+
+  /* ── Text ─────────────────────────────────────── */
+  --text-primary:   #E6EAF5;
+  --text-secondary: #8A92AE;
+  --text-muted:     #4E5670;
+  --text-disabled:  #333A50;
+  --text-amber:     var(--amber);
+  --text-cyan:      var(--cyan);
+  --text-violet:    #9B93FF;
+
+  /* ── Status semantics ─────────────────────────── */
+  --success:      #4ADE80;
+  --success-muted:rgba(74, 222, 128, 0.14);
+  --warning:      #FFC067;
+  --warning-muted:rgba(255, 192, 103, 0.14);
+  --error:        #F87171;
+  --error-muted:  rgba(248, 113, 113, 0.14);
+  --info:         #67F2FF;
+  --info-muted:   rgba(103, 242, 255, 0.12);
+  --pending:      #A78BFA;
+  --pending-muted:rgba(167, 139, 250, 0.14);
+  --disabled:     #3A4052;
+
+  /* ── Layout ───────────────────────────────────── */
+  --sidebar-width:  224px;
+  --topbar-height:  52px;
+  --page-padding:   28px;
+
+  /* ── Typography ───────────────────────────────── */
+  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", "Fira Code", "Cascadia Code", monospace;
+
+  /* ── Radius ───────────────────────────────────── */
+  --radius-xs: 3px;
+  --radius-sm: 5px;
+  --radius:    8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+
+  /* ── Shadows ──────────────────────────────────── */
+  --shadow-sm:  0 1px 3px rgba(0,0,0,0.4), 0 1px 2px rgba(0,0,0,0.3);
+  --shadow:     0 4px 12px rgba(0,0,0,0.5), 0 2px 6px rgba(0,0,0,0.3);
+  --shadow-lg:  0 12px 32px rgba(0,0,0,0.6), 0 4px 12px rgba(0,0,0,0.4);
+
+  /* ── Transitions ──────────────────────────────── */
+  --transition: 150ms ease;
+  --transition-slow: 250ms ease;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html { height: 100%; font-size: 14px; }
+
+body {
+  height: 100%;
+  font-family: var(--font-sans);
+  background: var(--bg-base);
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow: hidden;
+}
+
+#root { height: 100%; }
+
+a { color: inherit; text-decoration: none; }
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+  border: none;
+  background: none;
+}
+
+input, select, textarea {
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  outline: none;
+}
+
+code, pre { font-family: var(--font-mono); }
+
+/* ── Scrollbars ────────────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 99px; }
+::-webkit-scrollbar-thumb:hover { background: #3D4560; }
+
+/* ── Selection ─────────────────────────────────────────────────────────────── */
+::selection { background: var(--violet-muted); color: var(--text-primary); }
+
+/* ── Utility classes ───────────────────────────────────────────────────────── */
+.mono { font-family: var(--font-mono); }
+.truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+
+/* ── Page layout ───────────────────────────────────────────────────────────── */
+.page {
+  padding: var(--page-padding);
+  height: 100%;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.page-title {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: -0.02em;
+}
+
+.page-subtitle {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-top: 4px;
+}
+
+/* ── Grid helpers ──────────────────────────────────────────────────────────── */
+.grid-2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
+.grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+.grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+
+@media (max-width: 1200px) { .grid-4 { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 900px)  { .grid-3, .grid-4 { grid-template-columns: 1fr; } }
+@media (max-width: 700px)  { .grid-2 { grid-template-columns: 1fr; } }
