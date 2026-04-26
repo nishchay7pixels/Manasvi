@@ -6,7 +6,7 @@ description: Set up a Telegram bot to talk to Manasvi
 
 # Connect Telegram
 
-This guide walks you through connecting a Telegram bot to Manasvi so you can send it messages directly from your phone or Telegram desktop app.
+This guide walks you through connecting a Telegram bot to Manasvi so you can send messages directly from your phone or Telegram desktop app.
 
 **What you'll need:** A Telegram account. That's it.
 
@@ -14,97 +14,89 @@ This guide walks you through connecting a Telegram bot to Manasvi so you can sen
 
 ## How it works
 
-When you connect Telegram:
-
-1. You create a bot in Telegram using a tool called BotFather
+1. You create a bot in Telegram using BotFather
 2. Telegram gives you a secret token that identifies your bot
-3. You tell Telegram to send new messages to Manasvi's URL (called a webhook)
-4. Manasvi receives messages, processes them, and replies
-
-**What is a webhook?** A webhook is a URL that Telegram calls whenever someone sends a message to your bot. It's like giving Telegram your address so it knows where to deliver the mail.
+3. Manasvi's ingress service polls the Telegram API for new messages (no public URL needed for local development)
+4. Manasvi processes messages and replies through the same bot
 
 ---
 
 ## Step 1 — Create a Telegram bot
 
 1. Open Telegram and search for **@BotFather**
-2. Start a chat with BotFather and type `/newbot`
+2. Start a chat and type `/newbot`
 3. Follow the prompts — give your bot a name and a username
 4. BotFather will give you a **bot token** that looks like: `7123456789:AAEOm3xyzABCdef...`
 
-**Keep this token safe.** It's the password for your bot. Anyone with this token can control your bot.
+Keep this token safe — it's the password for your bot.
 
 ---
 
-## Step 2 — Add the token to your configuration
+## Step 2 — Add the channel via CLI
 
-Open your `.env` file and add:
-
-```ini
-TELEGRAM_BOT_TOKEN=7123456789:AAEOm3xyzABCdef...
-TELEGRAM_WEBHOOK_SECRET=choose-any-random-secret-here
+```bash
+pnpm manasvi channels add telegram
 ```
 
-**What is the webhook secret?** This is an extra security check. When Telegram sends a message to Manasvi, it includes this secret so Manasvi knows the message is really from Telegram and not from someone pretending to be Telegram.
+The CLI will prompt you for your bot token and write it to `.env.local`:
+
+```
+  Add channel  telegram
+
+  ? Telegram bot token: ****************************
+
+  ✔ Telegram channel configured
+  → Restart services to apply: pnpm manasvi restart
+```
+
+That's it for local development. Polling mode is the default — no public URL or ngrok required.
 
 ---
 
-## Step 3 — Make your server accessible
+## Step 3 — Restart and verify
 
-**Important:** Telegram needs to be able to reach your Manasvi ingress service from the internet. For local development, your laptop isn't directly accessible from the internet, so you need a tunnel.
+```bash
+pnpm manasvi restart
+pnpm manasvi channels status
+```
 
-### Using ngrok (easiest option)
+You should see:
 
-[ngrok](https://ngrok.com) creates a public URL that forwards traffic to your local machine.
+```
+  Channels
+  telegram    ● active   polling
+```
 
-1. Download and install ngrok from [ngrok.com](https://ngrok.com)
-2. Run: `ngrok http 4101`
-3. ngrok will show you a URL like `https://abc123.ngrok-free.app` — copy this
-
-### Other tunnel options
-
-- **Cloudflare Tunnel** (`cloudflared tunnel`)
-- **localtunnel** (`npx localtunnel --port 4101`)
+Send a message to your bot in Telegram. Manasvi will respond.
 
 ---
 
-## Step 4 — Register the webhook
+## Using webhook mode (optional)
 
-Now tell Telegram where to send messages. Replace `<TOKEN>` with your bot token and `<NGROK_URL>` with your tunnel URL:
+If you want to use webhook mode instead of polling — for example, to reduce latency in production — you need a publicly accessible URL.
+
+### With ngrok (local development)
+
+```bash
+ngrok http 4101
+```
+
+Copy the URL ngrok gives you (e.g., `https://abc123.ngrok-free.app`), then add it to `.env.local`:
+
+```ini
+TELEGRAM_WEBHOOK_URL=https://abc123.ngrok-free.app
+```
+
+Then register the webhook with Telegram:
 
 ```bash
 curl -X POST "https://api.telegram.org/bot<TOKEN>/setWebhook" \
   -H "Content-Type: application/json" \
   -d '{
-    "url": "https://<NGROK_URL>/channels/telegram/webhook",
-    "secret_token": "choose-any-random-secret-here"
+    "url": "https://abc123.ngrok-free.app/channels/telegram/webhook",
+    "secret_token": "<your-TELEGRAM_WEBHOOK_SECRET>"
   }'
 ```
-
-You should see: `{"ok":true,"result":true,"description":"Webhook was set"}`
-
----
-
-## Step 5 — Verify the webhook
-
-Check that Telegram can reach your bot:
-
-```bash
-curl "https://api.telegram.org/bot<TOKEN>/getWebhookInfo"
-```
-
-You should see your webhook URL and `"last_error_message"` should be empty.
-
----
-
-## Step 6 — Send a message
-
-Open Telegram, find your bot, and send it a message. Manasvi should respond!
-
-If it doesn't, check:
-- Is the ingress service running? (`curl http://localhost:4101/health`)
-- Is your tunnel still active?
-- Are there errors in the ingress service logs?
 
 ---
 
@@ -112,18 +104,26 @@ If it doesn't, check:
 
 When a Telegram message arrives:
 
-1. Manasvi verifies the webhook secret to confirm it's from Telegram
+1. The ingress service verifies the source (polling: always Telegram API; webhook: validates the secret)
 2. The user's Telegram ID becomes their principal identity (`telegram:12345`)
-3. Messages from channels Manasvi hasn't seen before are assigned a default trust level
-4. The message is normalized and routed through the full agent pipeline
-5. The response is sent back to the same Telegram chat
+3. The message is normalized and routed through the full agent pipeline
+4. The response is sent back to the same chat
 
 ---
 
 ## Troubleshooting
 
-**"Webhook not set" error:** Make sure your tunnel is running before registering the webhook URL.
+Run `pnpm manasvi doctor` — it checks ingress service health and Telegram configuration.
 
-**No response from bot:** Check that all Manasvi services are running, especially the ingress service and orchestrator.
+**No response from bot:**
+```bash
+pnpm manasvi status
+# Make sure ingress-service shows healthy
+```
 
-**"Unauthorized" error:** Double-check your `TELEGRAM_BOT_TOKEN` — it must match exactly what BotFather gave you.
+**Wrong token:**
+```bash
+pnpm manasvi channels remove telegram
+pnpm manasvi channels add telegram
+# Re-enter the correct token
+```

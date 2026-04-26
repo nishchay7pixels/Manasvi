@@ -6,15 +6,21 @@ description: Common problems and how to fix them
 
 # Troubleshooting
 
-Here are the most common issues people encounter and how to fix them.
+## Run the doctor first
+
+Before diving into manual checks, run:
+
+```bash
+pnpm manasvi doctor
+```
+
+The doctor command checks Node.js version, pnpm, configuration, secrets, port availability, service health, and model backend connectivity. It outputs a diagnosis table with actionable fixes for each problem it finds.
 
 ---
 
 ## "Cannot find module" errors during build
 
 **Symptom:** `pnpm build` fails with errors like `Cannot find module '@manasvi/contracts'`
-
-**What it means:** The packages need to be built in the right order. Some packages depend on others.
 
 **Fix:**
 ```bash
@@ -23,27 +29,22 @@ pnpm install
 pnpm build
 ```
 
-This cleans old build artifacts and rebuilds everything from scratch.
+This cleans old build artifacts and rebuilds from scratch.
 
 ---
 
-## A service fails to start — "missing required config"
+## Services fail to start — "missing required config"
 
-**Symptom:** A service crashes on startup with an error like `Missing required environment variable: INTERNAL_AUTH_KEY_ID`
+**Symptom:** A service crashes with `Missing required environment variable: INTERNAL_AUTH_KEY_ID`
 
-**What it means:** Your `.env` file is missing a required setting.
+**Cause:** Your `.env.local` file is missing a required secret.
 
-**Fix:** Open your `.env` file and check that all required keys are present. Compare with `.env.example` to see what's needed.
-
-At minimum you need:
-```ini
-INTERNAL_AUTH_KEY_ID=local-key-1
-INTERNAL_AUTH_SIGNING_SECRET=some-long-random-string
-INTERNAL_AUTH_VERIFICATION_KEYS=local-key-1:some-long-random-string
-APPROVAL_SIGNING_KEYS=approval-k1:approval-secret
-APPROVAL_SIGNING_KEY_ID=approval-k1
-APPROVAL_VERIFICATION_KEYS=approval-k1:approval-secret
+**Fix:** Re-run init, which adds any missing secrets without overwriting existing ones:
+```bash
+pnpm manasvi init
 ```
+
+If you want to see which secrets are missing, run `pnpm manasvi doctor` — it checks for the presence of all required keys.
 
 ---
 
@@ -51,20 +52,27 @@ APPROVAL_VERIFICATION_KEYS=approval-k1:approval-secret
 
 **Symptom:** Error like `EADDRINUSE: address already in use :::4102`
 
-**What it means:** Another process is already using that port.
-
-**Fix:**
-
-Find what's using it:
+**Quick check:**
 ```bash
-# macOS/Linux
+pnpm manasvi doctor
+```
+
+The doctor shows port availability for all nine services.
+
+**Manual check:**
+```bash
+# macOS / Linux
 lsof -i :4102
 
 # Windows
 netstat -ano | findstr :4102
 ```
 
-Then either stop that process, or configure Manasvi to use a different port by setting `SERVICE_PORT` in your `.env`.
+If a previous Manasvi run left orphaned processes:
+```bash
+pnpm manasvi stop
+pnpm manasvi start
+```
 
 ---
 
@@ -72,11 +80,14 @@ Then either stop that process, or configure Manasvi to use a different port by s
 
 **Symptom:** Services reject requests with errors about invalid signatures or unknown key IDs.
 
-**What it means:** The signing keys in your `.env` don't match between services. Manasvi uses HMAC keys to verify internal messages.
+**Cause:** Signing keys in `.env.local` are inconsistent between services. All services share the same file, so this usually means the file was partially edited by hand.
 
-**Fix:** Make sure the `INTERNAL_AUTH_VERIFICATION_KEYS` value matches the `INTERNAL_AUTH_KEY_ID` and `INTERNAL_AUTH_SIGNING_SECRET` values. The format is `keyId:secret`.
+**Fix:** Let init regenerate the signing key set:
+```bash
+pnpm manasvi init --force
+```
 
-Example — these must be consistent:
+Or verify manually — these three values must match:
 ```ini
 INTERNAL_AUTH_KEY_ID=my-key
 INTERNAL_AUTH_SIGNING_SECRET=my-secret
@@ -85,58 +96,83 @@ INTERNAL_AUTH_VERIFICATION_KEYS=my-key:my-secret
 
 ---
 
-## Model returns no response
+## Model returns no response / timeout
 
-**Symptom:** The agent responds with empty text or a timeout error.
+**Cause A: Mock mode**
 
-**Cause A: OpenAI API key missing or invalid**
-
-Check that `OPENAI_API_KEY` is set correctly in your `.env`. Try:
+Check your current model:
 ```bash
-curl https://api.openai.com/v1/models \
-  -H "Authorization: Bearer $OPENAI_API_KEY"
+pnpm manasvi status
+```
+
+If `Model: Mock (testing mode)`, the agent uses canned responses. To switch to a real model:
+```bash
+pnpm manasvi models use ollama
+# or
+pnpm manasvi models use openai
 ```
 
 **Cause B: Ollama not running**
 
-If you're using Ollama, make sure it's running:
 ```bash
+pnpm manasvi doctor
+# Look for "Model backend" in the output
+
+# Start Ollama
 ollama serve
 ```
 
-And that your model is downloaded:
+**Cause C: OpenAI key missing or invalid**
+
 ```bash
-ollama list
+pnpm manasvi models test
 ```
 
-**Cause C: Mock mode**
-
-If `MODEL_ADAPTER_MODE=mock`, the agent uses test responses. This is fine for exploring the system, but won't generate real AI responses.
+This sends a test request and shows the error if the key is wrong.
 
 ---
 
 ## Telegram messages not being received
 
-**Symptom:** You send a message to your Telegram bot but Manasvi doesn't respond.
+**Symptom:** You message your Telegram bot but get no response.
 
-**Check 1: Is the webhook set?**
+**Check 1: Is the ingress service running?**
 ```bash
-curl https://api.telegram.org/bot<YOUR_TOKEN>/getWebhookInfo
+pnpm manasvi status
+# Look for ingress-service :4101
 ```
 
-You should see your webhook URL in the response. If not, see [Connect Telegram](/docs/setup/connect-telegram) to set it up.
+**Check 2: Is Telegram configured?**
+```bash
+pnpm manasvi channels status
+```
 
-**Check 2: Is the ingress service running?**
+**Check 3: Is the bot token correct?**
+```bash
+pnpm manasvi channels remove telegram
+pnpm manasvi channels add telegram
+```
 
-Make sure the ingress service (port 4101) is running and accessible from the internet (you may need a tunnel like ngrok for local development).
+Re-add the channel to re-enter the token.
+
+For local development, Telegram needs a publicly reachable URL. Use a tunnel like ngrok and configure `TELEGRAM_WEBHOOK_URL` in your `.env.local`. The ingress service uses polling mode by default, which does not require a public URL.
+
+---
+
+## Init says "already initialized"
+
+Run with `--force` to reinitialize:
+```bash
+pnpm manasvi init --force
+```
+
+This regenerates all secrets and rewrites the config. Existing values in `.env.local` will be overwritten.
 
 ---
 
 ## Still stuck?
 
-If none of these help:
-
-1. Check the service logs — look for `ERROR` or `WARN` lines
-2. Make sure all services are running, not just some
-3. Try `pnpm clean && pnpm build` to start fresh
-4. Open an issue on [GitHub](https://github.com/nishchay7pixels/manasvi/issues) with your error output
+1. Run `pnpm manasvi doctor` and read each failed check
+2. Check the service logs: `~/.manasvi/logs/<service-name>.log`
+3. Run `pnpm manasvi status --verbose` for PID information
+4. Open an issue on [GitHub](https://github.com/nishchay7pixels/manasvi/issues) with your error output and the doctor output

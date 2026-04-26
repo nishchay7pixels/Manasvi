@@ -99,6 +99,14 @@ const sidebars: SidebarsConfig = {
         "security/auditability"
       ]
     },
+    {
+      type: "category",
+      label: "Reference",
+      collapsed: false,
+      items: [
+        "reference/cli"
+      ]
+    },
     "contributing",
     "faq"
   ]

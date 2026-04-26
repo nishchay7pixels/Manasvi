@@ -1,34 +1,63 @@
 # Manasvi
 
-A governed AI agent runtime. Run AI agents that take real-world actions — with policy-based authorization, human approval flows, and a complete audit trail.
+A governed AI agent runtime. AI agents that take real-world actions — with policy-based authorization, human approval flows, and a complete audit trail.
 
-## What Manasvi does
+## Install
 
-Manasvi is an **agent runtime with a governance layer**. It lets AI agents use tools (search the web, read files, call APIs, run commands) while keeping a human operator in control of what's actually permitted.
-
-The core idea: the AI model proposes actions. Manasvi decides whether and how to execute them.
-
-- **Policy-gated execution** — every tool call passes a policy evaluation before anything happens
-- **Human-in-the-loop approvals** — sensitive actions can require human sign-off, cryptographically bound to the specific action
-- **Sandboxed tools** — tools run in constrained environments and can't exceed their declared scope
-- **Full audit trail** — every decision, approval, and execution is recorded with trace linkage
+```bash
+git clone <repo-url>
+cd manasvi
+corepack enable
+pnpm install
+```
 
 ## Quick start
 
 ```bash
-corepack enable
-pnpm install
-cp .env.example .env.local   # fill in required values
-pnpm dev
+pnpm manasvi init        # Initialize and generate secrets
+pnpm manasvi onboard     # Configure model provider and channels
+pnpm manasvi start       # Start all services
+pnpm manasvi status      # Check health
 ```
 
-See the [documentation](./apps/docs-web) or run the docs site locally:
+Having trouble? Run `pnpm manasvi doctor` to diagnose issues.
 
-```bash
-cd apps/docs-web
-pnpm install
-pnpm start
-```
+## CLI reference
+
+| Command | Description |
+|---------|-------------|
+| `manasvi init` | Initialize Manasvi locally |
+| `manasvi onboard` | Guided setup (model, channels, prefs) |
+| `manasvi start` | Start all services |
+| `manasvi stop` | Stop all services |
+| `manasvi status` | Health and configuration overview |
+| `manasvi doctor` | Diagnose setup issues |
+| `manasvi ui` | Open the documentation UI |
+| `manasvi models list` | View/configure model providers |
+| `manasvi channels list` | View/configure channels |
+| `manasvi tools list` | View available tools |
+| `manasvi config show` | Show full configuration |
+
+Run `pnpm manasvi --help` for the full command tree.
+
+## Model providers
+
+Manasvi supports:
+
+- **Ollama** — run models locally (`ollama serve` + `ollama pull llama3.2`)
+- **OpenAI** — use GPT models via API key
+- **Mock** — simulated responses for testing
+
+Configure via `pnpm manasvi models add` or during `pnpm manasvi onboard`.
+
+## Channels
+
+- **Telegram** — bot API (polling mode, no server needed)
+- **Slack** — Events API
+- **Terminal** — `pnpm cli` for interactive terminal chat
+- **HTTP API** — `http://localhost:4100/test-harness/chat`
+
+Configure via `pnpm manasvi channels add`.
 
 ## Architecture overview
 
@@ -42,7 +71,7 @@ Execution (sandbox runtime, tool dispatch)
 Remote nodes (node manager, node agents)
 ```
 
-Supporting services: memory plane (trust-classified stores), extension plane (plugin lifecycle), audit service.
+Full documentation: `pnpm manasvi ui` or `cd apps/docs-web && pnpm start`.
 
 ## Service ports (local)
 
@@ -58,21 +87,6 @@ Supporting services: memory plane (trust-classified stores), extension plane (pl
 | audit-service | 4107 |
 | approval-service | 4108 |
 
-## Repository layout
+## Contributing
 
-```
-apps/          deployable services
-packages/      shared libraries and SDKs
-docs-public/   public documentation content
-docs-internal/ internal design specs and progress notes
-```
-
-## Documentation
-
-Full documentation lives in [docs-public/](./docs-public/) and is served by the Docusaurus site in [apps/docs-web/](./apps/docs-web/).
-
-Key reading:
-- [Getting Started](./docs-public/getting-started/introduction.md)
-- [Core Concepts](./docs-public/concepts/agent-runtime.md)
-- [Architecture Overview](./docs-public/architecture/overview.md)
-- [Security Model](./docs-public/security/philosophy.md)
+See [docs-public/contributing.md](./docs-public/contributing.md) for guidelines.

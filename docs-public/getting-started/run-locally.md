@@ -6,121 +6,141 @@ description: Start all Manasvi services and verify they are running
 
 # Run Manasvi Locally
 
-Manasvi is a multi-service system. Several services need to run simultaneously. This page explains how to start them.
+Once you've run `pnpm manasvi init`, starting everything is a single command.
 
 ## Start all services
 
-The easiest way to run everything at once:
-
 ```bash
-pnpm dev
+pnpm manasvi start
 ```
 
-This starts all services in development mode using Turbo, which handles the dependency order automatically.
+The CLI starts all nine services in dependency order, waits for each one to pass its health check, and prints a status table when everything is ready:
+
+```
+  Manasvi  start
+
+  Starting services
+  ✔ policy-service        ready  (312ms)
+  ✔ approval-service      ready  (284ms)
+  ✔ memory-service        ready  (341ms)
+  ✔ audit-service         ready  (298ms)
+  ✔ execution-manager     ready  (356ms)
+  ✔ node-manager          ready  (270ms)
+  ✔ orchestrator-service  ready  (489ms)
+  ✔ ingress-service       ready  (301ms)
+  ✔ api-gateway           ready  (278ms)
+
+  ✔ All 9 services healthy
+
+  Next steps:
+  → Chat via terminal:  pnpm cli
+  → Check status:       pnpm manasvi status
+  → API endpoint:       http://localhost:4100/test-harness/chat
+```
+
+Service logs are written to `~/.manasvi/logs/<service-name>.log`.
 
 ---
 
-## Start services individually
+## Check status
 
-If you prefer more control, open separate terminal windows for each service:
-
-```bash
-# Terminal 1 — Policy service (handles authorization decisions)
-pnpm --filter @manasvi/policy-service dev
-
-# Terminal 2 — Approval service (handles approval requests)
-pnpm --filter @manasvi/approval-service dev
-
-# Terminal 3 — Memory service (stores context and history)
-pnpm --filter @manasvi/memory-service dev
-
-# Terminal 4 — Execution manager (validates and runs tool actions)
-pnpm --filter @manasvi/execution-manager dev
-
-# Terminal 5 — Orchestrator (the agent runtime and planner)
-pnpm --filter @manasvi/orchestrator-service dev
-
-# Terminal 6 — Ingress service (receives messages from channels)
-pnpm --filter @manasvi/ingress-service dev
-
-# Terminal 7 — API gateway (public entry point)
-pnpm --filter @manasvi/api-gateway dev
-```
-
----
-
-## Default service ports
-
-| Service | Port | Purpose |
-|---------|------|---------|
-| API Gateway | 4100 | Public entry point for tests and direct API calls |
-| Ingress Service | 4101 | Receives channel messages (Telegram, Slack, etc.) |
-| Orchestrator | 4102 | Agent runtime, planner, session handling |
-| Policy Service | 4103 | Authorization decisions |
-| Execution Manager | 4104 | Tool execution and validation |
-| Memory Service | 4105 | Context and memory storage |
-| Node Manager | 4106 | Remote execution node management |
-| Audit Service | 4107 | Audit trail ingestion |
-| Approval Service | 4108 | Approval workflow |
-
----
-
-## Verify it's running
-
-Once services are started, you can check that the main gateway is healthy:
+At any time, run:
 
 ```bash
-curl http://localhost:4100/health
+pnpm manasvi status
 ```
 
-You should see a JSON response like:
+This shows each service's health, latency, and your current configuration:
 
-```json
-{
-  "status": "ok",
-  "service": "api-gateway",
-  "checks": [
-    { "name": "config_loaded", "status": "ok" }
-  ]
-}
 ```
+  Services
+  API Gateway           :4100   ● healthy (12ms)
+  Ingress Service       :4101   ● healthy (9ms)
+  Orchestrator          :4102   ● healthy (14ms)
+  Policy Service        :4103   ● healthy (8ms)
+  Execution Manager     :4104   ● healthy (11ms)
+  Memory Service        :4105   ● healthy (10ms)
+  Node Manager          :4106   ● healthy (9ms)
+  Audit Service         :4107   ● healthy (8ms)
+  Approval Service      :4108   ● healthy (9ms)
 
-If you see an error, check the [Troubleshooting](/docs/getting-started/troubleshooting) page.
+  ✔ All 9 services healthy
+
+  Configuration
+  Profile    local
+  Model      Mock (testing mode)
+  Channels   none
+  Docs UI    http://localhost:3000
+```
 
 ---
 
 ## Send a test message
 
-To verify the full pipeline works, try sending a message through the API gateway:
+### Option A — Interactive terminal
 
 ```bash
-curl -X POST http://localhost:4100/v1/message \
-  -H "Content-Type: application/json" \
-  -d '{
-    "text": "Hello, what can you help me with?",
-    "channel": "api",
-    "userId": "user:test-user"
-  }'
+pnpm cli
 ```
 
-Manasvi will process the message through the ingress → orchestrator → policy → execution pipeline and return a response.
+This opens an interactive REPL that sends messages through the API gateway. Type a message and press Enter to chat with the agent.
 
-:::note
-With `MODEL_ADAPTER_MODE=mock`, you'll get a predictable test response. Switch to `openai` or `ollama` mode to get real AI-generated responses.
-:::
+```
+Manasvi terminal  (session: session:abc123)
+Type a message, or /help for commands.
+
+You: What can you help me with?
+Agent: I can help you with...
+```
+
+### Option B — Direct API call
+
+```bash
+curl -X POST http://localhost:4100/test-harness/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message": "Hello, what tools do you have?", "actor": "user:test"}'
+```
 
 ---
 
-## What happens when you send a message?
+## Stop services
 
-Here's a simplified version of what Manasvi does with every message:
+```bash
+pnpm manasvi stop
+```
 
-1. **Ingress** receives the message, verifies the source, and normalizes it into an internal format
-2. **Orchestrator** resolves your identity, retrieves session context, and asks the model what to do
+Sends SIGTERM to all running service processes. To restart:
+
+```bash
+pnpm manasvi restart
+```
+
+---
+
+## Service ports reference
+
+| Service | Port | Purpose |
+|---------|------|---------|
+| api-gateway | 4100 | Public entry point |
+| ingress-service | 4101 | Channel message intake |
+| orchestrator-service | 4102 | Agent runtime and planner |
+| policy-service | 4103 | Authorization decisions |
+| execution-manager | 4104 | Tool validation and execution |
+| memory-service | 4105 | Context and memory storage |
+| node-manager | 4106 | Remote node management |
+| audit-service | 4107 | Audit trail |
+| approval-service | 4108 | Approval workflow |
+
+---
+
+## What happens when you send a message
+
+1. **Ingress** receives the message, normalizes it, verifies the source
+2. **Orchestrator** resolves your identity, retrieves session context, asks the model what to do
 3. **Policy** evaluates whether any proposed action is allowed
-4. **Approval service** handles any actions that require human sign-off
+4. **Approval service** handles actions that require human sign-off
 5. **Execution manager** validates the signed intent and runs the action in a sandbox
 6. **Memory** stores the outcome for future context
 7. **Audit** records everything that happened
 
-You can continue to [First workflow](/docs/getting-started/first-workflow) to try a more complete example.
+Continue to [First Workflow](/docs/getting-started/first-workflow) for an end-to-end walkthrough.

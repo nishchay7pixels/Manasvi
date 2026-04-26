@@ -6,41 +6,70 @@ description: Connect Manasvi to an AI model provider
 
 # Configure a Model Provider
 
-Manasvi uses a language model to generate responses and make decisions about tool use. This page explains how to connect it to different providers.
+Manasvi uses a language model to generate responses and decide when to use tools. This page explains how to connect it to different providers.
 
 ---
 
-## Available adapters
+## Available providers
 
 | Mode | Provider | Requires | Best for |
 |------|----------|----------|----------|
-| `openai` | OpenAI API | API key | Cloud-based models (GPT-4, etc.) |
-| `ollama` | Ollama (local) | Ollama installed | Privacy, local inference |
 | `mock` | Built-in test adapter | Nothing | Development, testing |
-| `auto` | Detected automatically | Depends | Default mode |
+| `ollama` | Ollama (local) | Ollama installed | Privacy, local inference, no API costs |
+| `openai` | OpenAI API | API key | Cloud-based models (GPT-4o, etc.) |
 
 ---
 
-## OpenAI (or compatible API)
+## Using the CLI (recommended)
 
-If you have an OpenAI API key, or access to any OpenAI-compatible API:
+The easiest way to switch providers is through the CLI:
 
-```ini
-MODEL_ADAPTER_MODE=openai
-OPENAI_API_KEY=sk-your-key-here
-PLANNER_MODEL=gpt-4o
-OPENAI_BASE_URL=https://api.openai.com/v1
+```bash
+pnpm manasvi models list
 ```
 
-**Which model should I use?** Manasvi works best with models that follow instructions reliably. `gpt-4o` and `gpt-4-turbo` work well. For testing, `gpt-3.5-turbo` is cheaper.
+Shows your configured providers and which one is active.
 
-**OpenAI-compatible APIs:** If you're using a service that provides an OpenAI-compatible API (like Azure OpenAI, Groq, Mistral API, etc.), change `OPENAI_BASE_URL` to point to that service.
+```bash
+pnpm manasvi models add ollama
+# or
+pnpm manasvi models add openai
+```
+
+Walks you through the configuration interactively and writes the settings to `.env.local`.
+
+```bash
+pnpm manasvi models test
+```
+
+Sends a test request to verify connectivity.
+
+```bash
+pnpm manasvi models use ollama
+# or
+pnpm manasvi models use openai
+# or
+pnpm manasvi models use mock
+```
+
+Switches the active provider and restarts services.
+
+---
+
+## Mock adapter (default)
+
+The mock adapter returns predictable test responses without connecting to any AI provider. Manasvi starts in mock mode after `pnpm manasvi init` — you don't need to configure anything to explore the system.
+
+Useful for:
+- Verifying the full pipeline works end-to-end before setting up a real model
+- Automated tests
+- Offline development
 
 ---
 
 ## Ollama (local model)
 
-Ollama lets you run models directly on your computer — no internet connection needed after setup, no API costs, and your data stays on your machine.
+Ollama runs models directly on your computer — no internet connection after setup, no API costs, data stays on your machine.
 
 ### Install Ollama
 
@@ -49,17 +78,23 @@ Download from [ollama.com](https://ollama.com) and install it.
 ### Download a model
 
 ```bash
-# Llama 3.2 (3B or 8B) — good for most tasks
+# Llama 3.2 — good balance of speed and capability
 ollama pull llama3.2
 
-# Mistral — fast and capable
+# Mistral — fast
 ollama pull mistral
 
 # Qwen — good instruction following
 ollama pull qwen2.5
 ```
 
-### Configure Manasvi
+### Configure via CLI
+
+```bash
+pnpm manasvi models add ollama
+```
+
+Or manually in `.env.local`:
 
 ```ini
 MODEL_ADAPTER_MODE=ollama
@@ -73,7 +108,7 @@ PLANNER_MODEL=llama3.2
 ollama serve
 ```
 
-Ollama needs to be running when Manasvi is running.
+Ollama needs to be running while Manasvi is running. Run `pnpm manasvi doctor` if connectivity fails — it checks whether the Ollama endpoint is reachable.
 
 :::tip
 Smaller models (3B–7B parameters) run well on most modern laptops with 8GB RAM. Larger models (13B+) need more RAM or a GPU.
@@ -81,42 +116,45 @@ Smaller models (3B–7B parameters) run well on most modern laptops with 8GB RAM
 
 ---
 
-## Mock adapter (for development)
+## OpenAI (or compatible API)
 
-The mock adapter returns predictable test responses without connecting to any AI provider. It's useful for:
-
-- Testing that the pipeline works without spending on API calls
-- Developing new features without needing internet access
-- Running automated tests
-
-```ini
-MODEL_ADAPTER_MODE=mock
+```bash
+pnpm manasvi models add openai
 ```
 
-The mock adapter always returns a short test response and simulates the behavior of a real model.
-
----
-
-## Auto detection
-
-The default mode is `auto`. Manasvi will:
-1. Use OpenAI if `OPENAI_API_KEY` is set
-2. Fall back to mock mode if no API key is found
+Or manually in `.env.local`:
 
 ```ini
-MODEL_ADAPTER_MODE=auto
+MODEL_ADAPTER_MODE=openai
+OPENAI_API_KEY=sk-your-key-here
+PLANNER_MODEL=gpt-4o
+OPENAI_BASE_URL=https://api.openai.com/v1
 ```
+
+**Which model?** `gpt-4o` works well for most tasks. `gpt-4o-mini` is significantly cheaper and sufficient for most agent workflows.
+
+**OpenAI-compatible APIs:** Change `OPENAI_BASE_URL` to point to any compatible service (Azure OpenAI, Groq, Mistral API, etc.).
+
+### Test connectivity
+
+```bash
+pnpm manasvi models test
+```
+
+This sends a minimal request and shows the error if the key is wrong or quota is exceeded.
 
 ---
 
 ## Adjusting model behavior
 
+These settings apply to all providers:
+
 ```ini
-# How long to wait for the model (in milliseconds)
+# How long to wait for the model (milliseconds)
 MODEL_ADAPTER_TIMEOUT_MS=20000
 
 # Maximum context chunks fed to the model
 MODEL_ADAPTER_MAX_CONTEXT_CHUNKS=24
 ```
 
-The model timeout default is 20 seconds. If you're using a slow local model, increase this.
+The timeout default is 20 seconds. Increase it if you're using a slow local model or a heavily loaded API.

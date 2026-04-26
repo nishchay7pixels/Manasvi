@@ -21,7 +21,9 @@
     "health:check": "node scripts/check-health.mjs",
     "smoke:boot": "node scripts/smoke-boot.mjs",
     "harness:smoke": "node scripts/milestone5-harness-smoke.mjs",
-    "check": "pnpm lint && pnpm typecheck && pnpm test"
+    "check": "pnpm lint && pnpm typecheck && pnpm test",
+    "cli": "tsx scripts/cli.ts",
+    "manasvi": "tsx apps/cli/src/index.ts"
   },
   "pnpm": {
     "overrides": {
