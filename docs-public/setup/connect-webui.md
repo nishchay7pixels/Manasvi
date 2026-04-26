@@ -122,7 +122,7 @@ Response:
   "sessionId": "session:abc123",
   "response": {
     "text": "I have access to the following tools...",
-    "model": "ollama/llama3.2"
+    "model": "provider/model-id"
   },
   "decisions": [
     {

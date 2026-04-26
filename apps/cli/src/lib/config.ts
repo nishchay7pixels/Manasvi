@@ -10,7 +10,7 @@ import { fileExists } from "./env.js";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
-export type ModelProvider = "ollama" | "openai" | "mock";
+export type ModelProvider = "ollama" | "openai" | "claude" | "mock";
 export type ChannelMode = "polling" | "webhook";
 
 export interface ManasviConfig {
@@ -25,6 +25,8 @@ export interface ManasviConfig {
     ollamaModel: string;
     openaiBaseUrl: string;
     openaiModel: string;
+    claudeBaseUrl: string;
+    claudeModel: string;
   };
   channels: {
     telegram?: {
@@ -67,7 +69,9 @@ export function defaultConfig(projectPath: string): ManasviConfig {
       ollamaBaseUrl: "http://localhost:11434/v1",
       ollamaModel: "llama3.2",
       openaiBaseUrl: "https://api.openai.com/v1",
-      openaiModel: "gpt-4o-mini"
+      openaiModel: "gpt-4o-mini",
+      claudeBaseUrl: "https://api.anthropic.com",
+      claudeModel: "claude-3-5-sonnet-latest"
     },
     channels: {},
     ui: {
@@ -113,7 +117,29 @@ export async function loadConfig(): Promise<ManasviConfig | null> {
   if (!(await fileExists(path))) return null;
   try {
     const raw = await readFile(path, "utf8");
-    return JSON.parse(raw) as ManasviConfig;
+    const parsed = JSON.parse(raw) as Partial<ManasviConfig>;
+    const projectPath = parsed.projectPath ?? process.cwd();
+    const defaults = defaultConfig(projectPath);
+    return {
+      ...defaults,
+      ...parsed,
+      model: {
+        ...defaults.model,
+        ...(parsed.model ?? {})
+      },
+      channels: {
+        ...defaults.channels,
+        ...(parsed.channels ?? {})
+      },
+      ui: {
+        ...defaults.ui,
+        ...(parsed.ui ?? {})
+      },
+      services: {
+        ...defaults.services,
+        ...(parsed.services ?? {})
+      }
+    };
   } catch {
     return null;
   }

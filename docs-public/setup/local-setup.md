@@ -78,7 +78,13 @@ MODEL_ADAPTER_MODE=ollama
 OLLAMA_BASE_URL=http://localhost:11434/v1
 PLANNER_MODEL=llama3.2
 
-# Option 3: Mock (no AI needed)
+# Option 3: Claude (Anthropic)
+MODEL_ADAPTER_MODE=claude
+ANTHROPIC_API_KEY=sk-ant-...
+ANTHROPIC_BASE_URL=https://api.anthropic.com
+PLANNER_MODEL=claude-3-5-sonnet-latest
+
+# Option 4: Mock (no AI needed)
 MODEL_ADAPTER_MODE=mock
 ```
 

@@ -118,6 +118,8 @@ If `Model: Mock (testing mode)`, the agent uses canned responses. To switch to a
 pnpm manasvi models use ollama
 # or
 pnpm manasvi models use openai
+# or
+pnpm manasvi models use claude
 ```
 
 **Cause B: Ollama not running**
@@ -137,6 +139,18 @@ pnpm manasvi models test
 ```
 
 This sends a test request and shows the error if the key is wrong.
+
+**Cause D: Anthropic key missing or invalid**
+
+```bash
+pnpm manasvi models use claude
+pnpm manasvi models test
+```
+
+If key setup is missing, re-run:
+```bash
+pnpm manasvi models add claude
+```
 
 ---
 

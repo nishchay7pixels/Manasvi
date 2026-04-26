@@ -10,6 +10,8 @@ Ollama lets you run AI models directly on your computer. No API key, no cloud ac
 
 This is the recommended way to run Manasvi locally.
 
+If you prefer a cloud model instead, see [Connect Claude](/docs/setup/connect-claude) or [Configure a Model](/docs/setup/connect-model).
+
 ---
 
 ## What is Ollama?

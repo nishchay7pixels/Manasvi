@@ -100,6 +100,7 @@ const config: Config = {
             { label: "15-min Quickstart", to: "/docs/getting-started/quickstart" },
             { label: "Install", to: "/docs/getting-started/install" },
             { label: "Connect Ollama", to: "/docs/setup/connect-ollama" },
+            { label: "Connect Claude", to: "/docs/setup/connect-claude" },
             { label: "Connect Telegram", to: "/docs/setup/connect-telegram" }
           ]
         },

@@ -17,6 +17,11 @@ Manasvi uses a language model to generate responses and decide when to use tools
 | `mock` | Built-in test adapter | Nothing | Development, testing |
 | `ollama` | Ollama (local) | Ollama installed | Privacy, local inference, no API costs |
 | `openai` | OpenAI API | API key | Cloud-based models (GPT-4o, etc.) |
+| `claude` | Anthropic Claude | API key | Cloud-based Claude models |
+
+---
+
+For a dedicated Claude walkthrough, see [Connect Claude](/docs/setup/connect-claude).
 
 ---
 
@@ -34,6 +39,8 @@ Shows your configured providers and which one is active.
 pnpm manasvi models add ollama
 # or
 pnpm manasvi models add openai
+# or
+pnpm manasvi models add claude
 ```
 
 Walks you through the configuration interactively and writes the settings to `.env.local`.
@@ -49,10 +56,12 @@ pnpm manasvi models use ollama
 # or
 pnpm manasvi models use openai
 # or
+pnpm manasvi models use claude
+# or
 pnpm manasvi models use mock
 ```
 
-Switches the active provider and restarts services.
+Switches the active provider. Then run `pnpm manasvi restart` to apply changes to running services.
 
 ---
 
@@ -142,6 +151,31 @@ pnpm manasvi models test
 ```
 
 This sends a minimal request and shows the error if the key is wrong or quota is exceeded.
+
+---
+
+## Claude (Anthropic)
+
+```bash
+pnpm manasvi models add claude
+```
+
+Or manually in `.env.local`:
+
+```ini
+MODEL_ADAPTER_MODE=claude
+ANTHROPIC_API_KEY=sk-ant-your-key-here
+PLANNER_MODEL=claude-3-5-sonnet-latest
+ANTHROPIC_BASE_URL=https://api.anthropic.com
+```
+
+During `models add claude`, Manasvi will:
+- validate the API key (if possible),
+- attempt model discovery through Anthropic Models API,
+- let you choose a default Claude model,
+- store the active provider cleanly alongside Ollama/OpenAI config.
+
+You can obtain a key from [console.anthropic.com](https://console.anthropic.com).
 
 ---
 

@@ -112,6 +112,9 @@ Now that you've seen the pipeline working:
 - **Connect Ollama** — run a local model for privacy and no API costs
   → [Connect Ollama](/docs/setup/connect-ollama)
 
+- **Connect Claude** — run with Anthropic Claude as your cloud model provider
+  → [Connect Claude](/docs/setup/connect-claude)
+
 - **Understand the concepts** — learn what each part does in plain language
   → [Core concepts](/docs/concepts/agent-runtime)
 

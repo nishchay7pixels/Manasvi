@@ -181,6 +181,7 @@ export async function runInit(args: { force?: boolean; projectPath?: string }): 
     MODEL_ADAPTER_TIMEOUT_MS: "20000",
     MODEL_ADAPTER_MAX_CONTEXT_CHUNKS: "24",
     OPENAI_BASE_URL: "https://api.openai.com/v1",
+    ANTHROPIC_BASE_URL: "https://api.anthropic.com",
     OLLAMA_BASE_URL: "http://localhost:11434/v1",
     TELEGRAM_API_BASE_URL: "https://api.telegram.org",
     REPLY_POLL_TIMEOUT_MS: "12000",

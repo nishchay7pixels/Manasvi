@@ -152,8 +152,10 @@ async function main(): Promise<void> {
     model: config.plannerModel,
     timeoutMs: config.modelAdapterTimeoutMs,
     ...(config.openAiApiKey ? { openAiApiKey: config.openAiApiKey } : {}),
+    ...(config.anthropicApiKey ? { anthropicApiKey: config.anthropicApiKey } : {}),
     openAiBaseUrl: config.openAiBaseUrl,
-    ollamaBaseUrl: config.ollamaBaseUrl
+    ollamaBaseUrl: config.ollamaBaseUrl,
+    anthropicBaseUrl: config.anthropicBaseUrl
   });
   const harnessEventResults = new Map<string, HarnessEventResultRecord>();
   const executionIntents = new Map<string, z.infer<typeof executionIntentSchema>>();

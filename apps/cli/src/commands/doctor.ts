@@ -9,7 +9,7 @@ import { join } from "node:path";
 import { banner, section, checkRow, warn, success, info, hint, error as printError } from "../lib/ui.js";
 import { loadConfig, cliHomePath } from "../lib/config.js";
 import { fileExists, envFilePath, readEnvFile } from "../lib/env.js";
-import { checkAllServices, checkOllama, checkOpenAI, isPortInUse } from "../lib/health.js";
+import { checkAllServices, checkAnthropic, checkOllama, checkOpenAI, isPortInUse } from "../lib/health.js";
 
 type CheckStatus = "pass" | "warn" | "fail" | "skip";
 
@@ -104,6 +104,14 @@ async function runChecks(config: Awaited<ReturnType<typeof loadConfig>>): Promis
         fix: hasKey ? undefined : "Run: pnpm manasvi models add openai"
       });
     }
+    if (modelMode === "claude") {
+      const hasKey = env.ANTHROPIC_API_KEY && env.ANTHROPIC_API_KEY !== "replace-me";
+      checks.push({
+        label: "Anthropic API key set",
+        status: hasKey ? "pass" : "fail",
+        fix: hasKey ? undefined : "Run: pnpm manasvi models add claude"
+      });
+    }
 
     // Telegram
     const telegramToken = env.TELEGRAM_BOT_TOKEN;
@@ -167,6 +175,25 @@ async function runChecks(config: Awaited<ReturnType<typeof loadConfig>>): Promis
       } catch {
         checks.push({ label: "Ollama model check", status: "skip", detail: "could not list models" });
       }
+    }
+  }
+  if (config.model.provider === "claude") {
+    const env = await readEnvFile(envPath);
+    const key = env.ANTHROPIC_API_KEY ?? "";
+    if (!key || key === "replace-me") {
+      checks.push({
+        label: "Claude API key",
+        status: "fail",
+        fix: "Run: pnpm manasvi models add claude"
+      });
+    } else {
+      const claudeOk = await checkAnthropic(config.model.claudeBaseUrl, key);
+      checks.push({
+        label: "Claude reachable",
+        status: claudeOk ? "pass" : "fail",
+        detail: config.model.claudeBaseUrl,
+        fix: claudeOk ? undefined : "Verify ANTHROPIC_API_KEY and network access"
+      });
     }
   }
 

@@ -30,7 +30,9 @@ export async function runConfigShow(): Promise<void> {
     { label: "Provider", value: config.model.provider },
     { label: "Ollama URL", value: config.model.ollamaBaseUrl },
     { label: "Ollama model", value: config.model.ollamaModel },
-    { label: "OpenAI model", value: config.model.openaiModel }
+    { label: "OpenAI model", value: config.model.openaiModel },
+    { label: "Claude URL", value: config.model.claudeBaseUrl },
+    { label: "Claude model", value: config.model.claudeModel }
   ]);
 
   section("Channels");

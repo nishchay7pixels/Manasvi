@@ -23,6 +23,7 @@ const sidebars: SidebarsConfig = {
       collapsed: false,
       items: [
         "setup/connect-ollama",
+        "setup/connect-claude",
         "setup/connect-model"
       ]
     },

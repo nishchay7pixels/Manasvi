@@ -16,7 +16,7 @@ import {
 import {
   envFilePath, findProjectRoot, mergeEnvFile, readEnvFile
 } from "../lib/env.js";
-import { checkOllama, checkOpenAI } from "../lib/health.js";
+import { checkAnthropic, checkOllama, checkOpenAI, listAnthropicModels } from "../lib/health.js";
 
 export interface OnboardOptions {
   yes?: boolean;      // non-interactive: accept all defaults
@@ -50,9 +50,10 @@ export async function runOnboard(opts: OnboardOptions = {}): Promise<void> {
       [
         { value: "ollama", label: "Ollama (local)", description: "Run models on your own machine — no API key needed" },
         { value: "openai", label: "OpenAI (cloud)", description: "Use GPT models via OpenAI API key" },
+        { value: "claude", label: "Claude (Anthropic cloud)", description: "Use Claude models via Anthropic API key" },
         { value: "mock", label: "Mock (testing only)", description: "Simulated responses — useful for testing the system" }
       ],
-      provider === "ollama" ? 0 : provider === "openai" ? 1 : 2
+      provider === "ollama" ? 0 : provider === "openai" ? 1 : provider === "claude" ? 2 : 3
     );
     provider = providerChoice as ModelProvider;
   } else if (opts.provider) {
@@ -130,6 +131,51 @@ export async function runOnboard(opts: OnboardOptions = {}): Promise<void> {
       envUpdates.MODEL_ADAPTER_MODE = "openai";
       envUpdates.PLANNER_MODEL = modelName;
       success(`Model: OpenAI / ${modelName}`);
+    } else {
+      warn("No API key provided — falling back to mock mode");
+      provider = "mock";
+    }
+  }
+
+  if (provider === "claude") {
+    const existingEnv = await readEnvFile(envPath);
+    const existingKey = existingEnv.ANTHROPIC_API_KEY;
+
+    let apiKey = existingKey ?? "";
+    if (!apiKey && !opts.yes) {
+      info("You can get an API key at console.anthropic.com");
+      apiKey = await secret("Enter your Anthropic API key (sk-ant-...)");
+    }
+
+    if (apiKey) {
+      let modelName = config.model.claudeModel;
+      const discoveredModels = await listAnthropicModels(config.model.claudeBaseUrl, apiKey);
+      if (!opts.yes && discoveredModels.length > 0) {
+        hint(`Detected Claude models: ${discoveredModels.slice(0, 5).join(", ")}`);
+      }
+      if (!opts.yes) {
+        modelName = await input("Which Claude model?", modelName);
+      }
+
+      const checking = apiKey !== existingKey;
+      if (checking) {
+        const ok = await checkAnthropic(config.model.claudeBaseUrl, apiKey);
+        if (ok) {
+          success("Anthropic API key validated");
+        } else {
+          warn("Could not validate Anthropic API key — proceeding anyway");
+        }
+        envUpdates.ANTHROPIC_API_KEY = apiKey;
+      }
+
+      config = {
+        ...config,
+        model: { ...config.model, provider: "claude", claudeModel: modelName }
+      };
+      envUpdates.MODEL_ADAPTER_MODE = "claude";
+      envUpdates.PLANNER_MODEL = modelName;
+      envUpdates.ANTHROPIC_BASE_URL = config.model.claudeBaseUrl;
+      success(`Model: Claude / ${modelName}`);
     } else {
       warn("No API key provided — falling back to mock mode");
       provider = "mock";
@@ -326,6 +372,8 @@ export async function runOnboard(opts: OnboardOptions = {}): Promise<void> {
     ? `Ollama / ${config.model.ollamaModel}`
     : provider === "openai"
       ? `OpenAI / ${config.model.openaiModel}`
+      : provider === "claude"
+        ? `Claude / ${config.model.claudeModel}`
       : "Mock (testing)");
   step("Telegram", telegramEnabled
     ? `enabled (${config.channels.telegram?.mode ?? "polling"} mode)`

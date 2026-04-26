@@ -6,12 +6,14 @@ export const orchestratorConfigSchema = baseServiceConfigSchema.extend({
   serviceName: z.literal("orchestrator-service"),
   port: z.number().int().min(1).max(65535).default(4102),
   plannerModel: z.string().min(1).default("placeholder-model"),
-  modelAdapterMode: z.enum(["mock", "openai", "ollama", "auto"]).default("auto"),
+  modelAdapterMode: z.enum(["mock", "openai", "ollama", "claude", "auto"]).default("auto"),
   modelAdapterTimeoutMs: z.number().int().positive().max(120000).default(20000),
   modelAdapterMaxContextChunks: z.number().int().positive().default(24),
   openAiApiKey: z.string().min(1).optional(),
+  anthropicApiKey: z.string().min(1).optional(),
   openAiBaseUrl: z.string().url().default("https://api.openai.com/v1"),
   ollamaBaseUrl: z.string().url().default("http://localhost:11434/v1"),
+  anthropicBaseUrl: z.string().url().default("https://api.anthropic.com"),
   harnessEventResultTtlSeconds: z.number().int().positive().default(900),
   requireSignedInternalEvents: z.boolean().default(true),
   maxEventHandlerAttempts: z.number().int().positive().default(5),
@@ -69,8 +71,13 @@ export async function loadOrchestratorServiceConfig(): Promise<OrchestratorServi
         env.MODEL_ADAPTER_MODE === "openai"
           ? await secrets.require("OPENAI_API_KEY")
           : await secrets.optional("OPENAI_API_KEY"),
+      anthropicApiKey:
+        env.MODEL_ADAPTER_MODE === "claude"
+          ? await secrets.require("ANTHROPIC_API_KEY")
+          : await secrets.optional("ANTHROPIC_API_KEY"),
       openAiBaseUrl: env.OPENAI_BASE_URL ?? "https://api.openai.com/v1",
       ollamaBaseUrl: env.OLLAMA_BASE_URL ?? "http://localhost:11434/v1",
+      anthropicBaseUrl: env.ANTHROPIC_BASE_URL ?? "https://api.anthropic.com",
       harnessEventResultTtlSeconds: Number(env.HARNESS_EVENT_RESULT_TTL_SECONDS ?? 900),
       requireSignedInternalEvents: env.REQUIRE_SIGNED_INTERNAL_EVENTS !== "false",
       maxEventHandlerAttempts: Number(env.MAX_EVENT_HANDLER_ATTEMPTS ?? 5),

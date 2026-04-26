@@ -1,10 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
+import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
 
 import type { ContextChunk } from "@manasvi/contracts";
 
-export const modelAdapterModeSchema = z.enum(["mock", "openai", "ollama", "auto"]);
+export const modelAdapterModeSchema = z.enum(["mock", "openai", "ollama", "claude", "auto"]);
 export type ModelAdapterMode = z.infer<typeof modelAdapterModeSchema>;
 
 export interface ModelAdapterConfig {
@@ -12,8 +13,10 @@ export interface ModelAdapterConfig {
   model: string;
   timeoutMs: number;
   openAiApiKey?: string;
+  anthropicApiKey?: string;
   openAiBaseUrl: string;
   ollamaBaseUrl: string;
+  anthropicBaseUrl: string;
 }
 
 export interface ModelInvocationRequest {
@@ -29,8 +32,8 @@ export interface ModelInvocationRequest {
 export interface ModelInvocationResult {
   requestId: string;
   outputText: string;
-  mode: "mock" | "openai" | "ollama";
-  provider: "mock" | "openai" | "ollama";
+  mode: "mock" | "openai" | "ollama" | "claude";
+  provider: "mock" | "openai" | "ollama" | "claude";
   model: string;
   latencyMs: number;
   usage?: {
@@ -40,12 +43,12 @@ export interface ModelInvocationResult {
 }
 
 export interface ModelAdapter {
-  mode: "mock" | "openai" | "ollama";
+  mode: "mock" | "openai" | "ollama" | "claude";
   invoke(input: ModelInvocationRequest): Promise<ModelInvocationResult>;
 }
 
 export function createModelAdapter(config: ModelAdapterConfig): ModelAdapter {
-  const normalizedMode = resolveMode(config.mode, config.openAiApiKey);
+  const normalizedMode = resolveMode(config.mode, config.openAiApiKey, config.anthropicApiKey);
   if (normalizedMode === "openai") {
     if (!config.openAiApiKey || config.openAiApiKey.length === 0) {
       throw new Error("MODEL_ADAPTER_MODE=openai requires OPENAI_API_KEY");
@@ -68,16 +71,37 @@ export function createModelAdapter(config: ModelAdapterConfig): ModelAdapter {
       baseUrl: config.ollamaBaseUrl
     });
   }
+  if (normalizedMode === "claude") {
+    if (!config.anthropicApiKey || config.anthropicApiKey.length === 0) {
+      throw new Error("MODEL_ADAPTER_MODE=claude requires ANTHROPIC_API_KEY");
+    }
+    return new AnthropicModelAdapter({
+      model: config.model,
+      timeoutMs: config.timeoutMs,
+      apiKey: config.anthropicApiKey,
+      baseUrl: config.anthropicBaseUrl
+    });
+  }
   return new MockModelAdapter({
     model: config.model
   });
 }
 
-function resolveMode(mode: ModelAdapterMode, apiKey?: string): "mock" | "openai" | "ollama" {
-  if (mode === "mock" || mode === "openai" || mode === "ollama") {
+function resolveMode(
+  mode: ModelAdapterMode,
+  openAiApiKey?: string,
+  anthropicApiKey?: string
+): "mock" | "openai" | "ollama" | "claude" {
+  if (mode === "mock" || mode === "openai" || mode === "ollama" || mode === "claude") {
     return mode;
   }
-  return apiKey && apiKey.length > 0 ? "openai" : "mock";
+  if (openAiApiKey && openAiApiKey.length > 0) {
+    return "openai";
+  }
+  if (anthropicApiKey && anthropicApiKey.length > 0) {
+    return "claude";
+  }
+  return "mock";
 }
 
 class MockModelAdapter implements ModelAdapter {
@@ -176,14 +200,104 @@ class OpenAiCompatibleModelAdapter implements ModelAdapter {
   }
 }
 
+class AnthropicModelAdapter implements ModelAdapter {
+  readonly mode = "claude" as const;
+  private readonly client: Anthropic;
+
+  constructor(
+    private readonly config: {
+      model: string;
+      timeoutMs: number;
+      apiKey: string;
+      baseUrl: string;
+    }
+  ) {
+    this.client = new Anthropic({
+      apiKey: config.apiKey,
+      baseURL: config.baseUrl.replace(/\/$/, ""),
+      timeout: config.timeoutMs,
+      maxRetries: 0
+    });
+  }
+
+  async invoke(input: ModelInvocationRequest): Promise<ModelInvocationResult> {
+    const started = Date.now();
+    try {
+      const response = await this.client.messages.create({
+        model: this.config.model,
+        max_tokens: 1024,
+        temperature: 0.2,
+        system: buildSystemInstruction(),
+        messages: [
+          {
+            role: "user",
+            content: [
+              {
+                type: "text",
+                text: buildUserPrompt(input)
+              }
+            ]
+          }
+        ]
+      });
+
+      const textBlocks: string[] = [];
+      for (const block of response.content) {
+        if (block.type === "text") {
+          textBlocks.push(block.text);
+        }
+      }
+      const outputText = textBlocks.join("\n").trim();
+      if (!outputText) {
+        throw new Error("claude response did not include assistant text content");
+      }
+
+      return {
+        requestId: input.requestId || randomUUID(),
+        outputText,
+        mode: "claude",
+        provider: "claude",
+        model: response.model,
+        latencyMs: Date.now() - started,
+        ...(response.usage
+          ? {
+              usage: {
+                inputTokens: response.usage.input_tokens,
+                outputTokens: response.usage.output_tokens
+              }
+            }
+          : {})
+      };
+    } catch (error) {
+      throw normalizeAnthropicError(error);
+    }
+  }
+}
+
 function buildOpenAiMessages(input: ModelInvocationRequest): Array<{ role: "system" | "user"; content: string }> {
-  const systemInstruction = [
+  return [
+    {
+      role: "system",
+      content: buildSystemInstruction()
+    },
+    {
+      role: "user",
+      content: buildUserPrompt(input)
+    }
+  ];
+}
+
+function buildSystemInstruction(): string {
+  return [
     "You are Manasvi, a secure assistant.",
     "Return a direct, user-facing answer.",
     "Do not expose internal policy decisions, trust labels, provenance/session metadata, trace IDs, or control-plane details unless the user explicitly asks for them.",
     "Do not include analysis preambles like 'Based on the provided context'.",
     "Never claim hidden tool execution."
   ].join(" ");
+}
+
+function buildUserPrompt(input: ModelInvocationRequest): string {
   const contextSnippet = input.contextChunks
     .slice(-24)
     .map((chunk) => {
@@ -200,16 +314,22 @@ function buildOpenAiMessages(input: ModelInvocationRequest): Array<{ role: "syst
       return truncateForEcho(line, 240);
     })
     .join("\n");
-  return [
-    {
-      role: "system",
-      content: systemInstruction
-    },
-    {
-      role: "user",
-      content: `User input:\n${input.userInput}\n\nContext:\n${contextSnippet}`
+  return `User input:\n${input.userInput}\n\nContext:\n${contextSnippet}`;
+}
+
+function normalizeAnthropicError(error: unknown): Error {
+  if (error instanceof Error) {
+    const errorRecord = error as unknown as Record<string, unknown>;
+    const statusCode =
+      "status" in errorRecord && typeof errorRecord.status === "number"
+        ? errorRecord.status as number
+        : undefined;
+    if (statusCode) {
+      return new Error(`claude request failed: ${statusCode} ${error.message}`);
     }
-  ];
+    return new Error(`claude request failed: ${error.message}`);
+  }
+  return new Error("claude request failed: unknown error");
 }
 
 function truncateForEcho(input: string, maxLength = 120): string {

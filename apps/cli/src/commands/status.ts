@@ -7,7 +7,8 @@ import { banner, section, table, info, warn, success, hint, style } from "../lib
 import { loadConfig } from "../lib/config.js";
 import { isProcessAlive } from "../lib/services.js";
 import { loadPids } from "../lib/config.js";
-import { checkAllServices, checkOllama } from "../lib/health.js";
+import { checkAllServices, checkAnthropic, checkOllama } from "../lib/health.js";
+import { envFilePath, readEnvFile } from "../lib/env.js";
 
 export async function runStatus(opts: { verbose?: boolean } = {}): Promise<void> {
   banner("status");
@@ -73,6 +74,7 @@ export async function runStatus(opts: { verbose?: boolean } = {}): Promise<void>
   const providerLabels: Record<string, string> = {
     ollama: `Ollama (${config.model.ollamaModel}) @ ${config.model.ollamaBaseUrl}`,
     openai: `OpenAI (${config.model.openaiModel})`,
+    claude: `Claude (${config.model.claudeModel})`,
     mock: "Mock (testing mode)"
   };
 
@@ -99,6 +101,22 @@ export async function runStatus(opts: { verbose?: boolean } = {}): Promise<void>
     } else {
       warn(`Ollama not reachable at ${config.model.ollamaBaseUrl}`);
       hint("Start with: ollama serve");
+    }
+  }
+
+  if (opts.verbose && config.model.provider === "claude") {
+    section("Model Backend");
+    const env = await readEnvFile(envFilePath(config.projectPath));
+    const apiKey = env.ANTHROPIC_API_KEY ?? "";
+    if (!apiKey) {
+      warn("ANTHROPIC_API_KEY missing");
+    } else {
+      const ok = await checkAnthropic(config.model.claudeBaseUrl, apiKey);
+      if (ok) {
+        success(`Claude reachable at ${config.model.claudeBaseUrl}`);
+      } else {
+        warn(`Claude not reachable at ${config.model.claudeBaseUrl}`);
+      }
     }
   }
 

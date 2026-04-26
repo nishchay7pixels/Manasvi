@@ -58,7 +58,7 @@ git --version
 
 ### Optional: An AI model provider
 
-Manasvi needs access to a language model to generate responses. You have two options:
+Manasvi needs access to a language model to generate responses. You have three options:
 
 **Option A: OpenAI (or any OpenAI-compatible API)**
 
@@ -73,6 +73,10 @@ To install Ollama and pull a model:
 # Install Ollama from https://ollama.com
 ollama pull llama3.2
 ```
+
+**Option C: Anthropic Claude**
+
+You'll need an API key from [console.anthropic.com](https://console.anthropic.com).
 
 If you're just experimenting, Manasvi includes a **mock adapter** that works without any model. It returns predictable test responses so you can explore the system without connecting to a real AI provider.
 

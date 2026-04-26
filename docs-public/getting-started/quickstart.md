@@ -8,7 +8,7 @@ description: Install, onboard, and send your first message to Manasvi
 
 This guide gets you from nothing to a running Manasvi agent — with a real model and a real first message — in about 15 minutes.
 
-We'll use **Ollama** (free, runs locally, no API key) and the **terminal chat interface**. If you want to use OpenAI or connect Telegram instead, you can do those steps after the initial setup.
+We'll use **Ollama** (free, runs locally, no API key) and the **terminal chat interface**. If you want to use OpenAI, Claude, or connect Telegram instead, you can do those steps after the initial setup.
 
 ---
 
@@ -107,6 +107,7 @@ This walks you through choosing your model and connecting a channel. It's intera
   ? Which model provider do you want to use?
   ❯ Ollama (local)    Run models on your own machine — no API key needed
     OpenAI (cloud)    Use GPT models via OpenAI API key
+    Claude (Anthropic cloud) Use Claude models via Anthropic API key
     Mock (testing)    Simulated responses — useful for testing the system
 
   ✔ Ollama is running at http://localhost:11434/v1
@@ -235,6 +236,9 @@ You've just run a full governed AI agent pipeline locally:
 
 **Use OpenAI instead** — switch to GPT-4o or GPT-4o-mini:
 → [Configure a model](/docs/setup/connect-model)
+
+**Use Claude instead** — switch to Anthropic Claude models:
+→ [Connect Claude](/docs/setup/connect-claude)
 
 **Understand the system** — learn what each part does and why:
 → [Core concepts](/docs/concepts/agent-runtime)

@@ -92,7 +92,7 @@ Yes. The policy service supports per-tool, per-action-class, and per-resource ap
 
 ### Can I connect Manasvi to a different AI model?
 
-Yes. The model provider is configurable. Any model that supports a function-calling interface compatible with the SDK can be used.
+Yes. The model provider is configurable. Manasvi supports `ollama`, `openai`, `claude`, and `mock` modes through the same provider abstraction.
 
 ---
 

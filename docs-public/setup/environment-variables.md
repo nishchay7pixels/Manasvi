@@ -40,10 +40,12 @@ Used to sign and verify approval artifacts.
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `MODEL_ADAPTER_MODE` | `openai`, `ollama`, `mock`, or `auto` | `auto` |
+| `MODEL_ADAPTER_MODE` | `openai`, `ollama`, `claude`, `mock`, or `auto` | `auto` |
 | `PLANNER_MODEL` | Model name to use | `gpt-4o` |
 | `OPENAI_API_KEY` | OpenAI API key | — |
 | `OPENAI_BASE_URL` | OpenAI-compatible API base URL | `https://api.openai.com/v1` |
+| `ANTHROPIC_API_KEY` | Anthropic API key | — |
+| `ANTHROPIC_BASE_URL` | Anthropic API base URL | `https://api.anthropic.com` |
 | `OLLAMA_BASE_URL` | Ollama API base URL | `http://localhost:11434/v1` |
 | `MODEL_ADAPTER_TIMEOUT_MS` | Model request timeout (ms) | `20000` |
 | `MODEL_ADAPTER_MAX_CONTEXT_CHUNKS` | Max context chunks to include | `24` |

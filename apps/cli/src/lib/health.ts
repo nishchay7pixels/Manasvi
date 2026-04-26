@@ -119,6 +119,48 @@ export async function checkOpenAI(baseUrl: string, apiKey: string): Promise<bool
 }
 
 /**
+ * Check if Anthropic API key works.
+ */
+export async function checkAnthropic(baseUrl: string, apiKey: string): Promise<boolean> {
+  try {
+    const res = await fetch(`${baseUrl.replace(/\/$/, "")}/v1/models`, {
+      headers: {
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01"
+      },
+      signal: AbortSignal.timeout(5000)
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * List Anthropic model ids for interactive selection. Returns [] on failure.
+ */
+export async function listAnthropicModels(baseUrl: string, apiKey: string): Promise<string[]> {
+  try {
+    const res = await fetch(`${baseUrl.replace(/\/$/, "")}/v1/models`, {
+      headers: {
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01"
+      },
+      signal: AbortSignal.timeout(8000)
+    });
+    if (!res.ok) {
+      return [];
+    }
+    const payload = await res.json() as { data?: Array<{ id?: string }> };
+    return (payload.data ?? [])
+      .map((entry) => entry.id)
+      .filter((id): id is string => typeof id === "string" && id.length > 0);
+  } catch {
+    return [];
+  }
+}
+
+/**
  * Check if a TCP port is already in use.
  */
 export async function isPortInUse(port: number): Promise<boolean> {

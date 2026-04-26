@@ -109,7 +109,7 @@ ${style.bold("Configuration:")}
 
 ${style.bold("Model providers:")}
   ${style.cyan("models list")}        List configured providers
-  ${style.cyan("models add")}         Configure a provider (ollama, openai)
+  ${style.cyan("models add")}         Configure a provider (ollama, openai, claude)
   ${style.cyan("models test")}        Test model connectivity
   ${style.cyan("models use")}         Set active provider
 

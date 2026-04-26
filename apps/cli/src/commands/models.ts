@@ -6,7 +6,7 @@ import { banner, section, info, success, warn, hint, table, step, style } from "
 import { select, input, secret, confirm } from "../lib/prompt.js";
 import { loadConfig, saveConfig, type ModelProvider } from "../lib/config.js";
 import { envFilePath, mergeEnvFile, readEnvFile } from "../lib/env.js";
-import { checkOllama, checkOpenAI } from "../lib/health.js";
+import { checkAnthropic, checkOllama, checkOpenAI, listAnthropicModels } from "../lib/health.js";
 
 export async function runModelsList(): Promise<void> {
   banner("models");
@@ -31,6 +31,11 @@ export async function runModelsList(): Promise<void> {
       status: config.model.provider === "openai" ? "ok" : "dim"
     },
     {
+      label: "Claude (Anthropic)",
+      value: config.model.claudeModel + " @ " + config.model.claudeBaseUrl,
+      status: config.model.provider === "claude" ? "ok" : "dim"
+    },
+    {
       label: "Mock (testing)",
       value: "simulated responses",
       status: config.model.provider === "mock" ? "ok" : "dim"
@@ -44,7 +49,7 @@ export async function runModelsList(): Promise<void> {
 
   console.log();
   info(`Active: ${config.model.provider}`);
-  hint("Change with: pnpm manasvi models use <ollama|openai|mock>");
+  hint("Change with: pnpm manasvi models use <ollama|openai|claude|mock>");
   console.log();
 }
 
@@ -62,7 +67,8 @@ export async function runModelsAdd(provider?: string): Promise<void> {
   if (!provider) {
     provider = await select("Which provider to configure?", [
       { value: "ollama", label: "Ollama", description: "local model runner" },
-      { value: "openai", label: "OpenAI", description: "cloud API" }
+      { value: "openai", label: "OpenAI", description: "cloud API" },
+      { value: "claude", label: "Claude", description: "Anthropic cloud API" }
     ]);
   }
 
@@ -114,6 +120,42 @@ export async function runModelsAdd(provider?: string): Promise<void> {
     hint("Set as active: pnpm manasvi models use openai");
   }
 
+  if (provider === "claude") {
+    const existingEnv = await readEnvFile(envPath);
+    const existing = existingEnv.ANTHROPIC_API_KEY ?? "";
+    const apiKey = existing || (await secret("Anthropic API key"));
+    const baseUrl = await input("Anthropic base URL", config.model.claudeBaseUrl);
+    let modelName = config.model.claudeModel;
+
+    const modelIds = apiKey ? await listAnthropicModels(baseUrl, apiKey) : [];
+    if (modelIds.length > 0) {
+      info(`Discovered ${modelIds.length} Claude model(s)`);
+      hint(`Examples: ${modelIds.slice(0, 5).join(", ")}`);
+    } else {
+      hint("Could not list models from Anthropic API — using manual model entry");
+    }
+    modelName = await input("Model name", modelName);
+
+    const ok = await checkAnthropic(baseUrl, apiKey);
+    if (ok) {
+      success("Anthropic API key validated");
+    } else {
+      warn("Could not validate Anthropic key — check key/model/base URL and try again");
+    }
+
+    config.model.claudeBaseUrl = baseUrl;
+    config.model.claudeModel = modelName;
+    await saveConfig(config);
+    await mergeEnvFile(
+      envPath,
+      { ANTHROPIC_API_KEY: apiKey, ANTHROPIC_BASE_URL: baseUrl },
+      { force: ["ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL"] }
+    );
+
+    success(`Claude configured: ${modelName}`);
+    hint("Set as active: pnpm manasvi models use claude");
+  }
+
   console.log();
 }
 
@@ -135,6 +177,12 @@ export async function runModelsTest(): Promise<void> {
     if (!key) { warn("OPENAI_API_KEY not set"); return; }
     const ok = await checkOpenAI(config.model.openaiBaseUrl, key);
     ok ? success("OpenAI API key is valid") : warn("OpenAI API key validation failed");
+  } else if (provider === "claude") {
+    const env = await readEnvFile(envFilePath(config.projectPath));
+    const key = env.ANTHROPIC_API_KEY ?? "";
+    if (!key) { warn("ANTHROPIC_API_KEY not set"); return; }
+    const ok = await checkAnthropic(config.model.claudeBaseUrl, key);
+    ok ? success("Anthropic API key is valid") : warn("Anthropic API key validation failed");
   } else {
     success("Mock provider — no connectivity needed");
   }
@@ -152,13 +200,14 @@ export async function runModelsUse(provider?: string): Promise<void> {
     provider = await select("Select active model provider:", [
       { value: "ollama", label: "Ollama (local)" },
       { value: "openai", label: "OpenAI (cloud)" },
+      { value: "claude", label: "Claude (Anthropic)" },
       { value: "mock", label: "Mock (testing)" }
     ]);
   }
 
-  const validProviders = ["ollama", "openai", "mock"];
+  const validProviders = ["ollama", "openai", "claude", "mock"];
   if (!validProviders.includes(provider)) {
-    warn(`Unknown provider: ${provider}. Valid: ollama, openai, mock`);
+    warn(`Unknown provider: ${provider}. Valid: ollama, openai, claude, mock`);
     return;
   }
 
@@ -166,7 +215,22 @@ export async function runModelsUse(provider?: string): Promise<void> {
   await saveConfig(config);
 
   const envPath = envFilePath(config.projectPath);
-  await mergeEnvFile(envPath, { MODEL_ADAPTER_MODE: provider }, { force: ["MODEL_ADAPTER_MODE"] });
+  const envUpdates: Record<string, string> = {
+    MODEL_ADAPTER_MODE: provider
+  };
+  if (provider === "ollama") {
+    envUpdates.PLANNER_MODEL = config.model.ollamaModel;
+    envUpdates.OLLAMA_BASE_URL = config.model.ollamaBaseUrl;
+  }
+  if (provider === "openai") {
+    envUpdates.PLANNER_MODEL = config.model.openaiModel;
+    envUpdates.OPENAI_BASE_URL = config.model.openaiBaseUrl;
+  }
+  if (provider === "claude") {
+    envUpdates.PLANNER_MODEL = config.model.claudeModel;
+    envUpdates.ANTHROPIC_BASE_URL = config.model.claudeBaseUrl;
+  }
+  await mergeEnvFile(envPath, envUpdates, { force: Object.keys(envUpdates) });
 
   success(`Active model provider: ${provider}`);
   hint("Restart services to apply: pnpm manasvi restart");

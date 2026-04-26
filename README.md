@@ -46,6 +46,7 @@ Manasvi supports:
 
 - **Ollama** — run models locally (`ollama serve` + `ollama pull llama3.2`)
 - **OpenAI** — use GPT models via API key
+- **Claude (Anthropic)** — use Claude models via Anthropic API key
 - **Mock** — simulated responses for testing
 
 Configure via `pnpm manasvi models add` or during `pnpm manasvi onboard`.
