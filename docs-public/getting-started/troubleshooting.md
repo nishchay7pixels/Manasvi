@@ -68,11 +68,19 @@ lsof -i :4102
 netstat -ano | findstr :4102
 ```
 
-If a previous Manasvi run left orphaned processes:
+If a previous Manasvi run left orphaned processes, try a graceful stop first:
 ```bash
 pnpm manasvi stop
 pnpm manasvi start
 ```
+
+If services are stuck and won't respond to SIGTERM:
+```bash
+pnpm manasvi stop --force
+pnpm manasvi start
+```
+
+`--force` sends SIGKILL to any service that doesn't exit within 5 seconds.
 
 ---
 

@@ -8,68 +8,69 @@ description: What is Manasvi and why does it exist?
 
 ## What is Manasvi?
 
-Manasvi is an **AI agent operating fabric** — a system designed to run AI agents in a way that is secure, auditable, and governable by design.
+Manasvi is an AI agent you can run locally. Connect it to a model — Ollama, OpenAI, or a test adapter. Connect it to a channel — Telegram, Slack, or a terminal. Let it use tools. Keep full control of every action.
 
-Think of it as the infrastructure layer between your AI model and the real world. When an AI agent wants to send an email, read a file, make an API call, or execute a command, Manasvi decides:
+The agent can search the web, read files, call APIs, run commands. But it doesn't do any of that directly. Every proposed action goes through a **policy engine** that decides what's allowed. Sensitive actions go through an **approval flow** before they execute. Every outcome is recorded in an **audit trail**.
 
-- **Is this action allowed?** (policy evaluation)
-- **Does someone need to approve it first?** (approval workflow)
-- **Where should it execute, and under what constraints?** (sandboxed runtime)
-- **Was it recorded for accountability?** (audit trail)
+That's the core idea: a capable agent with governance built in — not bolted on afterward.
 
-None of that happens by accident. Every step is intentional.
+---
+
+## What can you do with it?
+
+- Chat with your agent through **Telegram**, **Slack**, or the built-in terminal
+- Run a **local model with Ollama** — free, private, no API costs
+- Or use **OpenAI** (GPT-4o, etc.) for cloud-based inference
+- Give the agent access to **tools** — search, files, HTTP, shell
+- Define **policies** that control what the agent is allowed to do
+- Require **human approval** before sensitive actions run
+- Run untrusted **plugins** in isolated processes
+- Keep a **complete audit trail** of everything that happened
+
+---
 
 ## Why does Manasvi exist?
 
-Most AI agent frameworks are optimized for capability — making it easy to connect a model to tools and let it run. Manasvi takes a different position: **capability without governance is a liability**.
+Most agent frameworks connect a model to tools and let it run. The model can call tools directly, which is fast to set up but means:
 
-When AI agents can execute real-world actions — writing files, calling APIs, managing data, running shell commands — the question of *who approved this* and *what exactly happened* becomes critical. Manasvi treats those questions as first-class design requirements, not afterthoughts.
+- There's no policy layer between reasoning and execution
+- Actions can be taken without any audit trail
+- Sensitive operations aren't gated by approval
+- Third-party plugins inherit too much system trust
 
-## Who is it for?
+Manasvi takes a different position: **capability without governance is a liability**. When an AI agent can write files, call APIs, or run shell commands, the question of *who authorized this* and *what exactly happened* becomes important. Manasvi treats those questions as first-class design requirements.
 
-Manasvi is useful for:
-
-- **Teams building AI automation** who need audit trails and policy controls
-- **Organizations deploying agents** in contexts where mistakes have real consequences
-- **Developers** who want to build on a principled, secure foundation rather than retrofitting security later
-- **Anyone** who has asked "how do I know what my agent actually did?"
-
-## What can I do with it?
-
-With Manasvi you can:
-
-- Connect AI models to tools (web search, file access, HTTP calls, shell execution)
-- Receive and respond to messages through channels like **Telegram** and **Slack**
-- Define policies that control what agents are allowed to do
-- Require human approval before sensitive actions execute
-- Run untrusted plugins in isolated processes
-- Dispatch work to remote execution nodes
-- Keep a complete, tamper-resistant record of everything that happened
+---
 
 ## How is it different from other agent frameworks?
 
-The short answer: most frameworks connect a model to tools. Manasvi connects a model to a **governance layer** that controls tool access.
-
 | Typical agent framework | Manasvi |
 |------------------------|---------|
-| Model → Tool (direct) | Model → Policy → Approval? → Signed Intent → Verified Execution |
-| Trust implicit | Trust explicit and verified |
+| Model → Tool (direct) | Model → Policy → Approval? → Signed Intent → Sandboxed Execution |
+| Trust implicit | Trust explicit and verified at each boundary |
 | Execution unrestricted | Execution sandboxed with declared constraints |
 | Audit optional | Audit built-in and append-only |
-| Plugins trusted | Plugins isolated and capability-gated |
+| Plugins share system trust | Plugins run isolated with narrow capability grants |
 
-For a deeper look at these differences, see [Why Manasvi](/docs/why-manasvi/not-just-a-chatbot).
+For a deeper look: [Why Manasvi is different](/docs/why-manasvi/not-just-a-chatbot)
 
-## Where do I start?
+---
 
-If you want to get Manasvi running:
+## Who is it for?
 
-1. Check [Prerequisites](/docs/getting-started/prerequisites) to make sure your system is ready
-2. Follow the [Install guide](/docs/getting-started/install)
-3. [Run it locally](/docs/getting-started/run-locally) and try your first workflow
+- **Developers** who want to build on a secure, principled foundation
+- **Teams building AI automation** who need audit trails and policy controls
+- **Anyone** who has asked "what exactly did my agent do, and who approved it?"
+- **Experimenters** who want to run a real AI agent pipeline locally with Ollama
 
-If you want to understand the system first:
+---
 
-- [Core concepts](/docs/concepts/agent-runtime) — plain-language explanations of each component
-- [Architecture overview](/docs/architecture/overview) — how the services fit together
-- [Security model](/docs/security/philosophy) — why it's designed the way it is
+## Where to start
+
+**Just want to run it?**
+→ [15-minute quickstart](/docs/getting-started/quickstart) — install, onboard, first message
+
+**Want to understand the system first?**
+→ [Core concepts](/docs/concepts/agent-runtime) — plain-language explanations
+→ [Architecture overview](/docs/architecture/overview) — how the services fit together
+→ [Security model](/docs/security/philosophy) — why it's designed the way it is

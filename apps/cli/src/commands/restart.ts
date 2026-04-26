@@ -7,9 +7,9 @@ import { banner, section, info } from "../lib/ui.js";
 import { runStop } from "./stop.js";
 import { runStart } from "./start.js";
 
-export async function runRestart(): Promise<void> {
+export async function runRestart(opts: { force?: boolean } = {}): Promise<void> {
   banner("restart");
-  await runStop();
+  await runStop({ force: opts.force });
   console.log();
   info("Restarting…");
   console.log();

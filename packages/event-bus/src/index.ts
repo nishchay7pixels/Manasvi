@@ -118,14 +118,17 @@ export class EventPublisher {
   constructor(private readonly options: EventPublisherOptions) {}
 
   async publish(event: Omit<CanonicalEventEnvelope, "integrity"> | CanonicalEventEnvelope): Promise<void> {
-    const signed = this.options.signing
-      ? attachEventIntegrity(
-          "integrity" in event
-            ? (({ integrity: _integrity, ...rest }) => rest)(event)
-            : event,
-          this.options.signing
-        )
-      : ("integrity" in event ? event : attachEventIntegrity(event));
+    const baseEvent = ("integrity" in event ? (({ integrity: _integrity, ...rest }) => rest)(event) : event) as Omit<
+      CanonicalEventEnvelope,
+      "integrity"
+    >;
+
+    // HMAC integrity is only valid for service-origin events.
+    const shouldSignAsService = Boolean(this.options.signing && baseEvent.source.sourceType === "service");
+    const signed = shouldSignAsService
+      ? attachEventIntegrity(baseEvent, this.options.signing)
+      : attachEventIntegrity(baseEvent);
+
     const parsed = parseCanonicalEvent(signed);
     await this.options.transport.publish(parsed);
   }

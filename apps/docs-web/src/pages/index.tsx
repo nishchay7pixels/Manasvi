@@ -4,61 +4,91 @@ import useDocusaurusContext from "@docusaurus/useDocusaurusContext";
 import Layout from "@theme/Layout";
 import styles from "./index.module.css";
 
-const FEATURES = [
-  {
-    icon: "🛡️",
-    title: "Policy-governed by design",
-    desc: "Every action is evaluated against a policy engine before it can execute. There is no path from model output to side effect that bypasses authorization."
-  },
-  {
-    icon: "🔏",
-    title: "Signed intents & expiring approvals",
-    desc: "Execution intents are cryptographically signed. Approvals are payload-bound and time-limited. Nothing can be replayed, mutated, or reused silently."
-  },
-  {
-    icon: "📦",
-    title: "Sandboxed execution",
-    desc: "All tool execution happens inside isolated sandboxes with declared network and filesystem constraints. The runtime verifies before it executes."
-  },
-  {
-    icon: "🧩",
-    title: "Plugin isolation",
-    desc: "Third-party plugins run in separate processes with narrow, approved capability grants. Plugins cannot inherit core system trust."
-  },
-  {
-    icon: "🧠",
-    title: "Trust-classified memory",
-    desc: "Memory is partitioned by trust class. User-owned, system-trusted, model-generated, and external content are stored and surfaced according to their provenance."
-  },
-  {
-    icon: "📋",
-    title: "Append-only audit trail",
-    desc: "Every decision, action, and outcome is recorded in an immutable audit stream with integrity hash chaining. Nothing disappears silently."
-  }
-];
+// ── Data ──────────────────────────────────────────────────────────────────────
 
-const PILLARS = [
+const CAPABILITIES = [
   {
-    icon: "🔒",
-    title: "Zero-trust by default",
-    desc: "No component inherits trust from another. Every service boundary validates artifacts independently."
+    icon: "💬",
+    title: "Chat via Telegram or Slack",
+    desc: "Connect a Telegram bot or Slack workspace. Your agent receives messages, processes them, and replies — with every action governed."
   },
   {
-    icon: "📜",
-    title: "Policy-first architecture",
-    desc: "Authorization is not an afterthought. It is the primary decision gate for all sensitive operations."
+    icon: "🖥️",
+    title: "Run models locally with Ollama",
+    desc: "Use Llama 3, Mistral, Qwen, or any Ollama-supported model. No API key, no cloud costs. The model runs on your machine."
+  },
+  {
+    icon: "🔧",
+    title: "Use tools with controlled access",
+    desc: "Web search, file access, HTTP calls, shell execution — all mediated through a policy engine. The model can't call tools directly."
   },
   {
     icon: "✅",
-    title: "Approval as a security primitive",
-    desc: "High-risk actions require signed, time-bounded human approval before execution can proceed."
+    title: "Approve sensitive actions",
+    desc: "High-risk actions require your sign-off before they run. Approvals are cryptographically bound and time-limited."
   },
   {
-    icon: "🔍",
-    title: "Observable and auditable",
-    desc: "Every decision leaves a record. Every outcome is attributable. Governance is built in."
+    icon: "📋",
+    title: "See everything that happened",
+    desc: "Every decision, tool call, and outcome is recorded in an append-only audit trail with integrity checking."
+  },
+  {
+    icon: "🧩",
+    title: "Extend with plugins safely",
+    desc: "Third-party plugins run in isolated processes with narrow capability grants. They can't inherit core system trust."
   }
 ];
+
+const HOW_IT_WORKS = [
+  {
+    step: "1",
+    title: "Connect",
+    desc: "Choose a model — Ollama for local inference, or OpenAI for cloud. Add a channel: Telegram, Slack, or the built-in terminal. Takes about 5 minutes."
+  },
+  {
+    step: "2",
+    title: "Act",
+    desc: "Send a message. The agent proposes a plan, and the policy engine decides what's allowed. Tools execute in sandboxed environments with declared constraints."
+  },
+  {
+    step: "3",
+    title: "Control",
+    desc: "Every action is policy-evaluated. Sensitive ones trigger an approval flow. Every outcome is recorded. You always know what your agent did and why."
+  }
+];
+
+const QUICK_LINKS = [
+  {
+    icon: "⚡",
+    title: "15-minute quickstart",
+    desc: "Install, onboard, and send your first message.",
+    href: "/docs/getting-started/quickstart",
+    label: "Start here"
+  },
+  {
+    icon: "🖥️",
+    title: "Connect Ollama",
+    desc: "Run a local model with zero API costs.",
+    href: "/docs/setup/connect-ollama",
+    label: "Setup guide"
+  },
+  {
+    icon: "📡",
+    title: "Connect Telegram",
+    desc: "Chat with your agent from your phone.",
+    href: "/docs/setup/connect-telegram",
+    label: "Setup guide"
+  },
+  {
+    icon: "🏗️",
+    title: "Why Manasvi is different",
+    desc: "The model doesn't call tools directly. Here's why that matters.",
+    href: "/docs/why-manasvi/not-just-a-chatbot",
+    label: "Read more"
+  }
+];
+
+// ── Sections ──────────────────────────────────────────────────────────────────
 
 function HeroSection() {
   return (
@@ -66,47 +96,75 @@ function HeroSection() {
       <div className="container">
         <div className={styles.heroBadge}>
           <span className="m-badge">v0.1 · Open Preview</span>
-          A secure AI agent operating fabric
+          Free and open source
         </div>
         <h1 className="hero__title">
-          Agent governance,<br />
-          built in from the start.
+          An AI agent<br />
+          you can actually run.
         </h1>
         <p className="hero__subtitle">
-          Manasvi is a policy-driven, multi-service AI agent platform designed
-          for teams who need auditable automation — not just powerful automation.
+          Connect Telegram. Use local models with Ollama. Let your agent use tools
+          safely — with policy controls, approval flows, and a full audit trail built in.
         </p>
         <div className={styles.heroButtons}>
-          <Link className="button button--primary button--lg" to="/docs/getting-started/introduction">
-            Get started →
+          <Link className="button button--primary button--lg" to="/docs/getting-started/quickstart">
+            Get started in 15 min →
           </Link>
-          <Link className="button button--secondary button--lg" to="/docs/architecture/overview">
-            Explore architecture
+          <Link className="button button--secondary button--lg" to="/docs/getting-started/introduction">
+            What is Manasvi?
           </Link>
+        </div>
+        <div className={styles.heroTerminal}>
+          <div className={styles.terminalBar}>
+            <span className={styles.terminalDot} style={{ background: "#FF5F57" }} />
+            <span className={styles.terminalDot} style={{ background: "#FEBC2E" }} />
+            <span className={styles.terminalDot} style={{ background: "#28C840" }} />
+            <span className={styles.terminalTitle}>terminal</span>
+          </div>
+          <div className={styles.terminalBody}>
+            <div className={styles.terminalLine}>
+              <span className={styles.terminalPrompt}>$</span>
+              <span className={styles.terminalCmd}>pnpm manasvi init</span>
+              <span className={styles.terminalComment}># set up secrets and config</span>
+            </div>
+            <div className={styles.terminalLine}>
+              <span className={styles.terminalPrompt}>$</span>
+              <span className={styles.terminalCmd}>pnpm manasvi onboard</span>
+              <span className={styles.terminalComment}># choose model and channel</span>
+            </div>
+            <div className={styles.terminalLine}>
+              <span className={styles.terminalPrompt}>$</span>
+              <span className={styles.terminalCmd}>pnpm manasvi start</span>
+              <span className={styles.terminalComment}># start all services</span>
+            </div>
+            <div className={`${styles.terminalLine} ${styles.terminalOutput}`}>
+              <span className={styles.terminalCheck}>✓</span>
+              All 9 services healthy · Chat: pnpm cli
+            </div>
+          </div>
         </div>
       </div>
     </div>
   );
 }
 
-function FeaturesSection() {
+function HowItWorksSection() {
   return (
-    <section className="features-section">
+    <section className={styles.howSection}>
       <div className="container">
         <div className={styles.sectionHeader}>
-          <h2>What makes Manasvi different</h2>
+          <h2>How Manasvi works</h2>
           <p>
-            Most agent frameworks give you power. Manasvi gives you power with governance.
-            Every layer is designed around control, not convenience.
+            Three steps from nothing to a running, governed AI agent.
           </p>
         </div>
         <div className="row">
-          {FEATURES.map((feature) => (
-            <div key={feature.title} className="col col--4" style={{ marginBottom: "1.5rem" }}>
-              <div className="feature-card">
-                <span className="feature-icon">{feature.icon}</span>
-                <div className="feature-title">{feature.title}</div>
-                <p className="feature-desc">{feature.desc}</p>
+          {HOW_IT_WORKS.map((item) => (
+            <div key={item.step} className="col col--4">
+              <div className={styles.howCard}>
+                <div className={styles.howStep}>{item.step}</div>
+                <h3 className={styles.howTitle}>{item.title}</h3>
+                <p className={styles.howDesc}>{item.desc}</p>
               </div>
             </div>
           ))}
@@ -116,32 +174,88 @@ function FeaturesSection() {
   );
 }
 
-function PillarsSection() {
+function CapabilitiesSection() {
   return (
-    <section className="pillars-section">
+    <section className="features-section">
+      <div className="container">
+        <div className={styles.sectionHeader}>
+          <h2>What you can do with Manasvi</h2>
+          <p>
+            A real agent you can run locally, connect to channels, and extend with tools —
+            with governance built in from the start.
+          </p>
+        </div>
+        <div className="row">
+          {CAPABILITIES.map((cap) => (
+            <div key={cap.title} className="col col--4" style={{ marginBottom: "1.5rem" }}>
+              <div className="feature-card">
+                <span className="feature-icon">{cap.icon}</span>
+                <div className="feature-title">{cap.title}</div>
+                <p className="feature-desc">{cap.desc}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function SafetySection() {
+  return (
+    <section className={styles.safetySection}>
       <div className="container">
         <div className="row">
-          <div className="col col--5">
-            <h2 className={styles.pillarsTitle}>Four pillars of safe automation</h2>
-            <p style={{ color: "var(--ifm-font-color-secondary)", lineHeight: 1.7 }}>
-              Manasvi treats AI agent infrastructure the same way security engineers
-              treat production systems — with explicit boundaries, verifiable decisions,
-              and observable outcomes at every step.
+          <div className="col col--6">
+            <h2 className={styles.safetyTitle}>
+              The model doesn't call tools directly.
+            </h2>
+            <p className={styles.safetyBody}>
+              In most agent frameworks, the model outputs a tool call and the system runs it.
+              Manasvi puts a governance layer in between. The model proposes. Policy decides.
+              A signed intent is created. Execution is sandboxed. Everything is recorded.
             </p>
+            <p className={styles.safetyBody}>
+              This means you get real control — not just logging after the fact, but actual
+              gates that can stop, redirect, or require approval for any action.
+            </p>
+            <div className={styles.safetyPills}>
+              <span className={styles.pill}>Policy-first</span>
+              <span className={styles.pill}>Signed intents</span>
+              <span className={styles.pill}>Approval flows</span>
+              <span className={styles.pill}>Sandboxed execution</span>
+              <span className={styles.pill}>Append-only audit</span>
+            </div>
             <Link className="button button--outline button--primary" to="/docs/why-manasvi/not-just-a-chatbot">
-              Why Manasvi →
+              Why this design matters →
             </Link>
           </div>
-          <div className="col col--6 col--offset-1">
-            {PILLARS.map((p) => (
-              <div key={p.title} className="pillar-item">
-                <span className="pillar-icon">{p.icon}</span>
-                <div>
-                  <div className="pillar-title">{p.title}</div>
-                  <p className="pillar-desc">{p.desc}</p>
-                </div>
+          <div className="col col--5 col--offset-1">
+            <div className={styles.flowDiagram}>
+              <div className={styles.flowRow}>
+                <div className={styles.flowBox}>Model output</div>
               </div>
-            ))}
+              <div className={styles.flowArrow}>↓</div>
+              <div className={styles.flowRow}>
+                <div className={`${styles.flowBox} ${styles.flowBoxAccent}`}>Policy evaluation</div>
+              </div>
+              <div className={styles.flowArrow}>↓</div>
+              <div className={styles.flowRow}>
+                <div className={`${styles.flowBox} ${styles.flowBoxWarn}`}>Approval? (if required)</div>
+              </div>
+              <div className={styles.flowArrow}>↓</div>
+              <div className={styles.flowRow}>
+                <div className={styles.flowBox}>Signed execution intent</div>
+              </div>
+              <div className={styles.flowArrow}>↓</div>
+              <div className={styles.flowRow}>
+                <div className={`${styles.flowBox} ${styles.flowBoxSuccess}`}>Sandboxed execution</div>
+              </div>
+              <div className={styles.flowArrow}>↓</div>
+              <div className={styles.flowRow}>
+                <div className={styles.flowBox}>Audit record</div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -150,48 +264,18 @@ function PillarsSection() {
 }
 
 function QuickLinksSection() {
-  const LINKS = [
-    {
-      icon: "🚀",
-      title: "Quick start",
-      desc: "Get Manasvi running locally in minutes.",
-      href: "/docs/getting-started/introduction",
-      label: "Get started"
-    },
-    {
-      icon: "📡",
-      title: "Connect Telegram",
-      desc: "Set up a Telegram bot as your first channel.",
-      href: "/docs/setup/connect-telegram",
-      label: "Setup guide"
-    },
-    {
-      icon: "🏗️",
-      title: "Architecture",
-      desc: "Understand the planes and services.",
-      href: "/docs/architecture/overview",
-      label: "Read more"
-    },
-    {
-      icon: "🔐",
-      title: "Security model",
-      desc: "Learn how Manasvi protects execution.",
-      href: "/docs/security/philosophy",
-      label: "Explore security"
-    }
-  ];
   return (
-    <section style={{ padding: "4rem 0" }}>
+    <section className={styles.quickLinksSection}>
       <div className="container">
-        <h2 className={styles.sectionTitle}>Explore the docs</h2>
+        <h2 className={styles.sectionTitle}>Where to start</h2>
         <div className="row">
-          {LINKS.map((l) => (
+          {QUICK_LINKS.map((l) => (
             <div key={l.title} className="col col--3" style={{ marginBottom: "1.5rem" }}>
               <div className={styles.quickCard}>
-                <span style={{ fontSize: "1.75rem", display: "block", marginBottom: "0.75rem" }}>{l.icon}</span>
-                <h3 style={{ fontSize: "1rem", fontWeight: 700, marginBottom: "0.4rem" }}>{l.title}</h3>
-                <p style={{ fontSize: "0.85rem", color: "var(--ifm-font-color-secondary)", marginBottom: "1rem" }}>{l.desc}</p>
-                <Link to={l.href} style={{ fontSize: "0.85rem", fontWeight: 600 }}>{l.label} →</Link>
+                <span className={styles.quickIcon}>{l.icon}</span>
+                <h3 className={styles.quickTitle}>{l.title}</h3>
+                <p className={styles.quickDesc}>{l.desc}</p>
+                <Link to={l.href} className={styles.quickLink}>{l.label} →</Link>
               </div>
             </div>
           ))}
@@ -205,25 +289,37 @@ function CTASection() {
   return (
     <section className="cta-section">
       <div className="container">
-        <h2>Ready to build with governance?</h2>
+        <h2>From zero to running in about 15 minutes.</h2>
         <p>
-          Start with the getting started guide and have Manasvi running locally in under 15 minutes.
+          Free, open source, and runs entirely on your machine.
+          No cloud account required if you use Ollama.
         </p>
-        <Link className="button button--primary button--lg" to="/docs/getting-started/install">
-          Install Manasvi →
-        </Link>
+        <div style={{ display: "flex", gap: "1rem", justifyContent: "center", flexWrap: "wrap" }}>
+          <Link className="button button--primary button--lg" to="/docs/getting-started/quickstart">
+            Start the quickstart →
+          </Link>
+          <Link className="button button--secondary button--lg" to="/docs/getting-started/introduction">
+            Learn more
+          </Link>
+        </div>
       </div>
     </section>
   );
 }
 
+// ── Page ──────────────────────────────────────────────────────────────────────
+
 export default function Home(): React.JSX.Element {
   const { siteConfig } = useDocusaurusContext();
   return (
-    <Layout title={`${siteConfig.title} Docs`} description="A secure, policy-governed AI agent operating fabric with built-in governance, audit, and zero-trust execution.">
+    <Layout
+      title={`${siteConfig.title} — Governed AI Agent Runtime`}
+      description="An AI agent you can run locally. Connect Telegram or Ollama, use tools safely, and keep full control with policy, approval flows, and audit trail built in."
+    >
       <HeroSection />
-      <FeaturesSection />
-      <PillarsSection />
+      <HowItWorksSection />
+      <CapabilitiesSection />
+      <SafetySection />
       <QuickLinksSection />
       <CTASection />
     </Layout>

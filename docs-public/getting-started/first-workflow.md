@@ -6,139 +6,114 @@ description: Walk through your first end-to-end agent interaction
 
 # Your First Workflow
 
-This page walks through a simple end-to-end interaction so you can see Manasvi working in practice.
-
-## What we'll do
-
-We'll send a question to Manasvi through the API gateway and see how it flows through the system. This works with the mock model adapter — you don't need an OpenAI key for this.
+This page walks through what actually happens when you send Manasvi a message — so you understand what the system is doing, not just that it works.
 
 :::info Start everything first
-Make sure all services are running. See [Run Locally](/docs/getting-started/run-locally) if you haven't done that yet.
+Make sure all services are running. See [Run Locally](/docs/getting-started/run-locally) or [Quickstart](/docs/getting-started/quickstart) if you haven't done that yet.
 :::
 
 ---
 
-## Step 1 — Send a message
+## Start the terminal chat
 
 ```bash
-curl -X POST http://localhost:4100/v1/message \
-  -H "Content-Type: application/json" \
-  -d '{
-    "text": "What tools do you have available?",
-    "channel": "api",
-    "userId": "user:alice"
-  }'
+pnpm cli
 ```
 
-You'll get back a response that includes:
-- The agent's reply
-- A trace ID (for tracking this specific request)
-- Session information
-- Any policy decisions that were made
+You'll see a prompt like:
+
+```
+Manasvi terminal  (session: session:abc123)
+Type a message, or /help for commands.
+
+You: 
+```
 
 ---
 
-## Step 2 — Understanding the response
+## Send a simple message
 
-The response will look something like:
-
-```json
-{
-  "sessionId": "session:abc123",
-  "traceId": "trace:xyz789",
-  "response": {
-    "text": "I have several tools available...",
-    "model": "mock-adapter"
-  },
-  "decisions": [
-    {
-      "action": "orchestration.ingress-event.plan",
-      "outcome": "ALLOW",
-      "reasonCode": "ALLOW_BY_POLICY"
-    }
-  ]
-}
+```
+You: What can you help me with?
 ```
 
-Notice the `decisions` field. Manasvi records every policy decision, even for routine allowed actions. This is by design — the audit trail captures everything.
+The agent will respond with its capabilities. Behind the scenes, here's what happened:
+
+1. **Ingress** received your message, verified the source, and normalized it into an internal format
+2. **Orchestrator** resolved your identity, retrieved any existing session context, and sent the message to the model
+3. The **model** generated a response — just conversational text, no tool calls needed
+4. **Policy** evaluated the interaction (even a simple reply is recorded)
+5. **Audit** recorded the full event
+
+That all happened in the time it took to get a response.
 
 ---
 
-## Step 3 — Try a tool-requiring request
+## Ask the agent to use a tool
 
-Now try asking for something that requires tool use:
+```
+You: Search for recent news about AI safety
+```
+
+Now the full pipeline activates:
+
+1. The **model** decides it needs the web search tool to answer properly
+2. It outputs a **tool call proposal** — a structured request like "search for: AI safety news"
+3. The **policy engine** evaluates: is this tool call allowed for this user?
+4. If allowed, an **execution intent** is created and cryptographically signed
+5. The **execution manager** verifies the signature before running anything
+6. The tool executes in a **sandboxed environment** with declared constraints
+7. The result flows back to the model, which formulates a response
+8. **Audit** records every step: the proposal, the policy decision, the intent, the execution, the outcome
+
+**Why this matters:** The model never calls the tool directly. It proposes, and a separate system decides whether and how to execute. This separation is what makes governance possible.
+
+---
+
+## Try a multi-turn conversation
+
+```
+You: That's interesting. What else do you know about AI governance?
+Agent: [responds with context from the previous message]
+
+You: Can you summarize the key points in a list?
+Agent: [uses previous context to give a structured answer]
+```
+
+Manasvi maintains session context across turns. The orchestrator retrieves relevant memory before each model call, so the agent remembers what you were discussing.
+
+---
+
+## What gets recorded
+
+Everything you just did was recorded in the audit trail. To see it:
 
 ```bash
-curl -X POST http://localhost:4100/v1/message \
-  -H "Content-Type: application/json" \
-  -d '{
-    "text": "Search the web for information about AI safety",
-    "channel": "api",
-    "userId": "user:alice"
-  }'
+curl http://localhost:4107/audit/events?limit=20
 ```
 
-This will trigger the full pipeline:
-1. Orchestrator proposes using the web-search tool
-2. Policy evaluates whether that tool is allowed for this user
-3. An execution intent is created and signed
-4. Execution manager validates the intent before running
-5. The tool runs in a sandboxed environment
-6. The result is returned and recorded in the audit stream
+You'll see entries for:
+- Messages received by ingress
+- Policy decisions (even the routine "allow" ones)
+- Tool invocations (if any)
+- Agent responses
 
----
-
-## Step 4 — View what was recorded
-
-Every action Manasvi takes is recorded. You can see the audit trail:
-
-```bash
-curl http://localhost:4107/audit/events?limit=10
-```
-
-This returns the most recent 10 audit events. You'll see entries for:
-- The incoming message being received
-- Policy decisions
-- Tool invocations
-- Outcomes
-
----
-
-## Step 5 — Check the session
-
-Manasvi maintains session context across messages. Try sending a follow-up with the same session ID:
-
-```bash
-curl -X POST http://localhost:4100/v1/message \
-  -H "Content-Type: application/json" \
-  -d '{
-    "text": "Tell me more about what you found",
-    "channel": "api",
-    "userId": "user:alice",
-    "sessionId": "session:abc123"
-  }'
-```
-
-The agent will remember the context from the previous message.
-
----
-
-## What you've seen
-
-In these few steps, you experienced:
-
-- A message flowing through the ingress plane
-- Policy evaluation on every action
-- A signed execution intent being created
-- Sandboxed tool execution
-- An append-only audit record of everything
-
-This is the foundation of how Manasvi works — every interaction is governed, recorded, and attributable.
+The audit trail is append-only. Events can't be modified or deleted after they're written.
 
 ---
 
 ## Next steps
 
-- [Connect Telegram](/docs/setup/connect-telegram) — receive real messages from a Telegram bot
-- [Core concepts](/docs/concepts/agent-runtime) — understand the components in plain language
-- [Architecture overview](/docs/architecture/overview) — see how the services fit together
+Now that you've seen the pipeline working:
+
+- **Connect Telegram** — get mobile chat with your agent
+  → [Connect Telegram](/docs/setup/connect-telegram)
+
+- **Connect Ollama** — run a local model for privacy and no API costs
+  → [Connect Ollama](/docs/setup/connect-ollama)
+
+- **Understand the concepts** — learn what each part does in plain language
+  → [Core concepts](/docs/concepts/agent-runtime)
+
+- **See the architecture** — understand how the services fit together
+  → [Architecture overview](/docs/architecture/overview)

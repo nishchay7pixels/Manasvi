@@ -192,11 +192,11 @@ async function main(): Promise<void> {
         break;
 
       case "stop":
-        await runStop();
+        await runStop({ force });
         break;
 
       case "restart":
-        await runRestart();
+        await runRestart({ force });
         break;
 
       case "status":

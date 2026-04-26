@@ -1,6 +1,7 @@
 import type { SidebarsConfig } from "@docusaurus/plugin-content-docs";
 
 const sidebars: SidebarsConfig = {
+  // ── Getting Started + Setup ──────────────────────────────────────────────────
   gettingStartedSidebar: [
     {
       type: "category",
@@ -8,6 +9,7 @@ const sidebars: SidebarsConfig = {
       collapsed: false,
       items: [
         "getting-started/introduction",
+        "getting-started/quickstart",
         "getting-started/prerequisites",
         "getting-started/install",
         "getting-started/run-locally",
@@ -17,18 +19,35 @@ const sidebars: SidebarsConfig = {
     },
     {
       type: "category",
-      label: "Setup Guides",
+      label: "Models",
       collapsed: false,
       items: [
-        "setup/local-setup",
+        "setup/connect-ollama",
+        "setup/connect-model"
+      ]
+    },
+    {
+      type: "category",
+      label: "Channels",
+      collapsed: false,
+      items: [
         "setup/connect-telegram",
         "setup/connect-slack",
-        "setup/connect-model",
+        "setup/connect-webui"
+      ]
+    },
+    {
+      type: "category",
+      label: "Configuration",
+      collapsed: true,
+      items: [
+        "setup/local-setup",
         "setup/environment-variables"
       ]
     }
   ],
 
+  // ── Concepts ─────────────────────────────────────────────────────────────────
   conceptsSidebar: [
     {
       type: "category",
@@ -38,16 +57,17 @@ const sidebars: SidebarsConfig = {
         "concepts/agent-runtime",
         "concepts/tools",
         "concepts/execution-intent",
-        "concepts/plugins",
-        "concepts/nodes",
+        "concepts/policies",
+        "concepts/approvals",
         "concepts/memory",
         "concepts/sessions",
-        "concepts/policies",
-        "concepts/approvals"
+        "concepts/plugins",
+        "concepts/nodes"
       ]
     }
   ],
 
+  // ── Architecture + Why Manasvi ───────────────────────────────────────────────
   architectureSidebar: [
     {
       type: "category",
@@ -79,6 +99,7 @@ const sidebars: SidebarsConfig = {
     }
   ],
 
+  // ── Security + Reference ─────────────────────────────────────────────────────
   securitySidebar: [
     {
       type: "category",

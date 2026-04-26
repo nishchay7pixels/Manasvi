@@ -71,18 +71,32 @@ export async function runStart(args: { services?: string[] } = {}): Promise<void
 
   if (failed.length === 0) {
     const s = config.services;
+    const hasTelegram = config.channels.telegram?.enabled;
+    const hasSlack = config.channels.slack?.enabled;
+
     console.log();
     info(`API Gateway:  http://localhost:${s.gatewayPort}`);
-    info(`Orchestrator: http://localhost:${s.orchestratorPort}`);
     if (config.ui.docsEnabled) {
-      info(`Docs UI:      http://localhost:${config.ui.docsPort} (run: pnpm manasvi ui)`);
+      info(`Docs UI:      http://localhost:${config.ui.docsPort}`);
     }
 
-    nextSteps([
-      "`pnpm manasvi status` — check all service health",
-      "`pnpm cli` — chat with Manasvi in the terminal",
-      "`pnpm manasvi stop` — stop all services"
-    ]);
+    const steps: string[] = [];
+
+    // First thing a new user should do
+    steps.push("`pnpm cli` — send your first message in the terminal");
+
+    if (hasTelegram) {
+      steps.push("Open Telegram and message your bot to test the channel");
+    } else if (hasSlack) {
+      steps.push("Message your Slack bot to test the channel");
+    } else {
+      steps.push("`pnpm manasvi channels add telegram` — connect Telegram for mobile chat");
+    }
+
+    steps.push("`pnpm manasvi status` — verify all services are healthy");
+    steps.push("`pnpm manasvi stop` — stop all services when done");
+
+    nextSteps(steps);
   } else {
     process.exit(1);
   }

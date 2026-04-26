@@ -10,7 +10,7 @@ Before you install and run Manasvi, you need a few things set up on your compute
 
 ## What you'll need
 
-### 1. Node.js (version 18 or newer)
+### 1. Node.js (version 20 or newer)
 
 **What it is:** Node.js is the software that runs JavaScript on your computer. Manasvi is built with TypeScript, which runs on Node.js.
 
@@ -18,7 +18,7 @@ Before you install and run Manasvi, you need a few things set up on your compute
 ```bash
 node --version
 ```
-If you see something like `v20.11.0`, you're good. If you see an error or a version below 18, you need to install it.
+If you see something like `v20.11.0` or higher, you're good. If you see an error or a version below 20, you need to install it.
 
 **How to get it:** Visit [nodejs.org](https://nodejs.org) and download the LTS version. Run the installer. Done.
 
@@ -93,9 +93,9 @@ You can also test Manasvi through the API directly without setting up a channel 
 
 | Requirement | Minimum |
 |------------|---------|
-| Node.js | 18.0 or newer |
-| RAM | 2 GB (4 GB recommended) |
-| Disk | 1 GB free |
+| Node.js | 20.0 or newer |
+| RAM | 2 GB (4 GB recommended; 8 GB for local models) |
+| Disk | 1 GB free (plus model size if using Ollama) |
 | OS | macOS, Linux, or Windows with WSL2 |
 
 ---

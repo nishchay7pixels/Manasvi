@@ -137,26 +137,99 @@ export async function startAllServices(
   return results;
 }
 
+export type StopStatus = "stopping" | "stopped" | "forceKilled" | "notRunning" | "timeout";
+
+export interface StopResult {
+  service: string;
+  status: StopStatus;
+  pid: number;
+}
+
 /**
- * Stop all tracked services gracefully.
+ * Poll until a process is gone or the timeout expires.
+ * Returns true if the process is gone.
+ */
+async function waitForDeath(pid: number, timeoutMs: number, intervalMs = 100): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      process.kill(pid, 0); // throws if gone
+    } catch {
+      return true; // process is dead
+    }
+    await new Promise<void>((r) => setTimeout(r, intervalMs));
+  }
+  return false;
+}
+
+/**
+ * Stop all tracked services.
+ *
+ * - Sends SIGTERM and waits up to 5s for each process to exit.
+ * - With force=true, sends SIGKILL to any process still alive after the grace period.
+ * - Without force, reports "timeout" for stubborn processes (leaves them running).
  */
 export async function stopAllServices(
-  onProgress: (service: string, status: "stopping" | "stopped" | "notRunning") => void
-): Promise<void> {
+  onProgress: (service: string, status: StopStatus, pid: number) => void,
+  opts: { force?: boolean; gracePeriodMs?: number } = {}
+): Promise<StopResult[]> {
+  const { force = false, gracePeriodMs = 5000 } = opts;
   const pids = await loadPids();
-  const stopped: PidMap = {};
+  const results: StopResult[] = [];
+  const survivingPids: PidMap = {};
 
   for (const [name, pid] of Object.entries(pids)) {
-    onProgress(name, "stopping");
+    // Check whether the process is actually alive first
+    try {
+      process.kill(pid, 0);
+    } catch {
+      onProgress(name, "notRunning", pid);
+      results.push({ service: name, status: "notRunning", pid });
+      continue;
+    }
+
+    onProgress(name, "stopping", pid);
+
+    // Send SIGTERM
     try {
       process.kill(pid, "SIGTERM");
-      onProgress(name, "stopped");
     } catch {
-      onProgress(name, "notRunning");
+      // Already gone between the check and kill
+      onProgress(name, "stopped", pid);
+      results.push({ service: name, status: "stopped", pid });
+      continue;
+    }
+
+    // Wait for graceful exit
+    const died = await waitForDeath(pid, gracePeriodMs);
+
+    if (died) {
+      onProgress(name, "stopped", pid);
+      results.push({ service: name, status: "stopped", pid });
+      continue;
+    }
+
+    // Still alive after grace period
+    if (force) {
+      try {
+        process.kill(pid, "SIGKILL");
+      } catch {
+        // Already gone
+      }
+      // Give SIGKILL a moment to land
+      await waitForDeath(pid, 1000);
+      onProgress(name, "forceKilled", pid);
+      results.push({ service: name, status: "forceKilled", pid });
+    } else {
+      // Leave it running — report timeout
+      survivingPids[name] = pid;
+      onProgress(name, "timeout", pid);
+      results.push({ service: name, status: "timeout", pid });
     }
   }
 
-  await savePids(stopped);
+  await savePids(survivingPids);
+  return results;
 }
 
 /**

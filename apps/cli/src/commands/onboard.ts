@@ -34,11 +34,13 @@ export async function runOnboard(opts: OnboardOptions = {}): Promise<void> {
 
   const projectRoot = config.projectPath;
   const envPath = envFilePath(projectRoot);
+  const envUpdates: Record<string, string> = {};
 
   // ── Model Provider ───────────────────────────────────────────────────────────
 
   section("Model Provider");
-  info("Manasvi needs an AI model to power the agent.");
+  info("Manasvi needs an AI model to generate responses and plan actions.");
+  info("Ollama is recommended — it's free, local, and needs no API key.");
 
   let provider: ModelProvider = config.model.provider;
 
@@ -57,8 +59,6 @@ export async function runOnboard(opts: OnboardOptions = {}): Promise<void> {
     provider = opts.provider as ModelProvider;
   }
 
-  const envUpdates: Record<string, string> = {};
-
   if (provider === "ollama") {
     const ollamaUrl = config.model.ollamaBaseUrl;
     let ollamaOk = await checkOllama(ollamaUrl);
@@ -67,6 +67,7 @@ export async function runOnboard(opts: OnboardOptions = {}): Promise<void> {
       warn("Ollama is not running at " + ollamaUrl);
       hint("Start Ollama with: ollama serve");
       hint("Then install a model: ollama pull llama3.2");
+      hint("See: https://ollama.com for installation instructions");
 
       if (!opts.yes) {
         const proceed = await confirm("Proceed anyway (configure now, start Ollama later)?", true);
@@ -82,6 +83,7 @@ export async function runOnboard(opts: OnboardOptions = {}): Promise<void> {
     if (provider === "ollama") {
       let modelName = config.model.ollamaModel;
       if (!opts.yes) {
+        hint("Suggested models: llama3.2, mistral, qwen2.5");
         modelName = await input("Which Ollama model?", modelName);
       }
       config = {
@@ -90,6 +92,7 @@ export async function runOnboard(opts: OnboardOptions = {}): Promise<void> {
       };
       envUpdates.MODEL_ADAPTER_MODE = "ollama";
       envUpdates.OLLAMA_BASE_URL = ollamaUrl;
+      envUpdates.PLANNER_MODEL = modelName;
       success(`Model: Ollama / ${modelName}`);
     }
   }
@@ -100,7 +103,8 @@ export async function runOnboard(opts: OnboardOptions = {}): Promise<void> {
 
     let apiKey = existingKey ?? "";
     if (!apiKey && !opts.yes) {
-      apiKey = await secret("Enter your OpenAI API key");
+      info("You can get an API key at platform.openai.com");
+      apiKey = await secret("Enter your OpenAI API key (sk-...)");
     }
 
     if (apiKey) {
@@ -124,6 +128,7 @@ export async function runOnboard(opts: OnboardOptions = {}): Promise<void> {
         model: { ...config.model, provider: "openai", openaiModel: modelName }
       };
       envUpdates.MODEL_ADAPTER_MODE = "openai";
+      envUpdates.PLANNER_MODEL = modelName;
       success(`Model: OpenAI / ${modelName}`);
     } else {
       warn("No API key provided — falling back to mock mode");
@@ -134,13 +139,16 @@ export async function runOnboard(opts: OnboardOptions = {}): Promise<void> {
   if (provider === "mock") {
     config = { ...config, model: { ...config.model, provider: "mock" } };
     envUpdates.MODEL_ADAPTER_MODE = "mock";
-    info("Using mock model mode (simulated responses)");
+    info("Using mock model mode (simulated responses, good for testing the pipeline)");
   }
 
-  // ── Telegram Channel ─────────────────────────────────────────────────────────
+  // ── Channels ─────────────────────────────────────────────────────────────────
 
   section("Channels");
-  info("Channels are how users interact with Manasvi.");
+  info("Channels are how users send messages to Manasvi.");
+  info("You can also use the terminal (pnpm cli) without setting up a channel.");
+
+  // ── Telegram ─────────────────────────────────────────────────────────────────
 
   let telegramEnabled = config.channels.telegram?.enabled ?? false;
   if (!opts.yes) {
@@ -153,7 +161,8 @@ export async function runOnboard(opts: OnboardOptions = {}): Promise<void> {
 
     let botToken = existingToken;
     if (!botToken && !opts.yes) {
-      info("Get a bot token from @BotFather on Telegram.");
+      info("To get a bot token: open Telegram → search @BotFather → /newbot");
+      hint("BotFather will give you a token that looks like: 7123456789:AAEOm3xyz...");
       botToken = await secret("Enter your Telegram bot token");
     }
 
@@ -166,19 +175,72 @@ export async function runOnboard(opts: OnboardOptions = {}): Promise<void> {
         envUpdates.TELEGRAM_BOT_TOKEN = botToken;
       }
       success("Telegram channel configured");
-      hint("The ingress service will use polling to receive updates.");
+      hint("The ingress service polls Telegram for new messages — no public URL needed.");
     } else {
       warn("No token provided — Telegram not configured");
       telegramEnabled = false;
     }
   } else {
     config = { ...config, channels: { ...config.channels, telegram: { enabled: false } } };
-    info("Telegram not configured (can add later with: pnpm manasvi channels add telegram)");
+    if (!telegramEnabled) {
+      info("Telegram not configured (add later: pnpm manasvi channels add telegram)");
+    }
+  }
+
+  // ── Slack ─────────────────────────────────────────────────────────────────────
+
+  let slackEnabled = config.channels.slack?.enabled ?? false;
+  if (!opts.yes) {
+    slackEnabled = await confirm("Connect a Slack workspace?", slackEnabled);
+  }
+
+  if (slackEnabled) {
+    const existingEnv = await readEnvFile(envPath);
+    const existingBotToken = existingEnv.SLACK_BOT_TOKEN ?? "";
+    const existingSigningSecret = existingEnv.SLACK_SIGNING_SECRET ?? "";
+
+    let botToken = existingBotToken;
+    let signingSecret = existingSigningSecret;
+
+    if (!botToken && !opts.yes) {
+      info("Create a Slack app at api.slack.com/apps and add the Bot Token Scopes.");
+      hint("You need: app_mentions:read, chat:write, im:history, im:read");
+      botToken = await secret("Enter your Slack bot token (xoxb-...)");
+    }
+
+    if (!signingSecret && !opts.yes) {
+      hint("Find the Signing Secret under App Credentials in your Slack app settings.");
+      signingSecret = await secret("Enter your Slack signing secret");
+    }
+
+    if (botToken && signingSecret) {
+      config = {
+        ...config,
+        channels: { ...config.channels, slack: { enabled: true } }
+      };
+      if (botToken !== existingBotToken) {
+        envUpdates.SLACK_BOT_TOKEN = botToken;
+      }
+      if (signingSecret !== existingSigningSecret) {
+        envUpdates.SLACK_SIGNING_SECRET = signingSecret;
+      }
+      success("Slack channel configured");
+      hint("Slack requires a public URL for event delivery. See: pnpm manasvi channels status");
+    } else {
+      warn("Missing credentials — Slack not configured");
+      slackEnabled = false;
+    }
+  } else {
+    config = { ...config, channels: { ...config.channels, slack: { enabled: false } } };
+    if (!slackEnabled) {
+      info("Slack not configured (add later: pnpm manasvi channels add slack)");
+    }
   }
 
   // ── Web UI / Docs ─────────────────────────────────────────────────────────────
 
   section("Web UI & Docs");
+  info("The docs web UI is a local copy of the Manasvi documentation.");
 
   let docsEnabled = config.ui.docsEnabled;
   if (!opts.yes) {
@@ -209,14 +271,26 @@ export async function runOnboard(opts: OnboardOptions = {}): Promise<void> {
   // ── Summary ───────────────────────────────────────────────────────────────────
 
   section("Setup Summary");
-  step("Model provider", provider);
+  step("Model", provider === "ollama"
+    ? `Ollama / ${config.model.ollamaModel}`
+    : provider === "openai"
+      ? `OpenAI / ${config.model.openaiModel}`
+      : "Mock (testing)");
   step("Telegram", telegramEnabled ? "enabled" : "not configured");
+  step("Slack", slackEnabled ? "enabled" : "not configured");
   step("Web UI", docsEnabled ? `http://localhost:${config.ui.docsPort}` : "disabled");
 
-  nextSteps([
+  const steps: string[] = [
     "`pnpm manasvi start` — start all services",
-    "`pnpm manasvi status` — check health",
-    "`pnpm manasvi doctor` — diagnose any issues",
-    telegramEnabled ? "`pnpm manasvi channels status` — verify Telegram" : "`pnpm manasvi channels add telegram` — add Telegram later"
-  ]);
+    "`pnpm cli` — chat with Manasvi in the terminal",
+    "`pnpm manasvi status` — check service health"
+  ];
+  if (!telegramEnabled && !slackEnabled) {
+    steps.push("`pnpm manasvi channels add telegram` — add Telegram later");
+  }
+  if (telegramEnabled || slackEnabled) {
+    steps.push("`pnpm manasvi channels status` — verify channel connectivity");
+  }
+
+  nextSteps(steps);
 }

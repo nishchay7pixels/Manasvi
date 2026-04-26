@@ -63,7 +63,7 @@ const config: Config = {
           type: "docSidebar",
           sidebarId: "gettingStartedSidebar",
           position: "left",
-          label: "Getting Started"
+          label: "Docs"
         },
         {
           type: "docSidebar",
@@ -95,26 +95,30 @@ const config: Config = {
       style: "dark",
       links: [
         {
-          title: "Docs",
+          title: "Get Started",
           items: [
-            { label: "Getting Started", to: "/docs/getting-started/introduction" },
-            { label: "Architecture", to: "/docs/architecture/overview" },
-            { label: "Security", to: "/docs/security/philosophy" }
+            { label: "15-min Quickstart", to: "/docs/getting-started/quickstart" },
+            { label: "Install", to: "/docs/getting-started/install" },
+            { label: "Connect Ollama", to: "/docs/setup/connect-ollama" },
+            { label: "Connect Telegram", to: "/docs/setup/connect-telegram" }
           ]
         },
         {
           title: "Learn",
           items: [
-            { label: "Concepts", to: "/docs/concepts/agent-runtime" },
-            { label: "Why Manasvi", to: "/docs/why-manasvi/not-just-a-chatbot" },
-            { label: "FAQ", to: "/docs/faq" }
+            { label: "Core Concepts", to: "/docs/concepts/agent-runtime" },
+            { label: "Architecture", to: "/docs/architecture/overview" },
+            { label: "Security", to: "/docs/security/philosophy" },
+            { label: "Why Manasvi", to: "/docs/why-manasvi/not-just-a-chatbot" }
           ]
         },
         {
-          title: "Community",
+          title: "Reference",
           items: [
-            { label: "GitHub", href: "https://github.com/nishchay7pixels/manasvi" },
-            { label: "Contributing", to: "/docs/contributing" }
+            { label: "CLI Reference", to: "/docs/reference/cli" },
+            { label: "FAQ", to: "/docs/faq" },
+            { label: "Contributing", to: "/docs/contributing" },
+            { label: "GitHub", href: "https://github.com/nishchay7pixels/manasvi" }
           ]
         }
       ],

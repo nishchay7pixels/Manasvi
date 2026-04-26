@@ -153,3 +153,60 @@ test("invalid raw event goes to dead-letter", async () => {
   assert.equal(result, "dead-lettered");
   assert.equal(dead.records[0]?.reasonCode, "INVALID_SCHEMA");
 });
+
+test("publisher keeps non-service events unsigned when signing config exists", async () => {
+  const transport = new InMemoryTransport();
+  const captured: Array<ReturnType<typeof buildEvent>> = [];
+  transport.registerConsumer(async (event) => {
+    captured.push(event as ReturnType<typeof buildEvent>);
+  });
+
+  const publisher = new EventPublisher({
+    transport,
+    signing: {
+      keyId: "k1",
+      secret: "secret"
+    }
+  });
+
+  await publisher.publish(buildEvent());
+  assert.equal(captured.length, 1);
+  assert.equal(captured[0]?.source.sourceType, "channel");
+  assert.equal(captured[0]?.integrity.algorithm, "sha256");
+});
+
+test("publisher signs service-origin events when signing config exists", async () => {
+  const transport = new InMemoryTransport();
+  const captured: Array<ReturnType<typeof buildEvent>> = [];
+  transport.registerConsumer(async (event) => {
+    captured.push(event as ReturnType<typeof buildEvent>);
+  });
+
+  const publisher = new EventPublisher({
+    transport,
+    signing: {
+      keyId: "k1",
+      secret: "secret"
+    }
+  });
+
+  const serviceOriginEvent = {
+    ...buildEvent(),
+    source: {
+      sourceType: "service" as const,
+      sourceId: "orchestrator-service",
+      sourceService: "orchestrator-service" as const,
+      sourceAuthenticity: {
+        verified: true,
+        method: "internal-auth" as const,
+        authnStrength: "strong" as const
+      }
+    }
+  };
+
+  await publisher.publish(serviceOriginEvent);
+  assert.equal(captured.length, 1);
+  assert.equal(captured[0]?.source.sourceType, "service");
+  assert.equal(captured[0]?.integrity.algorithm, "hmac-sha256");
+  assert.equal(captured[0]?.integrity.keyId, "k1");
+});

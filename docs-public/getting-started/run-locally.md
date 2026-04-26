@@ -109,10 +109,21 @@ curl -X POST http://localhost:4100/test-harness/chat \
 pnpm manasvi stop
 ```
 
-Sends SIGTERM to all running service processes. To restart:
+Sends SIGTERM to each running service and waits up to 5 seconds for it to exit cleanly. If a service doesn't stop in time, it prints an error and exits with a non-zero code.
+
+If services are hung and won't stop gracefully, use `--force` to send SIGKILL:
+
+```bash
+pnpm manasvi stop --force
+```
+
+To restart all services:
 
 ```bash
 pnpm manasvi restart
+
+# Or force-kill stuck services then restart:
+pnpm manasvi restart --force
 ```
 
 ---

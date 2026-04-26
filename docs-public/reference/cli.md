@@ -21,7 +21,7 @@ pnpm manasvi <command> [subcommand] [options]
 | `--help` | `-h` | Show help for the current command |
 | `--verbose` | `-v` | Show extra detail (PIDs, full error traces) |
 | `--yes` | `-y` | Non-interactive mode — accept all defaults |
-| `--force` | | Bypass "already done" checks and re-run |
+| `--force` | | Command-specific force behaviour (see each command) |
 
 ---
 
@@ -90,10 +90,37 @@ Services are started in dependency order. The CLI waits for each service's `/hea
 Stop all running Manasvi services.
 
 ```bash
-pnpm manasvi stop
+pnpm manasvi stop [--force]
 ```
 
-Sends SIGTERM to all processes tracked in `~/.manasvi/pids.json`.
+Sends SIGTERM to each tracked service and waits up to 5 seconds for it to exit cleanly.
+If a service hasn't stopped within the grace period:
+
+- Without `--force` — prints an error and exits with code 1. The service is left running and its PID is preserved so you can retry.
+- With `--force` — sends SIGKILL to any service still alive after the grace period.
+
+**Options:**
+
+| Flag | Description |
+|------|-------------|
+| `--force` | Send SIGKILL to services that do not stop within the grace period |
+
+**Examples:**
+
+```bash
+# Graceful stop — waits up to 5s per service
+pnpm manasvi stop
+
+# Force stop — kills anything that doesn't exit in time
+pnpm manasvi stop --force
+```
+
+**Exit codes:**
+
+| Code | Meaning |
+|------|---------|
+| `0` | All services stopped (or were already not running) |
+| `1` | One or more services did not stop within the grace period (run with `--force`) |
 
 ---
 
@@ -102,7 +129,17 @@ Sends SIGTERM to all processes tracked in `~/.manasvi/pids.json`.
 Stop all services and start them again.
 
 ```bash
+pnpm manasvi restart [--force]
+```
+
+Accepts the same `--force` flag as `stop` — useful when services are hung and need a hard restart.
+
+```bash
+# Graceful restart
 pnpm manasvi restart
+
+# Force-kill anything stuck, then start fresh
+pnpm manasvi restart --force
 ```
 
 ---
