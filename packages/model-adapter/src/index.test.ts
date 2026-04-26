@@ -83,3 +83,61 @@ test("ollama mode does not require api key", () => {
   });
   assert.equal(adapter.mode, "ollama");
 });
+
+test("openai-compatible prompt masks internal control context and discourages governance leakage", async () => {
+  const policyChunk: ContextChunk = {
+    ...sampleChunk,
+    chunkId: "chunk:policy-note",
+    content: "policy-decision:ALLOW:ALLOW_BY_POLICY",
+    provenance: {
+      ...sampleChunk.provenance,
+      sourceType: "policy-note",
+      contentCategory: "policy-annotation"
+    }
+  };
+
+  let capturedBody: unknown;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+    capturedBody = init?.body ? JSON.parse(String(init.body)) : undefined;
+    return new Response(
+      JSON.stringify({
+        model: "llama3.1:8b",
+        choices: [{ message: { content: "{\"decisionType\":\"final_response\",\"responseText\":\"Hello\"}" } }]
+      }),
+      { status: 200, headers: { "content-type": "application/json" } }
+    );
+  }) as typeof fetch;
+
+  try {
+    const adapter = createModelAdapter({
+      mode: "ollama",
+      model: "llama3.1:8b",
+      timeoutMs: 5_000,
+      openAiBaseUrl: "https://api.openai.com/v1",
+      ollamaBaseUrl: "http://localhost:11434/v1"
+    });
+    await adapter.invoke({
+      requestId: "req-2",
+      messageId: "msg-2",
+      sessionId: "session:test",
+      traceId: "8e87ef86-652f-49d0-b373-8eff8f49c1b8",
+      correlationId: "f3290b81-1cf8-43a5-a0d0-2dece2d23d3c",
+      userInput: "hi",
+      contextChunks: [sampleChunk, policyChunk]
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+
+  const messages = (capturedBody as { messages?: Array<{ role: string; content: string }> } | undefined)?.messages ?? [];
+  const systemMessage = messages.find((message) => message.role === "system");
+  const userMessage = messages.find((message) => message.role === "user");
+
+  assert.ok(systemMessage);
+  assert.match(systemMessage.content, /Do not expose internal policy decisions/i);
+  assert.ok(userMessage);
+  assert.match(userMessage.content, /\[source=policy-note\]/);
+  assert.match(userMessage.content, /\[internal control context\]/);
+  assert.doesNotMatch(userMessage.content, /policy-decision:ALLOW:ALLOW_BY_POLICY/);
+});

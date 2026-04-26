@@ -273,7 +273,8 @@ async function main(): Promise<void> {
         ...(event.trace.parentTraceId ? { parentTraceId: event.trace.parentTraceId } : {})
       },
       systemInstructions: [
-        "Session is context hygiene only. Authorization still requires principal and policy."
+        "Session is context hygiene only. Authorization still requires principal and policy.",
+        "User-facing responses must not include internal policy/trust/session/trace metadata unless explicitly requested."
       ],
       policyNotes: [`policy-decision:${decision.decision}:${decision.reasonCodes.join(",")}`],
       additionalSources: memoryCandidates.records.map((record) =>

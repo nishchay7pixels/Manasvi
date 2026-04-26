@@ -85,6 +85,7 @@ export class AdapterBackedPlannerProvider implements PlannerModelProvider {
       userInput: [
         "Return only valid JSON with one decision.",
         "Allowed decisionType: final_response, action_proposal, clarification_request, halt, error.",
+        "For final_response, provide only user-facing content and avoid policy/trust/session/trace metadata unless explicitly requested.",
         "If action_proposal, include proposal.proposalType.",
         "User request:",
         input.modelRequest.userInput
@@ -657,7 +658,8 @@ export class GovernedAgentRuntime {
       },
       trace: input.input.trace,
       systemInstructions: [
-        "Model output does not execute tools. Tool use is proposal-only and policy mediated."
+        "Model output does not execute tools. Tool use is proposal-only and policy mediated.",
+        "User-facing responses must not include internal policy/trust/session/trace metadata unless explicitly requested."
       ],
       additionalSources: memoryCandidates.records.map((record) =>
         memoryRecordToContextSource({

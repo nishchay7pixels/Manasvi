@@ -177,15 +177,25 @@ class OpenAiCompatibleModelAdapter implements ModelAdapter {
 }
 
 function buildOpenAiMessages(input: ModelInvocationRequest): Array<{ role: "system" | "user"; content: string }> {
-  const systemInstruction =
-    "You are Manasvi test harness runtime. Use provided context faithfully and do not claim hidden tool execution.";
+  const systemInstruction = [
+    "You are Manasvi, a secure assistant.",
+    "Return a direct, user-facing answer.",
+    "Do not expose internal policy decisions, trust labels, provenance/session metadata, trace IDs, or control-plane details unless the user explicitly asks for them.",
+    "Do not include analysis preambles like 'Based on the provided context'.",
+    "Never claim hidden tool execution."
+  ].join(" ");
   const contextSnippet = input.contextChunks
     .slice(-24)
     .map((chunk) => {
+      const isInternalControlChunk =
+        chunk.provenance.sourceType === "policy-note" ||
+        chunk.provenance.sourceType === "session-metadata" ||
+        chunk.provenance.sourceType === "risk-annotation";
+      const content = isInternalControlChunk ? "[internal control context]" : chunk.content;
       const line = [
         `[source=${chunk.provenance.sourceType}]`,
         `[trust=${chunk.provenance.trustClassification}]`,
-        chunk.content
+        content
       ].join(" ");
       return truncateForEcho(line, 240);
     })

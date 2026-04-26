@@ -98,15 +98,27 @@ export async function startAllServices(
 
     onProgress(serviceName, "starting");
 
-    // Check if already running
+    // Check if already running and healthy on its expected port.
     const existingPid = existingPids[serviceName];
     if (existingPid) {
       try {
         process.kill(existingPid, 0); // 0 = existence check
-        newPids[serviceName] = existingPid;
-        results.push({ service: serviceName, started: false, alreadyRunning: true, pid: existingPid });
-        onProgress(serviceName, "skipped");
-        continue;
+
+        const healthyExisting = await waitForService(spec.port, 1200, 200);
+        if (healthyExisting) {
+          newPids[serviceName] = existingPid;
+          results.push({ service: serviceName, started: false, alreadyRunning: true, pid: existingPid });
+          onProgress(serviceName, "skipped");
+          continue;
+        }
+
+        // Stale process: alive but not serving health, so recycle it.
+        try {
+          process.kill(existingPid, "SIGTERM");
+        } catch {
+          // no-op: process may already be exiting
+        }
+        await waitForDeath(existingPid, 1500);
       } catch {
         // Process gone — proceed to spawn
       }
