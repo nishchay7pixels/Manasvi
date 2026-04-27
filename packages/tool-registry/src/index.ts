@@ -20,6 +20,7 @@ export interface ToolMetadataExplorerRecord {
   name: string;
   description: string;
   status: ToolRegistryEntry["status"];
+  type: ToolManifest["type"];
   actionClass: ToolManifest["actionClass"];
   sideEffectClass: ToolManifest["sideEffectClass"];
   mutability: ToolManifest["mutability"];
@@ -27,7 +28,21 @@ export interface ToolMetadataExplorerRecord {
   resourceClassesTouched: string[];
   policyBinding: ToolManifest["policyBinding"];
   runtimeHints: ToolManifest["runtimeHints"];
+  trustNotes: string[];
   tags: string[];
+  /** Human-readable risk posture summary derived from manifest fields. */
+  riskSummary: {
+    isReadOnly: boolean;
+    isNetworkTouching: boolean;
+    isMemoryMutating: boolean;
+    isApprovalSensitive: boolean;
+    approvalHint: "none" | "may_require" | "must_require";
+    riskLabel: "low" | "medium" | "high";
+  };
+  registeredAt: string;
+  updatedAt: string;
+  owner: string;
+  provider: string;
 }
 
 function registryKey(toolId: string, version: string): string {
@@ -142,21 +157,51 @@ export class InMemoryToolRegistry {
   }
 
   metadataExplorer(input?: ListToolsInput): ToolMetadataExplorerRecord[] {
-    return this.list(input).map((entry) => ({
-      toolId: entry.toolId,
-      version: entry.version,
-      name: entry.manifest.name,
-      description: entry.manifest.description,
-      status: entry.status,
-      actionClass: entry.manifest.actionClass,
-      sideEffectClass: entry.manifest.sideEffectClass,
-      mutability: entry.manifest.mutability,
-      capabilities: entry.manifest.capabilities.map((item) => item.capabilityId),
-      resourceClassesTouched: entry.manifest.resourceClassesTouched,
-      policyBinding: entry.manifest.policyBinding,
-      runtimeHints: entry.manifest.runtimeHints,
-      tags: entry.manifest.tags
-    }));
+    return this.list(input).map((entry) => {
+      const m = entry.manifest;
+      const isNetworkTouching = m.resourceClassesTouched.includes("network-zone");
+      const isMemoryMutating = m.actionClass === "mutate-memory" || m.sideEffectClass === "mutating";
+      const isReadOnly = m.mutability === "read_only";
+      const isApprovalSensitive = m.runtimeHints.approvalSensitive;
+      const approvalHint = m.policyBinding.approvalHint;
+
+      let riskLabel: "low" | "medium" | "high" = "low";
+      if (isApprovalSensitive || approvalHint === "must_require") {
+        riskLabel = "high";
+      } else if (isNetworkTouching || isMemoryMutating || approvalHint === "may_require") {
+        riskLabel = "medium";
+      }
+
+      return {
+        toolId: entry.toolId,
+        version: entry.version,
+        name: m.name,
+        description: m.description,
+        status: entry.status,
+        type: m.type,
+        actionClass: m.actionClass,
+        sideEffectClass: m.sideEffectClass,
+        mutability: m.mutability,
+        capabilities: m.capabilities.map((item) => item.capabilityId),
+        resourceClassesTouched: m.resourceClassesTouched,
+        policyBinding: m.policyBinding,
+        runtimeHints: m.runtimeHints,
+        trustNotes: m.trustNotes,
+        tags: m.tags,
+        riskSummary: {
+          isReadOnly,
+          isNetworkTouching,
+          isMemoryMutating,
+          isApprovalSensitive,
+          approvalHint,
+          riskLabel
+        },
+        registeredAt: entry.registeredAt,
+        updatedAt: entry.updatedAt,
+        owner: m.owner,
+        provider: m.provider
+      };
+    });
   }
 
   count(): number {

@@ -64,7 +64,7 @@ import { runUi } from "./commands/ui-cmd.js";
 import { runConfigShow, runConfigValidate, runConfigPath, runConfigEdit } from "./commands/config-cmd.js";
 import { runModelsList, runModelsAdd, runModelsTest, runModelsUse } from "./commands/models.js";
 import { runChannelsList, runChannelsAdd, runChannelsStatus, runChannelsRemove, runChannelsLogs } from "./commands/channels.js";
-import { runToolsList, runToolsInspect } from "./commands/tools.js";
+import { runToolsList, runToolsInspect, runToolsSets } from "./commands/tools.js";
 import { runPluginsList, runPluginsInspect } from "./commands/plugins.js";
 import { runNodesList, runNodesStatus, runNodesPair } from "./commands/nodes.js";
 
@@ -121,8 +121,10 @@ ${style.bold("Channels:")}
   ${style.cyan("channels logs")}      Tail channel service logs
 
 ${style.bold("Tools:")}
-  ${style.cyan("tools list")}         List available tools and action classes
-  ${style.cyan("tools inspect")}      Inspect a specific tool
+  ${style.cyan("tools list")}         List built-in tools with risk and governance status
+  ${style.cyan("tools list --enabled")}  Only show enabled tools
+  ${style.cyan("tools inspect")}      Full governance details for a specific tool
+  ${style.cyan("tools sets")}         List default tool sets (starter, notes, governed-action)
 
 ${style.bold("Plugins:")}
   ${style.cyan("plugins list")}       List installed plugins
@@ -245,8 +247,9 @@ async function main(): Promise<void> {
 
       case "tools":
         switch (sub) {
-          case "list": case undefined: await runToolsList(); break;
-          case "inspect": await runToolsInspect(rest[0]); break;
+          case "list": case undefined: await runToolsList([...rest, ...(sub ? [] : args.slice(1))]); break;
+          case "inspect": await runToolsInspect(rest[0], rest.slice(1)); break;
+          case "sets": await runToolsSets(); break;
           default: printError(`Unknown subcommand: tools ${sub}`); process.exit(1);
         }
         break;

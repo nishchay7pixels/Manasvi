@@ -226,7 +226,33 @@ You've just run a full governed AI agent pipeline locally:
 
 ---
 
+## What tools does the agent have?
+
+After starting up, your agent has access to the **Starter Safe Set** of tools:
+
+| Tool | What it does |
+|---|---|
+| Web search | Look things up on the web |
+| HTTP fetch | Retrieve remote content |
+| Local file read | Read workspace files |
+
+You can see all available tools and their governance status:
+
+```bash
+pnpm manasvi tools list
+pnpm manasvi tools inspect tool.web-search
+pnpm manasvi tools sets
+```
+
+Tools are governed: every invocation goes through policy evaluation, intent signing, and sandboxed execution. See [Built-in tools overview](/docs/tools/overview) for how it works.
+
+---
+
 ## What to do next
+
+**Explore the built-in tools** — see what tools are available and how to configure them:
+→ [Built-in tools overview](/docs/tools/overview)
+→ [Demo flows](/docs/tools/demo-flows)
 
 **Connect Telegram** — send messages to your agent from your phone:
 → [Connect Telegram](/docs/setup/connect-telegram)

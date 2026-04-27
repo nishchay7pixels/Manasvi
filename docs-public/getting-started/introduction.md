@@ -20,8 +20,13 @@ That's the core idea: a capable agent with governance built in — not bolted on
 
 - Chat with your agent through **Telegram**, **Slack**, or the built-in terminal
 - Run a **local model with Ollama** — free, private, no API costs
-- Or use **OpenAI** (GPT-4o, etc.) for cloud-based inference
-- Give the agent access to **tools** — search, files, HTTP, shell
+- Or use **OpenAI** (GPT-4o, etc.) or **Claude** for cloud-based inference
+- Give the agent access to **governed built-in tools**:
+  - **Web search** — query the web with structured, provenance-tagged results
+  - **HTTP fetch** — retrieve remote content under egress policy
+  - **File read** — read local files in a sandboxed, read-only process
+  - **Note write** — persist facts and summaries to governed memory namespaces
+  - **Approval request** — pause and route any action to a human reviewer
 - Define **policies** that control what the agent is allowed to do
 - Require **human approval** before sensitive actions run
 - Run untrusted **plugins** in isolated processes
@@ -69,6 +74,11 @@ For a deeper look: [Why Manasvi is different](/docs/why-manasvi/not-just-a-chatb
 
 **Just want to run it?**
 → [15-minute quickstart](/docs/getting-started/quickstart) — install, onboard, first message
+
+**Want to understand the built-in tools?**
+→ [Built-in tools overview](/docs/tools/overview) — what tools are available and how they're governed
+→ [Default tool sets](/docs/tools/default-sets) — recommended starting configurations
+→ [Demo flows](/docs/tools/demo-flows) — step-by-step traces of real tool use
 
 **Want to understand the system first?**
 → [Core concepts](/docs/concepts/agent-runtime) — plain-language explanations

@@ -91,6 +91,24 @@ No step trusts the previous step's claim — each verifies independently.
 - **Signed artifacts** — authorization is cryptographic, not assumed
 - **Auditable** — every decision and action is recorded
 
+## Built-in tool layer
+
+Manasvi ships with a governed built-in toolset that gives it immediate practical utility:
+
+| Tool | Purpose | Risk |
+|---|---|---|
+| `tool.local-file-read` | Read local files in sandbox | Low |
+| `tool.http-fetch` | Fetch remote content under egress policy | Medium |
+| `tool.web-search` | Web search with structured results | Medium |
+| `tool.memory-note-write` | Write notes to governed memory | Medium |
+| `tool.approval-request` | Route actions to human reviewers | High |
+| `tool.shell-command` | Bounded shell execution (approval required) | High |
+
+Every tool invocation flows through the same security chain: policy → intent signing → sandboxed execution → output validation. Tool results carry explicit trust classification and provenance.
+
+→ [Built-in tools overview](/docs/tools/overview)
+→ [Default tool sets](/docs/tools/default-sets)
+
 ## Related pages
 
 - [Ingress Plane](/docs/architecture/ingress-plane)
@@ -98,3 +116,4 @@ No step trusts the previous step's claim — each verifies independently.
 - [Policy Service](/docs/architecture/policy-service)
 - [Execution Manager](/docs/architecture/execution-manager)
 - [Node Manager](/docs/architecture/node-manager)
+- [Built-in Tools](/docs/tools/overview)
