@@ -60,6 +60,7 @@ export interface SessionStore {
   listSessionMessages(input: { sessionId: string; limit?: number }): Promise<SessionMessage[]>;
   recordContextTrace(trace: MessageContextTrace): Promise<void>;
   listContextTraces(input: { sessionId: string; limit?: number }): Promise<MessageContextTrace[]>;
+  listSessions(input?: { limit?: number }): Promise<SessionEntity[]>;
 }
 
 export class InMemorySessionStore implements SessionStore {
@@ -211,6 +212,14 @@ export class InMemorySessionStore implements SessionStore {
       return [...list];
     }
     return list.slice(0, input.limit);
+  }
+
+  async listSessions(input?: { limit?: number }): Promise<SessionEntity[]> {
+    const all = [...this.sessions.values()].sort(
+      (a, b) => new Date(b.lastActivityAt).getTime() - new Date(a.lastActivityAt).getTime()
+    );
+    const limit = input?.limit ?? 100;
+    return all.slice(0, limit);
   }
 }
 

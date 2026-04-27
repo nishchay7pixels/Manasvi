@@ -617,6 +617,33 @@ async function main(): Promise<void> {
         });
         return true;
       }
+
+      // ── Admin endpoints (no auth — local dashboard use only) ──────────────
+      if (req.method === "GET" && req.url?.startsWith("/admin/sessions")) {
+        const url = new URL(req.url, "http://localhost");
+        const limit = parseInt(url.searchParams.get("limit") ?? "50", 10);
+        const sessions = await sessionStore.listSessions({ limit: Math.min(limit, 200) });
+        respondJson(res, 200, {
+          schemaVersion: CONTRACT_SCHEMA_VERSION,
+          sessions,
+          count: sessions.length
+        });
+        return true;
+      }
+
+      if (req.method === "GET" && req.url?.startsWith("/admin/tools")) {
+        const url = new URL(req.url, "http://localhost");
+        const status = url.searchParams.get("status") ?? undefined;
+        const tools = toolRegistry.metadataExplorer(status ? { status: status as "enabled" | "disabled" } : {});
+        respondJson(res, 200, {
+          schemaVersion: CONTRACT_SCHEMA_VERSION,
+          tools,
+          count: tools.length
+        });
+        return true;
+      }
+      // ─────────────────────────────────────────────────────────────────────
+
       if (req.method === "GET" && req.url?.startsWith("/tools/metadata")) {
         const principal = principalResolver.resolveFromHttpHeaders(req.headers, {
           requireAuthentication: true,

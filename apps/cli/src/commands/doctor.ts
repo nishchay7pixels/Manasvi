@@ -115,15 +115,69 @@ async function runChecks(config: Awaited<ReturnType<typeof loadConfig>>): Promis
 
     // Telegram
     const telegramToken = env.TELEGRAM_BOT_TOKEN;
-    if (telegramToken && telegramToken !== "replace-me") {
-      checks.push({ label: "Telegram bot token set", status: "pass" });
-    } else if (config.channels.telegram?.enabled) {
-      checks.push({
-        label: "Telegram bot token set",
-        status: "warn",
-        detail: "Channel is enabled but token is missing",
-        fix: "Run: pnpm manasvi channels add telegram"
-      });
+    const telegramMode = env.TELEGRAM_ADAPTER_MODE ?? "polling";
+    const telegramEnabled = config.channels.telegram?.enabled;
+
+    if (telegramEnabled || (telegramToken && telegramToken !== "replace-me")) {
+      // Token presence and format
+      if (!telegramToken || telegramToken === "replace-me") {
+        checks.push({
+          label: "Telegram bot token",
+          status: "fail",
+          detail: "Token missing — channel is enabled but TELEGRAM_BOT_TOKEN is not set",
+          fix: "Run: pnpm manasvi channels add telegram"
+        });
+      } else {
+        // Token format: looks like 123456789:AAE... (numeric ID : base64-ish string)
+        const tokenFormatOk = /^\d{8,12}:[A-Za-z0-9_-]{35,}$/.test(telegramToken);
+        checks.push({
+          label: "Telegram bot token",
+          status: tokenFormatOk ? "pass" : "warn",
+          detail: tokenFormatOk ? `mode: ${telegramMode}` : "Token format looks unexpected — verify you copied it correctly from BotFather",
+          fix: tokenFormatOk ? undefined : "Run: pnpm manasvi channels add telegram"
+        });
+      }
+
+      // Mode-specific checks
+      if (telegramMode === "webhook") {
+        const webhookUrl = env.TELEGRAM_WEBHOOK_URL;
+        checks.push({
+          label: "Telegram webhook URL",
+          status: webhookUrl && webhookUrl !== "replace-me" ? "pass" : "fail",
+          detail: webhookUrl && webhookUrl !== "replace-me" ? webhookUrl : "TELEGRAM_WEBHOOK_URL not set",
+          fix: webhookUrl ? undefined : "Set TELEGRAM_WEBHOOK_URL in .env.local or switch to polling mode"
+        });
+      }
+
+      // Live polling status — only if ingress is expected to be running
+      if (telegramToken && telegramToken !== "replace-me" && telegramMode === "polling") {
+        try {
+          const ingressPort = config.services.ingressPort ?? 4101;
+          const res = await fetch(`http://localhost:${ingressPort}/ingress/adapters/telegram_adapter`, {
+            signal: AbortSignal.timeout(2000)
+          });
+          if (res.ok) {
+            const data = (await res.json()) as { pollerRunning?: boolean; consecutiveErrors?: number; offset?: number };
+            if (data.pollerRunning === true) {
+              const errNote = data.consecutiveErrors ? ` · ${data.consecutiveErrors} consecutive error(s)` : "";
+              checks.push({
+                label: "Telegram poller running",
+                status: data.consecutiveErrors ? "warn" : "pass",
+                detail: `offset: ${data.offset ?? "—"}${errNote}`
+              });
+            } else {
+              checks.push({
+                label: "Telegram poller running",
+                status: "warn",
+                detail: "Ingress is up but poller is not active",
+                fix: "Run: pnpm manasvi restart"
+              });
+            }
+          }
+        } catch {
+          // Ingress not running — silently skip; port check below will catch it
+        }
+      }
     }
   }
 

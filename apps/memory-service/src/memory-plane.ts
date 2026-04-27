@@ -155,6 +155,16 @@ export class InMemoryTrustClassifiedMemoryPlane {
     });
   }
 
+  /** Admin accessor — returns all records without auth or policy checks. */
+  adminListRecords(input: { memoryClass?: string; limit?: number } = {}): MemoryRecord[] {
+    const limit = input.limit ?? 200;
+    const all = [...this.byId.values()]
+      .filter((s) => !input.memoryClass || s.record.memoryClass === input.memoryClass)
+      .sort((a, b) => new Date(b.record.createdAt).getTime() - new Date(a.record.createdAt).getTime())
+      .slice(0, limit);
+    return all.map((s) => this.toExposedRecord(s));
+  }
+
   private ensureNoSilentPromotion(input: MemoryWriteRequest): void {
     const durableTarget = input.memoryClass === "USER_DURABLE" || input.memoryClass === "ORG_SHARED_TRUSTED";
     const lineageUntrusted =

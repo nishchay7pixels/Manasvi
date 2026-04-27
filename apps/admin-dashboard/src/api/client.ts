@@ -81,15 +81,67 @@ export async function fetchServiceHealth(): Promise<ServiceHealth[]> {
 
 // ── Approvals ──────────────────────────────────────────────────────────────
 
-interface ApprovalsResponse { requests?: ApprovalRequest[]; }
+// Raw shape from approval service
+interface RawApprovalRequest {
+  approvalRequestId?: string;
+  requestId?: string;
+  intentId?: string;
+  tenantId?: string;
+  workspaceId?: string;
+  actor?: { principalId?: string; principalType?: string };
+  actorPrincipalId?: string;
+  target?: { resourceId?: string; resourceClass?: string };
+  resource?: string;
+  actionClass?: string;
+  risk?: { score?: number; level?: string };
+  riskLevel?: string;
+  state?: string;
+  summary?: string;
+  contextSummary?: string;
+  policyReason?: string;
+  reason?: string;
+  createdAt?: string;
+  expiresAt?: string;
+  decidedAt?: string;
+  trace?: { traceId?: string };
+  sessionId?: string;
+}
+
+function normalizeApprovalRequest(raw: RawApprovalRequest): ApprovalRequest {
+  // Map "rejected" → "denied" for display consistency
+  const rawState = raw.state ?? "pending";
+  const state = rawState === "rejected" ? "denied" : rawState as ApprovalRequest["state"];
+
+  return {
+    requestId: raw.approvalRequestId ?? raw.requestId ?? crypto.randomUUID(),
+    tenantId: raw.tenantId ?? "tenant-local",
+    workspaceId: raw.workspaceId ?? "workspace-local",
+    intentId: raw.intentId,
+    actorPrincipalId: raw.actorPrincipalId ?? raw.actor?.principalId,
+    actorPrincipalType: raw.actor?.principalType,
+    tool: undefined,
+    resource: raw.target?.resourceId ?? raw.target?.resourceClass ?? raw.resource,
+    actionClass: raw.actionClass,
+    riskLevel: (raw.risk?.level ?? raw.riskLevel) as ApprovalRequest["riskLevel"],
+    state,
+    reason: raw.policyReason ?? raw.reason,
+    expiresAt: raw.expiresAt,
+    createdAt: raw.createdAt ?? new Date().toISOString(),
+    decidedAt: raw.decidedAt,
+    contextSummary: raw.summary ?? raw.contextSummary,
+  };
+}
+
+interface ApprovalsResponse { requests?: RawApprovalRequest[]; }
 interface AuditRecordsResponse { records?: ApprovalAuditRecord[]; }
 
+// Uses /admin/approvals — returns all requests without needing intentId
 export async function fetchApprovalRequests(state?: string): Promise<ApprovalRequest[]> {
   const url = state
-    ? `/api/approvals/approvals/requests?state=${state}`
-    : `/api/approvals/approvals/requests`;
+    ? `/api/approvals/admin/approvals?state=${state}`
+    : `/api/approvals/admin/approvals`;
   const data = await get<ApprovalsResponse>(url);
-  return data?.requests ?? [];
+  return (data?.requests ?? []).map(normalizeApprovalRequest);
 }
 
 export async function fetchApprovalAuditRecords(): Promise<ApprovalAuditRecord[]> {
@@ -103,7 +155,7 @@ export async function submitApprovalDecision(
   reason?: string
 ): Promise<boolean> {
   const result = await post("/api/approvals/approvals/requests/decision", {
-    requestId,
+    approvalRequestId: requestId,
     decision,
     reason,
   });
@@ -112,22 +164,62 @@ export async function submitApprovalDecision(
 
 // ── Sessions ───────────────────────────────────────────────────────────────
 
-interface SessionsResponse { sessions?: Session[]; }
+interface RawSession {
+  sessionId?: string;
+  tenantId?: string;
+  workspaceId?: string;
+  status?: string;           // "active" | "closed" | ...
+  state?: string;            // alias
+  sessionType?: string;
+  isolationMode?: string;
+  owner?: { principalId?: string; principalType?: string };
+  channelBinding?: { channelPrincipal?: { principalId?: string } };
+  riskProfile?: { level?: string } | string;
+  createdAt?: string;
+  lastActivityAt?: string;
+}
 
+function normalizeSession(raw: RawSession): Session {
+  const principalId = raw.owner?.principalId;
+  const principalType = raw.owner?.principalType;
+  const channelType = raw.channelBinding?.channelPrincipal?.principalId?.split(":")?.[0];
+  const riskProfile =
+    typeof raw.riskProfile === "object"
+      ? (raw.riskProfile?.level as Session["riskProfile"])
+      : (raw.riskProfile as Session["riskProfile"]);
+
+  return {
+    sessionId: raw.sessionId ?? crypto.randomUUID(),
+    tenantId: raw.tenantId ?? "tenant-local",
+    workspaceId: raw.workspaceId ?? "workspace-local",
+    principalId,
+    principalType,
+    channelType,
+    isolationMode: raw.isolationMode,
+    state: raw.status ?? raw.state,
+    riskProfile,
+    createdAt: raw.createdAt ?? new Date().toISOString(),
+    lastActivityAt: raw.lastActivityAt,
+  };
+}
+
+interface SessionsResponse { sessions?: RawSession[]; }
+
+// Uses /admin/sessions — returns all sessions without requiring a sessionId
 export async function fetchSessions(limit = 50): Promise<Session[]> {
   const data = await get<SessionsResponse>(
-    `/api/orchestrator/orchestration/sessions?limit=${limit}`
+    `/api/orchestrator/admin/sessions?limit=${limit}`
   );
-  return data?.sessions ?? [];
+  return (data?.sessions ?? []).map(normalizeSession);
 }
 
 // ── Executions ─────────────────────────────────────────────────────────────
 
-interface ExecutionsResponse { runs?: ExecutionRun[]; integrity?: ExecutionRun[]; }
+interface ExecutionsResponse { events?: ExecutionRun[]; runs?: ExecutionRun[]; }
 
 export async function fetchExecutions(): Promise<ExecutionRun[]> {
   const data = await get<ExecutionsResponse>("/api/execution/execution/audit/integrity");
-  return data?.runs ?? data?.integrity ?? [];
+  return data?.events ?? data?.runs ?? [];
 }
 
 // ── Nodes ──────────────────────────────────────────────────────────────────
@@ -153,16 +245,16 @@ export async function revokeNode(nodeId: string): Promise<boolean> {
 
 interface MemoryResponse { records?: MemoryRecord[]; }
 
+// Uses /admin/memory — bypasses auth/policy, accessible from local dashboard
 export async function fetchMemoryRecords(options: {
   memoryClass?: string;
-  trustClass?: string;
   limit?: number;
 } = {}): Promise<MemoryRecord[]> {
-  const data = await post<MemoryResponse>("/api/memory/memory/query", {
-    memoryClass: options.memoryClass,
-    trustClass: options.trustClass,
-    limit: options.limit ?? 100,
-  });
+  const params = new URLSearchParams();
+  if (options.memoryClass) params.set("memoryClass", options.memoryClass);
+  if (options.limit) params.set("limit", String(options.limit));
+  const qs = params.toString();
+  const data = await get<MemoryResponse>(`/api/memory/admin/memory${qs ? `?${qs}` : ""}`);
   return data?.records ?? [];
 }
 
@@ -173,11 +265,68 @@ export async function fetchMemoryClasses(): Promise<string[]> {
 
 // ── Policy ─────────────────────────────────────────────────────────────────
 
-interface PolicyResponse { decisions?: PolicyDecision[]; }
+// Raw shape returned by the policy service audit endpoint
+interface RawPolicyDecision {
+  decisionId?: string;
+  auditRecordId?: string;
+  decision?: string;          // "ALLOW" | "DENY" | "APPROVAL_REQUIRED"
+  result?: string;            // alternative field name (lowercase)
+  timestamp?: string;
+  createdAt?: string;
+  actorPrincipal?: { principalId?: string } | string;
+  actorPrincipalId?: string;
+  actionClass?: string;
+  actionId?: string;
+  resourceClass?: string;
+  resourceId?: string;
+  matchedRuleId?: string;
+  matchedPolicyId?: string;
+  risk?: { score?: number; level?: string };
+  riskScore?: number;
+  trace?: { traceId?: string };
+  traceId?: string;
+  tenantId?: string;
+  workspaceId?: string;
+  reasonCodes?: string[];
+  reason?: string;
+  sessionId?: string;
+}
+
+interface PolicyResponse { decisions?: RawPolicyDecision[]; }
+
+function normalizePolicyDecision(raw: RawPolicyDecision): PolicyDecision {
+  // decision field: service uses uppercase "ALLOW"/"DENY"/"APPROVAL_REQUIRED"
+  const rawResult = (raw.decision ?? raw.result ?? "allow").toLowerCase();
+  const result =
+    rawResult === "deny" ? "deny" :
+    rawResult === "approval_required" ? "approval_required" :
+    rawResult === "conditional_allow" ? "conditional_allow" :
+    "allow";
+
+  const actorPrincipalId =
+    raw.actorPrincipalId ??
+    (typeof raw.actorPrincipal === "object" ? raw.actorPrincipal?.principalId : raw.actorPrincipal);
+
+  return {
+    decisionId: raw.decisionId ?? raw.auditRecordId ?? crypto.randomUUID(),
+    tenantId: raw.tenantId ?? "tenant-local",
+    workspaceId: raw.workspaceId ?? "workspace-local",
+    action: raw.actionId ?? raw.actionClass,
+    resource: raw.resourceId ?? raw.resourceClass,
+    actorPrincipalId,
+    result: result as PolicyDecision["result"],
+    matchedRuleId: raw.matchedRuleId ?? raw.matchedPolicyId,
+    reason: raw.reason ?? raw.reasonCodes?.join(", "),
+    riskScore: raw.risk?.score ?? raw.riskScore,
+    traceId: raw.trace?.traceId ?? raw.traceId,
+    sessionId: raw.sessionId,
+    createdAt: raw.timestamp ?? raw.createdAt ?? new Date().toISOString(),
+  };
+}
 
 export async function fetchPolicyDecisions(): Promise<PolicyDecision[]> {
   const data = await get<PolicyResponse>("/api/policy/policy/audit/decisions");
-  return data?.decisions ?? [];
+  return (data?.decisions ?? []).map(normalizePolicyDecision);
 }
 
 export interface PolicyMetadata {
@@ -193,11 +342,46 @@ export async function fetchPolicyMetadata(): Promise<PolicyMetadata | null> {
 
 // ── Tools ──────────────────────────────────────────────────────────────────
 
-interface ToolsResponse { tools?: ToolEntry[]; }
+interface RawToolEntry {
+  toolId?: string;
+  version?: string;
+  name?: string;
+  description?: string;
+  status?: string;
+  actionClass?: string;
+  sideEffectClass?: string;
+  policyBinding?: { requiresApproval?: boolean; approvalSensitivity?: string };
+  runtimeHints?: { approvalSensitivity?: string };
+  tags?: string[];
+  // stats if returned
+  invocationCount?: number;
+  lastInvokedAt?: string;
+}
 
+interface ToolsResponse { tools?: RawToolEntry[]; }
+
+function normalizeTool(raw: RawToolEntry): ToolEntry {
+  const sensitivity =
+    raw.policyBinding?.approvalSensitivity ??
+    raw.runtimeHints?.approvalSensitivity;
+  return {
+    toolId: raw.toolId ?? "unknown",
+    name: raw.name ?? raw.toolId ?? "unknown",
+    version: raw.version,
+    status: (raw.status === "disabled" ? "disabled" : "enabled") as ToolEntry["status"],
+    actionClass: raw.actionClass,
+    sideEffectClass: raw.sideEffectClass,
+    approvalSensitivity: sensitivity as ToolEntry["approvalSensitivity"],
+    description: raw.description,
+    invocationCount: raw.invocationCount,
+    lastInvokedAt: raw.lastInvokedAt,
+  };
+}
+
+// Uses /admin/tools — no auth required, lists all registered tools
 export async function fetchTools(): Promise<ToolEntry[]> {
-  const data = await post<ToolsResponse>("/api/orchestrator/tools/status", {});
-  return data?.tools ?? [];
+  const data = await get<ToolsResponse>("/api/orchestrator/admin/tools");
+  return (data?.tools ?? []).map(normalizeTool);
 }
 
 // ── Telegram / Ingress ─────────────────────────────────────────────────────
@@ -221,14 +405,14 @@ export async function fetchSystemOverview(): Promise<SystemOverview> {
     ]);
 
   const recentDenials = policyDecisions.filter(
-    (d) => d.result === "deny" || d.result === "denied" as string
+    (d) => d.result === "deny"
   ).length;
 
   return {
     services,
     pendingApprovals: approvals.length,
     activeSessions: sessions.filter(
-      (s) => s.state === "active" || !s.state
+      (s) => s.state === "active" || s.state === "open" || !s.state
     ).length,
     runningExecutions: executions.filter(
       (e) => e.status === "running" || e.status === "pending"

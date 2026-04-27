@@ -121,6 +121,25 @@ async function main(): Promise<void> {
         });
         return true;
       }
+
+      // ── Admin list-all endpoint (no intentId required) ───────────────────
+      if (req.method === "GET" && req.url?.startsWith("/admin/approvals")) {
+        const url = new URL(req.url, "http://localhost");
+        const state = url.searchParams.get("state");
+        let all = [...requests.values()];
+        if (state) {
+          all = all.filter((r) => r.state === state);
+        }
+        all.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        respondJson(res, 200, {
+          schemaVersion: CONTRACT_SCHEMA_VERSION,
+          requests: all,
+          count: all.length
+        });
+        return true;
+      }
+      // ─────────────────────────────────────────────────────────────────────
+
       if (req.method === "GET" && req.url?.startsWith("/approvals/requests")) {
         const url = new URL(req.url, "http://localhost");
         const intentId = url.searchParams.get("intentId");

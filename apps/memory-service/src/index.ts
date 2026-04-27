@@ -96,6 +96,25 @@ async function main(): Promise<void> {
         });
         return true;
       }
+
+      // ── Admin list-all records (no auth — local dashboard use only) ──────
+      if (req.method === "GET" && req.url?.startsWith("/admin/memory")) {
+        const url = new URL(req.url, "http://localhost");
+        const memoryClassParam = url.searchParams.get("memoryClass");
+        const limit = parseInt(url.searchParams.get("limit") ?? "100", 10);
+        const records = memoryPlane.adminListRecords({
+          ...(memoryClassParam ? { memoryClass: memoryClassParam } : {}),
+          limit: Math.min(limit, 500)
+        });
+        respondJson(res, 200, {
+          schemaVersion: CONTRACT_SCHEMA_VERSION,
+          records,
+          count: records.length
+        });
+        return true;
+      }
+      // ─────────────────────────────────────────────────────────────────────
+
       if (req.method === "GET" && req.url?.startsWith("/memory/records/")) {
         const principal = principalResolver.resolveFromHttpHeaders(req.headers, {
           requireAuthentication: true,

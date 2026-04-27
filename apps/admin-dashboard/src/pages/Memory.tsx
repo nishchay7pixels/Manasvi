@@ -30,12 +30,14 @@ export function Memory() {
   const { data, loading } = useApi(() =>
     fetchMemoryRecords({
       memoryClass: classFilter !== "all" ? classFilter : undefined,
-      trustClass: trustFilter !== "all" ? trustFilter : undefined,
       limit: 200,
-    })
+    }),
+    [classFilter]
   );
 
-  const rows = data ?? [];
+  const rows = (data ?? []).filter((r) =>
+    trustFilter === "all" || r.trustClass?.toLowerCase().includes(trustFilter.toLowerCase())
+  );
   const untrustedCount = rows.filter((r) => r.trustClass.includes("untrusted")).length;
   const candidateCount = rows.filter((r) => r.promotionState === "candidate").length;
 
