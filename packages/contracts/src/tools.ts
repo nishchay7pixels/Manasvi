@@ -30,7 +30,25 @@ export const toolActionClassSchema = z.enum([
   "access-filesystem",
   "access-network",
   "access-secret",
-  "external-side-effect"
+  "external-side-effect",
+  // session plane
+  "read-session",
+  "mutate-session",
+  "spawn-subagent",
+  // memory read plane
+  "read-memory",
+  // UI rendering
+  "render-ui",
+  // automation / scheduling
+  "schedule",
+  // operator gateway
+  "access-gateway",
+  // messaging / channels
+  "send-message",
+  // node inspection / dispatch
+  "inspect-node",
+  // agent catalogue
+  "list-agents"
 ]);
 export type ToolActionClass = z.infer<typeof toolActionClassSchema>;
 

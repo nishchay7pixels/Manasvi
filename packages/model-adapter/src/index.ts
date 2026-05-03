@@ -19,6 +19,14 @@ export interface ModelAdapterConfig {
   anthropicBaseUrl: string;
 }
 
+export interface AvailableToolSummary {
+  toolId: string;
+  version: string;
+  actionClass: string;
+  sideEffectClass: string;
+  description?: string;
+}
+
 export interface ModelInvocationRequest {
   requestId: string;
   messageId: string;
@@ -27,6 +35,7 @@ export interface ModelInvocationRequest {
   correlationId: string;
   userInput: string;
   contextChunks: ContextChunk[];
+  availableTools?: AvailableToolSummary[];
 }
 
 export interface ModelInvocationResult {
@@ -288,16 +297,50 @@ function buildOpenAiMessages(input: ModelInvocationRequest): Array<{ role: "syst
 }
 
 function buildSystemInstruction(): string {
-  return [
-    "You are Manasvi, a secure assistant.",
-    "Return a direct, user-facing answer.",
-    "Do not expose internal policy decisions, trust labels, provenance/session metadata, trace IDs, or control-plane details unless the user explicitly asks for them.",
-    "Do not include analysis preambles like 'Based on the provided context'.",
-    "Never claim hidden tool execution."
-  ].join(" ");
+  const lines = [
+    "You are Manasvi, a secure, governed AI assistant.",
+    "",
+    "## Response format",
+    "You MUST respond with a single JSON object. No markdown fences, no prose outside the JSON.",
+    "",
+    "Choose one of three decision types:",
+    "",
+    "### 1 — Final response (no tool needed)",
+    '{"decisionType":"final_response","responseText":"Your answer here"}',
+    "",
+    "### 2 — Tool invocation",
+    '{"decisionType":"action_proposal","proposal":{"proposalType":"tool_invocation","proposalId":"proposal-1","toolId":"<tool id>","purpose":"<why this tool is needed>","input":{<tool inputs>}}}',
+    "",
+    "### 3 — Clarification request",
+    '{"decisionType":"clarification_request","prompt":"<question to ask the user>"}',
+    "",
+    "## Rules",
+    "- If the user explicitly asks to use a specific tool, you MUST return decisionType=action_proposal with proposalType=tool_invocation for that tool.",
+    "- Use a tool when the user needs real-time data, file content, web search results, or any action you cannot answer from memory alone.",
+    "- Only use tool IDs from the Available Tools list. Never invent tool IDs.",
+    "- Keep user-facing wording concise and direct. Default to one short answer unless the user asks for detail.",
+    "- Never repeat the user's prompt verbatim as the response.",
+    "- Do not add explanatory preambles like 'Based on context' or 'The answer is' unless explicitly requested.",
+    "- Do not expose internal policy decisions, trust labels, trace IDs, or control-plane details.",
+    "- Do not include prose outside the JSON object.",
+    "- Do not claim to have run a tool unless an observation confirms it completed."
+  ];
+  return lines.join("\n");
 }
 
 function buildUserPrompt(input: ModelInvocationRequest): string {
+  const parts: string[] = [];
+
+  if (input.availableTools && input.availableTools.length > 0) {
+    const toolLines = input.availableTools.map((t) => {
+      const desc = t.description ? ` — ${t.description}` : ` (${t.actionClass}, effects: ${t.sideEffectClass})`;
+      return `  - ${t.toolId}${desc}`;
+    });
+    parts.push(`Available Tools:\n${toolLines.join("\n")}`);
+  } else {
+    parts.push("Available Tools: none");
+  }
+
   const contextSnippet = input.contextChunks
     .slice(-24)
     .map((chunk) => {
@@ -314,7 +357,18 @@ function buildUserPrompt(input: ModelInvocationRequest): string {
       return truncateForEcho(line, 240);
     })
     .join("\n");
-  return `User input:\n${input.userInput}\n\nContext:\n${contextSnippet}`;
+
+  if (contextSnippet.trim().length > 0) {
+    parts.push(`Context:\n${contextSnippet}`);
+  }
+
+  parts.push(`User input:\n${input.userInput}`);
+
+  parts.push(
+    'Respond with a single JSON object using one of the formats described in the system prompt. No markdown, no prose outside the JSON.'
+  );
+
+  return parts.join("\n\n");
 }
 
 function normalizeAnthropicError(error: unknown): Error {

@@ -13,6 +13,26 @@ All flows assume services are running. Start them with `pnpm manasvi start`.
 
 ---
 
+## Index
+
+**Core flows (B4 tools)**
+- [Flow A — File Read](#demo-flow-a--file-read) — `tool.local-file-read`
+- [Flow B — HTTP Fetch](#demo-flow-b--http-fetch) — `tool.http-fetch`
+- [Flow B2 — Web Search](#demo-flow-b2--web-search) — `tool.web-search`
+- [Flow C — Note Write](#demo-flow-c--note-write) — `tool.memory-note-write`
+- [Flow D — Approval Request](#demo-flow-d--approval-request) — `tool.approval-request`
+
+**New flows (B5 tools)**
+- [Flow E — File Write](#demo-flow-e--file-write) — `tool.file-write`
+- [Flow F — Code Execution](#demo-flow-f--code-execution) — `tool.code-execution`
+- [Flow G — Memory Search](#demo-flow-g--memory-search) — `tool.memory-search`
+- [Flow H — Sessions List + Status](#demo-flow-h--sessions-list--status) — `tool.sessions-list`, `tool.session-status`
+- [Flow I — Message Send](#demo-flow-i--message-send) — `tool.message`
+
+**See also:** [Built-in Tools Overview](./overview.md) · [Default Tool Sets](./default-sets.md) · [Troubleshooting](./troubleshooting.md)
+
+---
+
 ## Demo Flow A — File Read
 
 **User asks:** "Read the file at `./README.md` and give me a summary."
@@ -355,3 +375,145 @@ curl -X POST http://localhost:4010/tools/invoke \
     "input": { "query": "Manasvi AI agent framework", "maxResults": 3 }
   }'
 ```
+
+---
+
+## Demo Flow E — File Write
+
+**User asks:** "Save this analysis to `output/summary.txt`."
+
+### What happens
+
+```
+1. Agent plans: tool.file-write with { path: "output/summary.txt", content: "...", overwrite: false }
+
+2. Tool lookup: tool.file-write  status: enabled  ✓
+
+3. Input validation: path, content, overwrite  ✓
+
+4. Policy evaluated
+   └─ action: access-filesystem  resource: filesystem-zone:workspace-write
+   └─ decision: ALLOW
+
+5. Execution intent created and signed
+
+6. System artifact issued (no human approval — overwrite=false)
+
+7. Sandboxed write executes in no_network_compute mode
+
+8. Output: { path: "output/summary.txt", bytesWritten: 312, overwritten: false }
+```
+
+### Operator visibility
+
+The write operation appears in the audit trail. The file is accessible via `tool.local-file-read` in subsequent turns.
+
+**Related docs:** [Filesystem Write Tools](./filesystem-write-tools.md)
+
+---
+
+## Demo Flow F — Code Execution
+
+**User asks:** "Calculate the sum of the first 100 primes using Python."
+
+### What happens
+
+```
+1. Agent plans: tool.code-execution with { language: "python", code: "..." }
+
+2. Policy evaluated
+   └─ action: execute  resource: execution-node:sandbox
+   └─ approvalHint: must_require
+   └─ approval request created → pending
+
+3. Operator approves via dashboard or approval API
+
+4. Approval artifact issued and bound to intent
+
+5. Code executes in no_network_compute sandbox
+
+6. Output: { exitCode: 0, stdout: "24133\n", durationMs: 142 }
+```
+
+### Operator visibility
+
+Approval request visible in dashboard Approvals tab. Execution output in audit trail.
+
+**Related docs:** [Runtime Tools](./runtime-tools.md)
+
+---
+
+## Demo Flow G — Memory Search
+
+**User asks:** "What deadlines have I saved this week?"
+
+### What happens
+
+```
+1. Agent plans: tool.memory-search with {
+     namespace: "tenant-local/workspace-local/notes/user-alice",
+     query: "deadline"
+   }
+
+2. Policy evaluated
+   └─ action: read  resource: memory-namespace
+   └─ decision: ALLOW  (no approval required)
+
+3. Tool queries memory namespace
+
+4. Results returned with trust classification per record:
+   [{ noteId: "note:1k3xab", note: "...", trustClassification: "USER_OWNED", ... }]
+
+5. Agent responds with deadline summary
+```
+
+**Related docs:** [Memory Tools](./memory-tools.md)
+
+---
+
+## Demo Flow H — Sessions List + Status
+
+**User asks:** "What sessions are active right now?"
+
+### What happens
+
+```
+1. Agent plans: tool.sessions-list with { status: "active", limit: 10 }
+
+2. Policy evaluated
+   └─ action: read  resource: session:list
+   └─ decision: ALLOW
+
+3. Returns list of session metadata (no message content)
+
+4. Agent optionally follows up with tool.session-status for a specific session
+   └─ returns: { status: "active", riskLevel: "low", iteration: 3 }
+```
+
+**Related docs:** [Session Tools](./session-tools.md)
+
+---
+
+## Demo Flow I — Message Send
+
+**User asks:** "Notify the ops team that the build succeeded."
+
+### What happens
+
+```
+1. Agent plans: tool.message with {
+     channel: "telegram:ops-alerts",
+     content: "✅ Build succeeded. Version 1.4.2 deployed.",
+     format: "markdown"
+   }
+
+2. Policy evaluated
+   └─ action: external-side-effect  resource: channel-surface:messaging
+   └─ decision: ALLOW (channel is whitelisted)
+
+3. Message dispatched via channel adapter to Telegram
+
+4. Output: { messageId: "msg:tg-abc", status: "sent", sentAt: "..." }
+```
+
+**Related docs:** [Message, Nodes, and Agents List](./message-nodes-agents.md)

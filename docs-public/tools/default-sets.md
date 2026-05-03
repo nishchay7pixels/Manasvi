@@ -97,6 +97,70 @@ All of the above, plus:
 
 ---
 
+### Starter Read Set
+
+**Set ID:** `manasvi.toolset.starter-read`
+**Risk level:** Low
+**Requires operator config:** Egress allowlist, memory namespaces, X API key
+
+**Included tools:**
+- `tool.local-file-read`, `tool.http-fetch`, `tool.web-search`, `tool.x-search`
+- `tool.memory-get`, `tool.memory-search`
+- `tool.agents-list`, `tool.sessions-list`, `tool.sessions-history`, `tool.session-status`
+- `tool.nodes`
+
+**Best for:**
+Broad read-only agents needing workspace context, session awareness, and memory access. No writes or execution.
+
+---
+
+### Controlled Write Set
+
+**Set ID:** `manasvi.toolset.controlled-write`
+**Risk level:** Medium
+**Requires operator config:** Filesystem write zone, channel adapter config
+
+**Included tools:**
+- `tool.file-write`, `tool.file-edit`
+- `tool.sessions-send`, `tool.sessions-yield`
+- `tool.canvas`, `tool.message`
+
+**Best for:**
+Agents that produce written outputs, send notifications, and continue session workflows. No shell execution.
+
+---
+
+### Governed Execute Set
+
+**Set ID:** `manasvi.toolset.governed-execute`
+**Risk level:** High
+**Requires operator config:** Sandbox execution policy, approval service config
+
+**Included tools:**
+- `tool.exec`, `tool.bash`, `tool.code-execution`, `tool.process`
+- `tool.file-apply-patch`, `tool.approval-request`
+
+**Best for:**
+Trusted operator-controlled execution workflows. All tools require approval. CI/CD agents, code build agents.
+
+---
+
+### Workflow / Operator Set
+
+**Set ID:** `manasvi.toolset.workflow-operator`
+**Risk level:** High
+**Requires operator config:** Gateway endpoints, browser runtime, cron scheduler
+
+**Included tools:**
+- `tool.cron`, `tool.gateway`
+- `tool.subagents`, `tool.sessions-spawn`
+- `tool.browser`, `tool.approval-request`
+
+**Best for:**
+Advanced operator automation: scheduled tasks, external integrations, multi-agent orchestration, browser automation.
+
+---
+
 ## Using tool sets
 
 ### CLI

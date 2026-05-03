@@ -11,6 +11,18 @@
 
 import type { BuiltInToolId } from "./index.js";
 
+// Re-export sub-specs for advanced consumers
+export { RUNTIME_TOOL_SPECS } from "./tools/runtime.js";
+export { FILESYSTEM_TOOL_SPECS } from "./tools/filesystem.js";
+export { SESSION_TOOL_SPECS } from "./tools/sessions.js";
+export { MEMORY_TOOL_SPECS } from "./tools/memory.js";
+export { WEB_TOOL_SPECS } from "./tools/web.js";
+export { UI_TOOL_SPECS } from "./tools/ui.js";
+export { AUTOMATION_TOOL_SPECS } from "./tools/automation.js";
+export { MESSAGING_TOOL_SPECS } from "./tools/messaging.js";
+export { NODES_TOOL_SPECS } from "./tools/nodes.js";
+export { AGENTS_TOOL_SPECS } from "./tools/agents.js";
+
 // ── Tool set definitions ───────────────────────────────────────────────────────
 
 export interface ToolSetDefinition {
@@ -176,13 +188,172 @@ export const ALL_BUILTIN_SET: ToolSetDefinition = {
   ]
 };
 
+/**
+ * STARTER_READ_SET — full read-oriented capability, including sessions and memory.
+ *
+ * Extends STARTER_SAFE_SET with session inspection, memory read, agent listing,
+ * and node inspection. Fully read-only with no write side effects.
+ * Suitable for informational and research agents that need broader context access.
+ */
+export const STARTER_READ_SET: ToolSetDefinition = {
+  setId: "manasvi.toolset.starter-read",
+  name: "Starter Read Set",
+  description:
+    "Full read-only capability surface. Includes file read, web search, HTTP fetch, " +
+    "memory search/get, sessions inspection, agent listing, and node inspection. " +
+    "No writes, no execution. Ideal as a broad informational baseline.",
+  useCases: [
+    "Research and summarisation agents",
+    "Session and workspace inspection",
+    "Agent capability discovery",
+    "Read-only monitoring agents"
+  ],
+  riskLevel: "low",
+  toolIds: [
+    "tool.local-file-read",
+    "tool.http-fetch",
+    "tool.web-search",
+    "tool.x-search",
+    "tool.memory-get",
+    "tool.memory-search",
+    "tool.agents-list",
+    "tool.sessions-list",
+    "tool.sessions-history",
+    "tool.session-status",
+    "tool.nodes"
+  ],
+  containsApprovalSensitiveTools: false,
+  requiresOperatorConfig: true,
+  operatorNotes: [
+    "Configure egress allowlist for web-search, http-fetch, and x-search.",
+    "Configure memory namespace read policy.",
+    "x-search requires secret:x-api-key configured in the secrets service."
+  ]
+};
+
+/**
+ * CONTROLLED_WRITE_SET — governed write capability for filesystem and sessions.
+ *
+ * Adds file writing, editing, and session communication tools.
+ * No execution or external side effects. Suitable for agents that produce outputs.
+ */
+export const CONTROLLED_WRITE_SET: ToolSetDefinition = {
+  setId: "manasvi.toolset.controlled-write",
+  name: "Controlled Write Set",
+  description:
+    "Controlled write capability: file write/edit, session send, canvas rendering, " +
+    "and messaging. No shell execution. Suitable for agents that produce structured outputs.",
+  useCases: [
+    "Document and report generation",
+    "Session management and workflow continuation",
+    "Operator notification via messaging",
+    "Dashboard canvas rendering"
+  ],
+  riskLevel: "medium",
+  toolIds: [
+    "tool.file-write",
+    "tool.file-edit",
+    "tool.sessions-send",
+    "tool.sessions-yield",
+    "tool.canvas",
+    "tool.message"
+  ],
+  containsApprovalSensitiveTools: false,
+  requiresOperatorConfig: true,
+  operatorNotes: [
+    "Configure filesystem write zone paths in policy.",
+    "Configure allowed messaging channels in the channel adapter.",
+    "Approval may be triggered depending on operator policy configuration."
+  ]
+};
+
+/**
+ * GOVERNED_EXECUTE_SET — high-risk execution surface with mandatory approval.
+ *
+ * Adds shell execution (exec, bash, code-execution, process) and file patching.
+ * All tools in this set require approval by default.
+ * Only for trusted operator-controlled workflows.
+ */
+export const GOVERNED_EXECUTE_SET: ToolSetDefinition = {
+  setId: "manasvi.toolset.governed-execute",
+  name: "Governed Execute Set",
+  description:
+    "High-risk execution tools with mandatory approval gates. " +
+    "Includes exec, bash, code-execution, process management, and apply-patch. " +
+    "All invocations require approval. For operator-controlled trusted workflows only.",
+  useCases: [
+    "CI/CD pipeline execution",
+    "Automated code build and test",
+    "Controlled shell scripting",
+    "Code patching workflows"
+  ],
+  riskLevel: "high",
+  toolIds: [
+    "tool.exec",
+    "tool.bash",
+    "tool.code-execution",
+    "tool.process",
+    "tool.file-apply-patch",
+    "tool.approval-request"
+  ],
+  containsApprovalSensitiveTools: true,
+  requiresOperatorConfig: true,
+  operatorNotes: [
+    "All tools in this set require must_require approval policy.",
+    "Configure sandbox execution policy and resource limits.",
+    "Review audit trail after each execution session."
+  ]
+};
+
+/**
+ * WORKFLOW_OPERATOR_SET — operator-level automation and integration surface.
+ *
+ * Adds cron scheduling, gateway integration, subagent spawning, and session management.
+ * High-privilege. Only for trusted operator-controlled automation.
+ */
+export const WORKFLOW_OPERATOR_SET: ToolSetDefinition = {
+  setId: "manasvi.toolset.workflow-operator",
+  name: "Workflow / Operator Set",
+  description:
+    "Operator-level automation surface: cron scheduling, gateway integration, " +
+    "subagent spawning, session creation, and browser. " +
+    "Requires explicit operator policy. All approval-sensitive operations gated.",
+  useCases: [
+    "Automated scheduled workflows",
+    "External system integration via gateway",
+    "Multi-agent orchestration",
+    "Browser-based data extraction"
+  ],
+  riskLevel: "high",
+  toolIds: [
+    "tool.cron",
+    "tool.gateway",
+    "tool.subagents",
+    "tool.sessions-spawn",
+    "tool.browser",
+    "tool.approval-request"
+  ],
+  containsApprovalSensitiveTools: true,
+  requiresOperatorConfig: true,
+  operatorNotes: [
+    "All tools require operator-configured policy rules.",
+    "Gateway endpoints must be registered by the operator.",
+    "Browser requires provisioned headless browser runtime.",
+    "Cron jobs execute under the creating principal's policy constraints."
+  ]
+};
+
 // ── Default set catalogue ──────────────────────────────────────────────────────
 
 /** All named tool sets, ordered by risk level. */
 export const BUILTIN_TOOL_SETS: ToolSetDefinition[] = [
   STARTER_SAFE_SET,
+  STARTER_READ_SET,
   NOTES_SET,
+  CONTROLLED_WRITE_SET,
   GOVERNED_ACTION_SET,
+  GOVERNED_EXECUTE_SET,
+  WORKFLOW_OPERATOR_SET,
   ALL_BUILTIN_SET
 ];
 

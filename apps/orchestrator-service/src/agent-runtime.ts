@@ -80,17 +80,7 @@ export class AdapterBackedPlannerProvider implements PlannerModelProvider {
     plannerRequest: PlannerRequest;
     modelRequest: ModelInvocationRequest;
   }): Promise<{ modelResponse: ModelInvocationResult; plannerResponse: PlannerResponse }> {
-    const modelResponse = await this.modelAdapter.invoke({
-      ...input.modelRequest,
-      userInput: [
-        "Return only valid JSON with one decision.",
-        "Allowed decisionType: final_response, action_proposal, clarification_request, halt, error.",
-        "For final_response, provide only user-facing content and avoid policy/trust/session/trace metadata unless explicitly requested.",
-        "If action_proposal, include proposal.proposalType.",
-        "User request:",
-        input.modelRequest.userInput
-      ].join("\n")
-    });
+    const modelResponse = await this.modelAdapter.invoke(input.modelRequest);
     const plannerDecision = this.parsePlannerDecision(modelResponse);
     return {
       modelResponse,
@@ -116,9 +106,27 @@ export class AdapterBackedPlannerProvider implements PlannerModelProvider {
     }
     const parsed = extractJsonObject(modelResponse.outputText);
     if (!parsed) {
-      throw new Error("PLANNER_OUTPUT_PARSE_FAILED");
+      const fallback = modelResponse.outputText.trim();
+      if (!fallback) {
+        throw new Error("PLANNER_OUTPUT_PARSE_FAILED");
+      }
+      return {
+        decisionType: "final_response",
+        responseText: fallback
+      };
     }
-    return parsePlannerDecisionEnvelope(parsed);
+    try {
+      return parsePlannerDecisionEnvelope(parsed);
+    } catch {
+      const fallback = modelResponse.outputText.trim();
+      if (!fallback) {
+        throw new Error("PLANNER_OUTPUT_PARSE_FAILED");
+      }
+      return {
+        decisionType: "final_response",
+        responseText: fallback
+      };
+    }
   }
 }
 
@@ -721,7 +729,13 @@ export class GovernedAgentRuntime {
       correlationId: plannerRequest.trace.correlationId,
       userInput,
       assembledContext,
-      maxContextChunks: 24
+      maxContextChunks: 24,
+      availableTools: plannerRequest.availableTools.map((t) => ({
+        toolId: t.toolId,
+        version: t.version,
+        actionClass: t.actionClass,
+        sideEffectClass: t.sideEffectClass
+      }))
     });
     const result = await this.deps.plannerProvider.invokePlanner({
       plannerRequest,

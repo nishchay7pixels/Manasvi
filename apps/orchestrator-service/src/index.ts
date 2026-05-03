@@ -31,7 +31,7 @@ import { z } from "zod";
 import { loadOrchestratorServiceConfig } from "./config.js";
 import { AdapterBackedPlannerProvider, GovernedAgentRuntime } from "./agent-runtime.js";
 import { buildExecutionIntentFromPolicy } from "./intent-planner.js";
-import { buildHarnessEventResultRecord, buildModelInvocationRequest, type HarnessEventResultRecord } from "./model-integration.js";
+import { type HarnessEventResultRecord } from "./model-integration.js";
 import { queryPolicyForOrchestration } from "./policy-integration.js";
 
 function memoryRecordToContextSource(input: {
@@ -227,214 +227,85 @@ async function main(): Promise<void> {
     if (!payload.text || payload.text.length === 0) {
       throw new RetryableError("Empty text payload is retryable while upstream normalizer settles");
     }
-    const memoryCandidates: MemoryContextCandidatesResponse = await memoryClient.getContextCandidates({
-      schemaVersion: "1.0",
+    const run = await agentRuntime.runTurn({
       tenantId: event.tenantId,
       workspaceId: event.workspaceId,
-      actorPrincipal: principalContext.actor,
-      callerPrincipal: principalContext.caller,
-      ...(event.session.sessionId ? { sessionId: event.session.sessionId } : {}),
-      queryText: payload.text,
-      maxPerClass: 3,
-      trace: event.trace
-    }).catch(() => ({
-      schemaVersion: "1.0" as const,
-      records: [],
-      trace: event.trace
-    }));
-    const assembledContext = await contextAssembler.assembleForMessage({
-      message: {
-        messageId: event.eventId,
-        text: payload.text,
-        sender: event.actor,
-        trustClassification: event.trust.classification,
-        sourceRef: `event:${event.eventId}`,
-        createdAt: event.timestamp
-      },
-      sessionResolve: {
-        tenantId: event.tenantId,
-        workspaceId: event.workspaceId,
-        isolationMode: config.sessionDefaultIsolationMode,
-        sessionType: "channel_thread",
-        owner: event.actor,
-        createdBy: servicePrincipal,
-        participants: [event.channel],
-        ...(event.session.sessionId ? { explicitSessionId: event.session.sessionId } : {}),
-        channelBinding: {
-          channelPrincipal: event.channel,
-          ...(event.session.conversationId
-            ? { externalConversationId: event.session.conversationId }
-            : {}),
-          ...(event.session.turnId ? { externalThreadId: event.session.turnId } : {})
-        },
-        resolutionHint: `event:${event.eventId}`
-      },
+      messageText: payload.text,
+      principalContext,
       trace: {
         traceId: event.trace.traceId,
         correlationId: event.trace.correlationId,
         ...(event.trace.parentTraceId ? { parentTraceId: event.trace.parentTraceId } : {})
       },
-      systemInstructions: [
-        "Session is context hygiene only. Authorization still requires principal and policy.",
-        "User-facing responses must not include internal policy/trust/session/trace metadata unless explicitly requested."
-      ],
-      policyNotes: [`policy-decision:${decision.decision}:${decision.reasonCodes.join(",")}`],
-      additionalSources: memoryCandidates.records.map((record) =>
-        memoryRecordToContextSource({
-          record,
-          sessionId: event.session.sessionId ?? `session:pending:${event.eventId}`
-        })
-      ),
-      tokenBudget: config.sessionContextTokenBudget
+      ...(event.session.sessionId ? { sessionId: event.session.sessionId } : {}),
+      config: {
+        maxIterations: config.agentLoopMaxIterations,
+        maxConsecutiveFailures: config.agentLoopMaxConsecutiveFailures,
+        strictPlannerParsing: config.agentLoopStrictPlannerParsing
+      },
+      approvalSimulation: "pending"
     });
-    const modelRequest = buildModelInvocationRequest({
-      messageId: event.eventId,
+
+    const contextLoaded = run.transitions.find((transition) => transition.to === "context_loaded");
+    const contextTraceId =
+      contextLoaded && typeof contextLoaded.metadata.contextTraceId === "string"
+        ? contextLoaded.metadata.contextTraceId
+        : `ctx-trace:unavailable:${event.eventId}`;
+    const includedChunkCount =
+      contextLoaded && typeof contextLoaded.metadata.chunks === "number"
+        ? contextLoaded.metadata.chunks
+        : 0;
+    const lastPolicyObservation = [...run.observations]
+      .reverse()
+      .find((observation) => observation.type === "policy_decision");
+    const lastRuntimeFailure = [...run.observations]
+      .reverse()
+      .find((observation) => observation.type === "runtime_failure");
+    const policyDecision =
+      lastPolicyObservation && typeof lastPolicyObservation.data.decision === "string"
+        ? lastPolicyObservation.data.decision
+        : decision.decision;
+    const policyReasonCodes =
+      lastPolicyObservation && Array.isArray(lastPolicyObservation.data.reasonCodes)
+        ? lastPolicyObservation.data.reasonCodes.filter((value): value is string => typeof value === "string")
+        : decision.reasonCodes;
+    const runtimeFailureReason =
+      lastRuntimeFailure && typeof lastRuntimeFailure.data.reason === "string"
+        ? lastRuntimeFailure.data.reason
+        : undefined;
+    const errorMessage =
+      run.outcome.status === "completed"
+        ? undefined
+        : runtimeFailureReason
+          ? `${run.outcome.reasonCode ?? "RUNTIME_FAILURE"}: ${runtimeFailureReason}`
+          : run.outcome.reasonCode ?? run.outcome.responseText ?? `agent runtime ended with status ${run.outcome.status}`;
+
+    upsertHarnessEventResult({
+      eventId: event.eventId,
+      status: run.outcome.status === "completed" ? "completed" : "failed",
+      createdAt: run.createdAt,
+      completedAt: run.updatedAt,
+      ...(errorMessage ? { errorMessage } : {}),
+      ...(run.outcome.responseText ? { responseText: run.outcome.responseText } : {}),
       traceId: event.trace.traceId,
       correlationId: event.trace.correlationId,
-      userInput: payload.text,
-      assembledContext,
-      maxContextChunks: config.modelAdapterMaxContextChunks
+      sessionId: run.session.sessionId,
+      contextTraceId,
+      policyDecision,
+      policyReasonCodes,
+      ...(decision.auditRecordId ? { auditRecordId: decision.auditRecordId } : {}),
+      principal: {
+        callerPrincipalId: principalContext.caller.principalId,
+        actorPrincipalId: principalContext.actor.principalId
+      },
+      context: {
+        includedChunkCount,
+        excludedChunkCount: 0,
+        includedChunks: [],
+        trustClassifications: Array.from(new Set(run.observations.map((observation) => observation.trustClassification)))
+      }
     });
-    try {
-      const modelResponse = await modelAdapter.invoke(modelRequest);
-      await memoryClient.createRecord({
-        schemaVersion: "1.0",
-        memoryClass: "EPHEMERAL_SESSION",
-        namespace: buildTenantWorkspaceMemoryNamespace({
-          tenantId: event.tenantId,
-          workspaceId: event.workspaceId,
-          suffix: `session/${assembledContext.session.sessionId}`
-        }),
-        tenantId: event.tenantId,
-        workspaceId: event.workspaceId,
-        ownerPrincipal: principalContext.actor,
-        trustClassification: "USER_OWNED",
-        contentType: "text/plain",
-        content: {
-          text: payload.text,
-          data: {}
-        },
-        tags: ["session-message", "context-source"],
-        provenance: {
-          sourceType: "session-message",
-          sourceId: event.eventId,
-          sourceRef: `event:${event.eventId}`,
-          originatingPrincipal: principalContext.actor,
-          originatingService: "orchestrator-service",
-          createdAt: new Date().toISOString(),
-          linkedSessionId: assembledContext.session.sessionId,
-          linkedMessageId: event.eventId,
-          derivation: {
-            derived: false,
-            derivedFromRecordIds: [],
-            derivedFromSourceRefs: []
-          }
-        },
-        sourceReferences: [`event:${event.eventId}`],
-        trace: event.trace
-      }).catch(() => undefined);
-      await memoryClient.createRecord({
-        schemaVersion: "1.0",
-        memoryClass: "AUDIT_ACTION_HISTORY",
-        namespace: buildTenantWorkspaceMemoryNamespace({
-          tenantId: event.tenantId,
-          workspaceId: event.workspaceId,
-          suffix: `audit/${event.eventId}`
-        }),
-        tenantId: event.tenantId,
-        workspaceId: event.workspaceId,
-        ownerPrincipal: principalContext.actor,
-        trustClassification: "AUDIT_SECURITY",
-        contentType: "application/json",
-        content: {
-          data: {
-            modelProvider: modelResponse.provider,
-            model: modelResponse.model,
-            latencyMs: modelResponse.latencyMs,
-            policyDecision: decision.decision
-          }
-        },
-        tags: ["audit-linked", "model-response"],
-        provenance: {
-          sourceType: "audit-event-reference",
-          sourceId: event.eventId,
-          sourceRef: `event:${event.eventId}`,
-          originatingPrincipal: principalContext.actor,
-          originatingService: "orchestrator-service",
-          createdAt: new Date().toISOString(),
-          linkedSessionId: assembledContext.session.sessionId,
-          linkedMessageId: event.eventId,
-          linkedAuditRecordId: decision.auditRecordId,
-          derivation: {
-            derived: true,
-            derivationType: "execution-summary",
-            derivedFromRecordIds: [],
-            derivedFromSourceRefs: [`event:${event.eventId}`]
-          }
-        },
-        sourceReferences: [`audit:${decision.auditRecordId}`],
-        trace: event.trace
-      }).catch(() => undefined);
-      upsertHarnessEventResult(
-        buildHarnessEventResultRecord({
-          eventId: event.eventId,
-          assembledContext,
-          principalContext,
-          traceId: event.trace.traceId,
-          correlationId: event.trace.correlationId,
-          policyDecision: decision.decision,
-          policyReasonCodes: decision.reasonCodes,
-          auditRecordId: decision.auditRecordId,
-          modelResponse
-        })
-      );
-      console.log(
-        JSON.stringify({
-          timestamp: new Date().toISOString(),
-          level: "info",
-          service: "orchestrator-service",
-          message: "Model adapter generated response",
-          eventId: event.eventId,
-          mode: modelResponse.mode,
-          provider: modelResponse.provider,
-          model: modelResponse.model,
-          latencyMs: modelResponse.latencyMs,
-          sessionId: assembledContext.session.sessionId,
-          contextTraceId: assembledContext.trace.traceId,
-          traceId: event.trace.traceId,
-          correlationId: event.trace.correlationId
-        })
-      );
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "unknown model adapter error";
-      upsertHarnessEventResult(
-        buildHarnessEventResultRecord({
-          eventId: event.eventId,
-          assembledContext,
-          principalContext,
-          traceId: event.trace.traceId,
-          correlationId: event.trace.correlationId,
-          policyDecision: decision.decision,
-          policyReasonCodes: decision.reasonCodes,
-          auditRecordId: decision.auditRecordId,
-          errorMessage: message
-        })
-      );
-      console.error(
-        JSON.stringify({
-          timestamp: new Date().toISOString(),
-          level: "error",
-          service: "orchestrator-service",
-          message: "Model adapter invocation failed",
-          eventId: event.eventId,
-          error: message,
-          sessionId: assembledContext.session.sessionId,
-          contextTraceId: assembledContext.trace.traceId,
-          traceId: event.trace.traceId,
-          correlationId: event.trace.correlationId
-        })
-      );
-    }
+
     console.log(
       JSON.stringify({
         timestamp: new Date().toISOString(),
@@ -450,10 +321,11 @@ async function main(): Promise<void> {
         sourceId: event.source.sourceId,
         callerPrincipalId: principalContext.caller.principalId,
         actorPrincipalId: principalContext.actor.principalId,
-        sessionId: assembledContext.session.sessionId,
-        contextTraceId: assembledContext.trace.traceId,
-        includedChunkCount: assembledContext.chunks.length,
-        sessionRiskLevel: assembledContext.session.riskProfile.level,
+        sessionId: run.session.sessionId,
+        contextTraceId,
+        includedChunkCount,
+        runtimeState: run.state,
+        outcome: run.outcome.status,
         traceId: event.trace.traceId,
         correlationId: event.trace.correlationId,
         attempt: context.attempt

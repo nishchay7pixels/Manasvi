@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import type { AssembledContext, ContextChunk, ResolvedPrincipalContext } from "@manasvi/contracts";
-import type { ModelInvocationRequest, ModelInvocationResult } from "@manasvi/model-adapter";
+import type { AvailableToolSummary, ModelInvocationRequest, ModelInvocationResult } from "@manasvi/model-adapter";
 
 export interface HarnessEventResultRecord {
   eventId: string;
@@ -48,6 +48,7 @@ export function buildModelInvocationRequest(input: {
   userInput: string;
   assembledContext: AssembledContext;
   maxContextChunks: number;
+  availableTools?: AvailableToolSummary[];
 }): ModelInvocationRequest {
   const chunks = input.assembledContext.chunks.slice(-input.maxContextChunks);
   return {
@@ -57,7 +58,8 @@ export function buildModelInvocationRequest(input: {
     traceId: input.traceId,
     correlationId: input.correlationId,
     userInput: input.userInput,
-    contextChunks: chunks
+    contextChunks: chunks,
+    ...(input.availableTools ? { availableTools: input.availableTools } : {})
   };
 }
 

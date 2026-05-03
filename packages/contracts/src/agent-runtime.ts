@@ -211,10 +211,12 @@ export const agentRunRecordSchema = z.object({
 export type AgentRunRecord = z.infer<typeof agentRunRecordSchema>;
 
 export const plannerOutputEnvelopeSchema = z.object({
-  decisionType: z.enum(["final_response", "action_proposal", "clarification_request", "halt", "error"]),
+  decisionType: z.enum(["final_response", "action_proposal", "clarification_request", "clarification_needed", "halt", "error"]),
   responseText: z.string().optional(),
+  response: z.string().optional(),
   reasoningSummary: z.string().optional(),
   prompt: z.string().optional(),
+  clarificationPrompt: z.string().optional(),
   reasonCode: z.string().optional(),
   message: z.string().optional(),
   proposal: z
@@ -225,6 +227,7 @@ export const plannerOutputEnvelopeSchema = z.object({
       toolVersion: z.string().optional(),
       purpose: z.string().optional(),
       input: z.record(z.unknown()).optional(),
+      inputPayload: z.record(z.unknown()).optional(),
       expectedResource: z
         .object({
           resourceClass: z.string().min(1),
@@ -235,6 +238,7 @@ export const plannerOutputEnvelopeSchema = z.object({
       inferredActionClass: z.string().optional(),
       inferredSideEffectClass: z.string().optional(),
       riskHints: z.array(z.string()).optional(),
+      rationale: z.string().optional(),
       namespace: z.string().optional(),
       content: z.string().optional(),
       intentId: z.string().optional(),
@@ -246,10 +250,16 @@ export type PlannerOutputEnvelope = z.infer<typeof plannerOutputEnvelopeSchema>;
 
 export function parsePlannerDecisionEnvelope(input: unknown): PlannerDecision {
   const parsed = plannerOutputEnvelopeSchema.parse(input);
+  const normalizedDecisionType =
+    parsed.decisionType === "clarification_needed" ? "clarification_request" : parsed.decisionType;
   if (parsed.decisionType === "final_response") {
+    const responseText = parsed.responseText ?? parsed.response;
+    if (!responseText) {
+      throw new Error("planner final_response missing responseText");
+    }
     return plannerDecisionSchema.parse({
       decisionType: "final_response",
-      responseText: parsed.responseText,
+      responseText,
       reasoningSummary: parsed.reasoningSummary
     });
   }
@@ -258,6 +268,7 @@ export function parsePlannerDecisionEnvelope(input: unknown): PlannerDecision {
       throw new Error("planner proposal missing");
     }
     if (parsed.proposal.proposalType === "tool_invocation") {
+      const purpose = parsed.proposal.purpose ?? parsed.proposal.rationale;
       return plannerDecisionSchema.parse({
         decisionType: "action_proposal",
         proposal: {
@@ -265,8 +276,8 @@ export function parsePlannerDecisionEnvelope(input: unknown): PlannerDecision {
           proposalId: parsed.proposal.proposalId,
           toolId: parsed.proposal.toolId,
           toolVersion: parsed.proposal.toolVersion,
-          purpose: parsed.proposal.purpose,
-          input: parsed.proposal.input ?? {},
+          purpose,
+          input: parsed.proposal.input ?? parsed.proposal.inputPayload ?? {},
           expectedResource: parsed.proposal.expectedResource,
           confidence: parsed.proposal.confidence,
           inferredActionClass: parsed.proposal.inferredActionClass,
@@ -300,10 +311,14 @@ export function parsePlannerDecisionEnvelope(input: unknown): PlannerDecision {
       reasoningSummary: parsed.reasoningSummary
     });
   }
-  if (parsed.decisionType === "clarification_request") {
+  if (normalizedDecisionType === "clarification_request") {
+    const prompt = parsed.prompt ?? parsed.clarificationPrompt;
+    if (!prompt) {
+      throw new Error("planner clarification request missing prompt");
+    }
     return plannerDecisionSchema.parse({
       decisionType: "clarification_request",
-      prompt: parsed.prompt,
+      prompt,
       reasoningSummary: parsed.reasoningSummary
     });
   }

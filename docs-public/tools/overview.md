@@ -16,14 +16,87 @@ This is not a plugin registry with raw capabilities. It is a governed toolset wh
 
 ## Built-in tools at a glance
 
+Manasvi ships with **30 built-in tools** across 10 categories.
+
+### Filesystem
+
 | Tool ID | Name | Risk | Approval | What it does |
 |---|---|---|---|---|
-| `tool.local-file-read` | Local File Read | Low | Not required | Reads a local file in the sandbox |
+| `tool.local-file-read` | Local File Read | Low | Not required | Reads a file in the sandbox |
+| `tool.file-write` | File Write | Medium | May require | Creates or overwrites a file in the write zone |
+| `tool.file-edit` | File Edit | Medium | May require | Targeted string replacement in an existing file |
+| `tool.file-apply-patch` | File Apply Patch | High | Must require | Applies a unified-diff patch to workspace files |
+
+### Web
+
+| Tool ID | Name | Risk | Approval | What it does |
+|---|---|---|---|---|
 | `tool.http-fetch` | HTTP Fetch | Medium | May require | Fetches a remote URL under egress policy |
 | `tool.web-search` | Web Search | Medium | May require | Web search with structured results |
+| `tool.x-search` | X Search | Medium | May require | Searches X (Twitter) via the X API adapter |
+
+### Memory
+
+| Tool ID | Name | Risk | Approval | What it does |
+|---|---|---|---|---|
 | `tool.memory-note-write` | Note Write | Medium | May require | Writes a note to a memory namespace |
+| `tool.memory-search` | Memory Search | Low | Not required | Searches a memory namespace for matching notes |
+| `tool.memory-get` | Memory Get | Low | Not required | Retrieves a specific memory record by ID |
+
+### Runtime / Execution
+
+| Tool ID | Name | Risk | Approval | What it does |
+|---|---|---|---|---|
+| `tool.exec` | Exec | High | Must require | Governed command execution in a sandbox |
+| `tool.process` | Process | High | Must require | Inspect or signal sandbox processes |
+| `tool.code-execution` | Code Execution | High | Must require | Runs code text in a managed language runtime |
+| `tool.bash` | Bash | High | Must require | Runs a bash script through the governed runtime |
+| `tool.shell-command` | Shell Command | High | Must require | Bounded shell execution with explicit allowlist |
+
+### Sessions / Subagents
+
+| Tool ID | Name | Risk | Approval | What it does |
+|---|---|---|---|---|
+| `tool.sessions-list` | Sessions List | Low | Not required | Lists sessions visible to the caller |
+| `tool.sessions-history` | Sessions History | Low | Not required | Reads message history of a session |
+| `tool.session-status` | Session Status | Low | Not required | Returns status and metadata for a session |
+| `tool.sessions-send` | Sessions Send | Medium | May require | Sends a message into an active session |
+| `tool.sessions-yield` | Sessions Yield | Medium | May require | Yields a result payload to a parent session |
+| `tool.sessions-spawn` | Sessions Spawn | High | Must require | Creates a new session or sub-session |
+| `tool.subagents` | Subagents | High | Must require | Spawns and manages subordinate agents |
+
+### UI
+
+| Tool ID | Name | Risk | Approval | What it does |
+|---|---|---|---|---|
+| `tool.canvas` | Canvas | Medium | May require | Renders structured content to the dashboard canvas |
+| `tool.browser` | Browser | High | Must require | Controls a headless browser session |
+
+### Automation
+
+| Tool ID | Name | Risk | Approval | What it does |
+|---|---|---|---|---|
+| `tool.cron` | Cron | High | Must require | Manages scheduled cron jobs |
+| `tool.gateway` | Gateway | High | Must require | Invokes operator-registered gateway endpoints |
+
+### Messaging
+
+| Tool ID | Name | Risk | Approval | What it does |
+|---|---|---|---|---|
+| `tool.message` | Message | Medium | May require | Sends to an operator-registered channel |
+
+### Nodes
+
+| Tool ID | Name | Risk | Approval | What it does |
+|---|---|---|---|---|
+| `tool.nodes` | Nodes | Low | Not required | Inspects the distributed node manager |
+
+### Workflow
+
+| Tool ID | Name | Risk | Approval | What it does |
+|---|---|---|---|---|
 | `tool.approval-request` | Approval Request | High | Must require | Routes an action to a human reviewer |
-| `tool.shell-command` | Shell Command | High | Must require | Bounded shell execution (not in default set) |
+| `tool.agents-list` | Agents List | Low | Not required | Lists available agent definitions |
 
 ---
 
@@ -49,18 +122,22 @@ Every step is logged and traceable. No step can be bypassed.
 
 ## Trust classification on tool output
 
-Tool output is always externally-sourced and is classified appropriately:
+Tool output is always classified. Manasvi never auto-promotes trust.
 
-| Tool | Output trust class |
-|---|---|
-| `tool.local-file-read` | `EXTERNAL_UNTRUSTED` |
-| `tool.http-fetch` | `EXTERNAL_UNTRUSTED` |
-| `tool.web-search` | `EXTERNAL_UNTRUSTED` |
-| `tool.memory-note-write` | Preserves the trust class of the written content |
-| `tool.approval-request` | `CONTROL_TRUSTED` (workflow artifact) |
-| `tool.shell-command` | `EXTERNAL_UNTRUSTED` |
+| Category | Tools | Output trust class |
+|---|---|---|
+| Filesystem | `local-file-read`, `file-write`, `file-edit`, `file-apply-patch` | `EXTERNAL_UNTRUSTED` |
+| Web | `http-fetch`, `web-search`, `x-search` | `EXTERNAL_UNTRUSTED` |
+| Runtime | `exec`, `bash`, `code-execution`, `process`, `shell-command` | `EXTERNAL_UNTRUSTED` |
+| Memory write | `memory-note-write` | Preserves the trust class supplied by the caller |
+| Memory read | `memory-search`, `memory-get` | Per-record, as written (never silently promoted) |
+| Sessions | `sessions-list`, `sessions-history`, `session-status` | `EXTERNAL_UNTRUSTED` |
+| UI | `browser` | `EXTERNAL_UNTRUSTED` |
+| Web/social | `x-search` | `EXTERNAL_UNTRUSTED` |
+| Workflow | `approval-request` | `CONTROL_TRUSTED` (artifact) |
+| Messaging | `message` | n/a (send-only) |
 
-**Manasvi does not auto-promote tool output trust.** An agent cannot use untrusted file content or web results to make control-plane decisions without explicit operator promotion.
+**Manasvi does not auto-promote tool output trust.** An agent cannot use untrusted content to make control-plane decisions without explicit operator promotion.
 
 ---
 
@@ -69,11 +146,30 @@ Tool output is always externally-sourced and is classified appropriately:
 | Tool | Sandbox mode | Network | Filesystem |
 |---|---|---|---|
 | `tool.local-file-read` | `read_only_local` | blocked | read-only inputs |
+| `tool.file-write` | `no_network_compute` | blocked | scratch write |
+| `tool.file-edit` | `no_network_compute` | blocked | scratch write |
+| `tool.file-apply-patch` | `no_network_compute` | blocked | privileged bounded |
 | `tool.http-fetch` | `restricted_remote` | allowlist only | none |
 | `tool.web-search` | `restricted_remote` | allowlist only | none |
+| `tool.x-search` | `restricted_remote` | allowlist only | none |
 | `tool.memory-note-write` | `read_only_local` | blocked | scratch write |
+| `tool.memory-search` | `read_only_local` | blocked | none |
+| `tool.memory-get` | `read_only_local` | blocked | none |
 | `tool.approval-request` | `read_only_local` | blocked | none |
 | `tool.shell-command` | `no_network_compute` | blocked | scratch write |
+| `tool.exec` | `no_network_compute` | blocked | scratch write |
+| `tool.bash` | `no_network_compute` | blocked | scratch write |
+| `tool.code-execution` | `no_network_compute` | blocked | scratch write |
+| `tool.process` | `no_network_compute` | blocked | none |
+| `tool.sessions-*` | `restricted_remote` | none | none |
+| `tool.subagents` | `restricted_remote` | none | none |
+| `tool.agents-list` | `restricted_remote` | none | none |
+| `tool.nodes` | `restricted_remote` | none | none |
+| `tool.canvas` | `restricted_remote` | none | none |
+| `tool.browser` | `privileged_operator_approved` | allowlist only | none |
+| `tool.cron` | `restricted_remote` | none | none |
+| `tool.gateway` | `privileged_operator_approved` | allowlist only | none |
+| `tool.message` | `restricted_remote` | allowlist only | none |
 
 ---
 
@@ -123,11 +219,24 @@ If a policy rule is missing, the tool invocation returns `POLICY_DENIED` with re
 
 ## Tool reference docs
 
+### Core tools (B4)
 - [Local File Read](./local-file-read.md)
 - [HTTP Fetch](./http-fetch.md)
 - [Web Search](./web-search.md)
 - [Note Write](./note-write.md)
 - [Approval Request](./approval-request.md)
+
+### New tools (B5)
+- [Runtime Tools — exec, process, code-execution, bash](./runtime-tools.md)
+- [Filesystem Write Tools — file-write, file-edit, file-apply-patch](./filesystem-write-tools.md)
+- [Session Tools — sessions-list/history/send/spawn/yield, subagents, session-status](./session-tools.md)
+- [Memory Tools — memory-search, memory-get](./memory-tools.md)
+- [X Search](./x-search.md)
+- [UI Tools — browser, canvas](./ui-tools.md)
+- [Automation Tools — cron, gateway](./automation-tools.md)
+- [Message, Nodes, and Agents List](./message-nodes-agents.md)
+
+### Reference
 - [Default Tool Sets](./default-sets.md)
 - [Demo Flows](./demo-flows.md)
 - [Troubleshooting](./troubleshooting.md)
