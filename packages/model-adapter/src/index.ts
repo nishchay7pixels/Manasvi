@@ -348,7 +348,8 @@ function buildSystemInstruction(): string {
     '{"decisionType":"clarification_request","prompt":"<question to ask the user>"}',
     "",
     "## Rules",
-    "- If the user explicitly asks to use a specific tool, you MUST return decisionType=action_proposal with proposalType=tool_invocation for that tool.",
+    "- If the Context contains a completed tool result (source=tool-result with executionStatus=completed), that tool has already run. Use the output to compose your final_response immediately. Do NOT propose the same tool again.",
+    "- If the user explicitly asks to read a file or use a specific tool AND there is no completed tool result in the context for it yet, return decisionType=action_proposal.",
     "- Use a tool when the user needs real-time data, file content, web search results, or any action you cannot answer from memory alone.",
     "- Only use tool IDs from the Available Tools list. Never invent tool IDs.",
     "- Keep user-facing wording concise and direct. Default to one short answer unless the user asks for detail.",
@@ -387,7 +388,10 @@ function buildUserPrompt(input: ModelInvocationRequest): string {
         `[trust=${chunk.provenance.trustClassification}]`,
         content
       ].join(" ");
-      return truncateForEcho(line, 240);
+      // Tool results need enough room to include the actual output content.
+      // Other control/metadata chunks stay short to avoid crowding the prompt.
+      const maxLen = chunk.provenance.sourceType === "tool-result" ? 3000 : 240;
+      return truncateForEcho(line, maxLen);
     })
     .join("\n");
 
