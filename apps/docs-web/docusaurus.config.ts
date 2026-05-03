@@ -84,6 +84,11 @@ const config: Config = {
           label: "Security"
         },
         {
+          to: "/docs/tools/overview",
+          position: "left",
+          label: "Tools"
+        },
+        {
           href: "https://github.com/nishchay7pixels/manasvi",
           label: "GitHub",
           position: "right"
@@ -111,6 +116,15 @@ const config: Config = {
             { label: "Architecture", to: "/docs/architecture/overview" },
             { label: "Security", to: "/docs/security/philosophy" },
             { label: "Why Manasvi", to: "/docs/why-manasvi/not-just-a-chatbot" }
+          ]
+        },
+        {
+          title: "Tools",
+          items: [
+            { label: "Tools Overview", to: "/docs/tools/overview" },
+            { label: "Default Tool Sets", to: "/docs/tools/default-sets" },
+            { label: "Demo Flows", to: "/docs/tools/demo-flows" },
+            { label: "Invocation Reference", to: "/docs/tools/tool-invocation-reference" }
           ]
         },
         {

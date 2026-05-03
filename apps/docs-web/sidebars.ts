@@ -46,6 +46,45 @@ const sidebars: SidebarsConfig = {
         "setup/local-setup",
         "setup/environment-variables"
       ]
+    },
+    {
+      type: "category",
+      label: "Tools",
+      collapsed: true,
+      items: [
+        "tools/overview",
+        "tools/default-sets",
+        "tools/demo-flows",
+        "tools/tool-invocation-reference",
+        {
+          type: "category",
+          label: "Core Tools",
+          collapsed: true,
+          items: [
+            "tools/local-file-read",
+            "tools/http-fetch",
+            "tools/web-search",
+            "tools/note-write",
+            "tools/approval-request"
+          ]
+        },
+        {
+          type: "category",
+          label: "Extended Tools",
+          collapsed: true,
+          items: [
+            "tools/runtime-tools",
+            "tools/filesystem-write-tools",
+            "tools/session-tools",
+            "tools/memory-tools",
+            "tools/x-search",
+            "tools/ui-tools",
+            "tools/automation-tools",
+            "tools/message-nodes-agents"
+          ]
+        },
+        "tools/troubleshooting"
+      ]
     }
   ],
 

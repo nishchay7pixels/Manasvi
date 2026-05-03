@@ -43,7 +43,7 @@ const HOW_IT_WORKS = [
   {
     step: "1",
     title: "Connect",
-    desc: "Choose a model — Ollama for local inference, or OpenAI for cloud. Add a channel: Telegram, Slack, or the built-in terminal. Takes about 5 minutes."
+    desc: "Choose a model — DeepSeek (default), Ollama for local inference, or OpenAI/Claude for cloud. Add a channel: Telegram, Slack, or the built-in terminal. Takes about 5 minutes."
   },
   {
     step: "2",

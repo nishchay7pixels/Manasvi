@@ -8,7 +8,7 @@ description: What is Manasvi and why does it exist?
 
 ## What is Manasvi?
 
-Manasvi is an AI agent you can run locally. Connect it to a model — Ollama, OpenAI, or a test adapter. Connect it to a channel — Telegram, Slack, or a terminal. Let it use tools. Keep full control of every action.
+Manasvi is an AI agent you can run locally. Connect it to a model — **DeepSeek** (the default), Ollama for local inference, OpenAI, Claude, or a test adapter. Connect it to a channel — Telegram, Slack, or a terminal. Let it use tools. Keep full control of every action.
 
 The agent can search the web, read files, call APIs, run commands. But it doesn't do any of that directly. Every proposed action goes through a **policy engine** that decides what's allowed. Sensitive actions go through an **approval flow** before they execute. Every outcome is recorded in an **audit trail**.
 
@@ -19,6 +19,7 @@ That's the core idea: a capable agent with governance built in — not bolted on
 ## What can you do with it?
 
 - Chat with your agent through **Telegram**, **Slack**, or the built-in terminal
+- Use **DeepSeek** (default) — fast, cost-effective cloud inference with `deepseek-v4-flash`
 - Run a **local model with Ollama** — free, private, no API costs
 - Or use **OpenAI** (GPT-4o, etc.) or **Claude** for cloud-based inference
 - Give the agent access to **governed built-in tools**:

@@ -118,7 +118,7 @@ pnpm manasvi tools inspect tool.web-search
 7. Results returned: `[{ title: "Berlin", url: "...", snippet: "Berlin is the capital..." }]`
 8. Agent uses the result as external reference with provenance note
 
-See [Demo Flows](./demo-flows.md#demo-flow-b--web-search) for a full walkthrough.
+See [Demo Flows](./demo-flows.md#demo-flow-b2--web-search) for a full walkthrough.
 
 ---
 
