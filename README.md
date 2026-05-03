@@ -44,12 +44,37 @@ Run `pnpm manasvi --help` for the full command tree.
 
 Manasvi supports:
 
+- **DeepSeek** — default cloud provider (`deepseek-v4-flash`)
 - **Ollama** — run models locally (`ollama serve` + `ollama pull llama3.2`)
 - **OpenAI** — use GPT models via API key
 - **Claude (Anthropic)** — use Claude models via Anthropic API key
 - **Mock** — simulated responses for testing
 
 Configure via `pnpm manasvi models add` or during `pnpm manasvi onboard`.
+
+## Default Model Provider
+
+Manasvi uses DeepSeek as the default model provider.
+
+Default model:
+
+```txt
+deepseek-v4-flash
+```
+
+Set your API key:
+
+```bash
+export DEEPSEEK_API_KEY=\"your_api_key_here\"
+```
+
+Optional overrides:
+
+```bash
+export MANASVI_MODEL_PROVIDER=\"deepseek\"
+export MANASVI_MODEL=\"deepseek-v4-flash\"
+export DEEPSEEK_BASE_URL=\"https://api.deepseek.com\"
+```
 
 ## Channels
 

@@ -9,7 +9,7 @@ import { join } from "node:path";
 import { banner, section, checkRow, warn, success, info, hint, error as printError } from "../lib/ui.js";
 import { loadConfig, cliHomePath } from "../lib/config.js";
 import { fileExists, envFilePath, readEnvFile } from "../lib/env.js";
-import { checkAllServices, checkAnthropic, checkOllama, checkOpenAI, isPortInUse } from "../lib/health.js";
+import { checkAllServices, checkAnthropic, checkDeepSeek, checkOllama, checkOpenAI, isPortInUse } from "../lib/health.js";
 
 type CheckStatus = "pass" | "warn" | "fail" | "skip";
 
@@ -89,12 +89,28 @@ async function runChecks(config: Awaited<ReturnType<typeof loadConfig>>): Promis
     });
 
     // Model config
-    const modelMode = env.MODEL_ADAPTER_MODE ?? "mock";
+    const modelMode = env.MODEL_ADAPTER_MODE ?? env.MANASVI_MODEL_PROVIDER ?? "deepseek";
+    const modelName = env.PLANNER_MODEL ?? env.MANASVI_MODEL ?? "deepseek-v4-flash";
     checks.push({
-      label: "Model adapter configured",
+      label: "Model provider",
       status: "pass",
       detail: modelMode
     });
+    checks.push({
+      label: "Model",
+      status: "pass",
+      detail: modelName
+    });
+
+    if (modelMode === "deepseek") {
+      const hasKey = env.DEEPSEEK_API_KEY && env.DEEPSEEK_API_KEY !== "replace-me";
+      checks.push({
+        label: "DeepSeek API key",
+        status: hasKey ? "pass" : "fail",
+        detail: hasKey ? "configured" : "missing",
+        fix: hasKey ? undefined : "Fix: set DEEPSEEK_API_KEY"
+      });
+    }
 
     if (modelMode === "openai") {
       const hasKey = env.OPENAI_API_KEY && env.OPENAI_API_KEY !== "replace-me";
@@ -247,6 +263,25 @@ async function runChecks(config: Awaited<ReturnType<typeof loadConfig>>): Promis
         status: claudeOk ? "pass" : "fail",
         detail: config.model.claudeBaseUrl,
         fix: claudeOk ? undefined : "Verify ANTHROPIC_API_KEY and network access"
+      });
+    }
+  }
+  if (config.model.provider === "deepseek") {
+    const env = await readEnvFile(envPath);
+    const key = env.DEEPSEEK_API_KEY ?? "";
+    if (!key || key === "replace-me") {
+      checks.push({
+        label: "DeepSeek API key",
+        status: "fail",
+        fix: "Fix: set DEEPSEEK_API_KEY"
+      });
+    } else {
+      const deepseekOk = await checkDeepSeek(config.model.deepseekBaseUrl, key);
+      checks.push({
+        label: "DeepSeek reachable",
+        status: deepseekOk ? "pass" : "fail",
+        detail: config.model.deepseekBaseUrl,
+        fix: deepseekOk ? undefined : "Verify DEEPSEEK_API_KEY, DEEPSEEK_BASE_URL, and network access"
       });
     }
   }

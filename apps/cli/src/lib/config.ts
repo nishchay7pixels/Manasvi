@@ -10,7 +10,7 @@ import { fileExists } from "./env.js";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
-export type ModelProvider = "ollama" | "openai" | "claude" | "mock";
+export type ModelProvider = "deepseek" | "ollama" | "openai" | "claude" | "mock";
 export type ChannelMode = "polling" | "webhook";
 
 export interface ManasviConfig {
@@ -21,6 +21,8 @@ export interface ManasviConfig {
   onboarded: boolean;
   model: {
     provider: ModelProvider;
+    deepseekBaseUrl: string;
+    deepseekModel: string;
     ollamaBaseUrl: string;
     ollamaModel: string;
     openaiBaseUrl: string;
@@ -65,7 +67,9 @@ export function defaultConfig(projectPath: string): ManasviConfig {
     initialized: false,
     onboarded: false,
     model: {
-      provider: "mock",
+      provider: "deepseek",
+      deepseekBaseUrl: "https://api.deepseek.com",
+      deepseekModel: "deepseek-v4-flash",
       ollamaBaseUrl: "http://localhost:11434/v1",
       ollamaModel: "llama3.2",
       openaiBaseUrl: "https://api.openai.com/v1",

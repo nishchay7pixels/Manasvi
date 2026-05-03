@@ -153,9 +153,11 @@ async function main(): Promise<void> {
     timeoutMs: config.modelAdapterTimeoutMs,
     ...(config.openAiApiKey ? { openAiApiKey: config.openAiApiKey } : {}),
     ...(config.anthropicApiKey ? { anthropicApiKey: config.anthropicApiKey } : {}),
+    ...(config.deepseekApiKey ? { deepseekApiKey: config.deepseekApiKey } : {}),
     openAiBaseUrl: config.openAiBaseUrl,
     ollamaBaseUrl: config.ollamaBaseUrl,
-    anthropicBaseUrl: config.anthropicBaseUrl
+    anthropicBaseUrl: config.anthropicBaseUrl,
+    deepseekBaseUrl: config.deepseekBaseUrl
   });
   const harnessEventResults = new Map<string, HarnessEventResultRecord>();
   const executionIntents = new Map<string, z.infer<typeof executionIntentSchema>>();

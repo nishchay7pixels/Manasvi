@@ -60,7 +60,7 @@ pnpm manasvi onboard [--yes] [--provider <name>]
 ```
 
 Walks through:
-1. Model provider selection (mock / ollama / openai / claude)
+1. Model provider selection (deepseek / mock / ollama / openai / claude)
 2. Channel setup (telegram / slack)
 3. Docs UI preferences
 
@@ -69,7 +69,7 @@ Walks through:
 | Flag | Description |
 |------|-------------|
 | `--yes` / `-y` | Accept all defaults, skip prompts |
-| `--provider <name>` | Pre-select model provider (`mock`, `ollama`, `openai`, `claude`) |
+| `--provider <name>` | Pre-select model provider (`deepseek`, `mock`, `ollama`, `openai`, `claude`) |
 
 ---
 
@@ -181,7 +181,7 @@ Checks:
 - Required secrets in `.env.local`
 - Port availability for all nine services
 - Service health (if running)
-- Model backend connectivity (Ollama, OpenAI, or Claude reachability)
+- Model backend connectivity (DeepSeek, Ollama, OpenAI, or Claude reachability)
 
 Each check is labeled pass / warn / fail with a suggested fix.
 

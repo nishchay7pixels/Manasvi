@@ -118,6 +118,18 @@ export async function checkOpenAI(baseUrl: string, apiKey: string): Promise<bool
   }
 }
 
+export async function checkDeepSeek(baseUrl: string, apiKey: string): Promise<boolean> {
+  try {
+    const res = await fetch(`${baseUrl.replace(/\/$/, "")}/models`, {
+      headers: { Authorization: `Bearer ${apiKey}` },
+      signal: AbortSignal.timeout(5000)
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Check if Anthropic API key works.
  */

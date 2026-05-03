@@ -15,6 +15,7 @@ Manasvi uses a language model to generate responses and decide when to use tools
 | Mode | Provider | Requires | Best for |
 |------|----------|----------|----------|
 | `mock` | Built-in test adapter | Nothing | Development, testing |
+| `deepseek` | DeepSeek API | API key | Default cloud provider |
 | `ollama` | Ollama (local) | Ollama installed | Privacy, local inference, no API costs |
 | `openai` | OpenAI API | API key | Cloud-based models (GPT-4o, etc.) |
 | `claude` | Anthropic Claude | API key | Cloud-based Claude models |
@@ -38,6 +39,8 @@ Shows your configured providers and which one is active.
 ```bash
 pnpm manasvi models add ollama
 # or
+pnpm manasvi models add deepseek
+# or
 pnpm manasvi models add openai
 # or
 pnpm manasvi models add claude
@@ -54,6 +57,8 @@ Sends a test request to verify connectivity.
 ```bash
 pnpm manasvi models use ollama
 # or
+pnpm manasvi models use deepseek
+# or
 pnpm manasvi models use openai
 # or
 pnpm manasvi models use claude
@@ -65,9 +70,29 @@ Switches the active provider. Then run `pnpm manasvi restart` to apply changes t
 
 ---
 
-## Mock adapter (default)
+## DeepSeek (default)
 
-The mock adapter returns predictable test responses without connecting to any AI provider. Manasvi starts in mock mode after `pnpm manasvi init` — you don't need to configure anything to explore the system.
+DeepSeek is the default model provider.
+
+```bash
+pnpm manasvi models add deepseek
+```
+
+Or manually in `.env.local`:
+
+```ini
+MANASVI_MODEL_PROVIDER=deepseek
+MANASVI_MODEL=deepseek-v4-flash
+MODEL_ADAPTER_MODE=deepseek
+PLANNER_MODEL=deepseek-v4-flash
+DEEPSEEK_API_KEY=your-key-here
+DEEPSEEK_BASE_URL=https://api.deepseek.com
+DEEPSEEK_TIMEOUT_MS=60000
+```
+
+## Mock adapter
+
+The mock adapter returns predictable test responses without connecting to any AI provider.
 
 Useful for:
 - Verifying the full pipeline works end-to-end before setting up a real model
@@ -185,10 +210,10 @@ These settings apply to all providers:
 
 ```ini
 # How long to wait for the model (milliseconds)
-MODEL_ADAPTER_TIMEOUT_MS=20000
+MODEL_ADAPTER_TIMEOUT_MS=60000
 
 # Maximum context chunks fed to the model
 MODEL_ADAPTER_MAX_CONTEXT_CHUNKS=24
 ```
 
-The timeout default is 20 seconds. Increase it if you're using a slow local model or a heavily loaded API.
+The timeout default is 60 seconds. Increase it if you're using a slow local model or a heavily loaded API.

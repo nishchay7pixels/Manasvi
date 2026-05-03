@@ -2,11 +2,11 @@
  * manasvi models <list|add|remove|test|use>
  */
 
-import { banner, section, info, success, warn, hint, table, step, style } from "../lib/ui.js";
-import { select, input, secret, confirm } from "../lib/prompt.js";
+import { banner, section, info, success, warn, hint, style } from "../lib/ui.js";
+import { select, input, secret } from "../lib/prompt.js";
 import { loadConfig, saveConfig, type ModelProvider } from "../lib/config.js";
 import { envFilePath, mergeEnvFile, readEnvFile } from "../lib/env.js";
-import { checkAnthropic, checkOllama, checkOpenAI, listAnthropicModels } from "../lib/health.js";
+import { checkAnthropic, checkDeepSeek, checkOllama, checkOpenAI, listAnthropicModels } from "../lib/health.js";
 
 export async function runModelsList(): Promise<void> {
   banner("models");
@@ -20,6 +20,11 @@ export async function runModelsList(): Promise<void> {
   section("Configured providers");
 
   const rows = [
+    {
+      label: "DeepSeek (cloud)",
+      value: `${config.model.deepseekModel} @ ${config.model.deepseekBaseUrl}`,
+      status: config.model.provider === "deepseek" ? "ok" : "dim"
+    },
     {
       label: "Ollama (local)",
       value: `${config.model.ollamaModel} @ ${config.model.ollamaBaseUrl}`,
@@ -49,7 +54,7 @@ export async function runModelsList(): Promise<void> {
 
   console.log();
   info(`Active: ${config.model.provider}`);
-  hint("Change with: pnpm manasvi models use <ollama|openai|claude|mock>");
+  hint("Change with: pnpm manasvi models use <deepseek|ollama|openai|claude|mock>");
   console.log();
 }
 
@@ -66,10 +71,38 @@ export async function runModelsAdd(provider?: string): Promise<void> {
 
   if (!provider) {
     provider = await select("Which provider to configure?", [
+      { value: "deepseek", label: "DeepSeek", description: "cloud API" },
       { value: "ollama", label: "Ollama", description: "local model runner" },
       { value: "openai", label: "OpenAI", description: "cloud API" },
       { value: "claude", label: "Claude", description: "Anthropic cloud API" }
     ]);
+  }
+
+  if (provider === "deepseek") {
+    const existingEnv = await readEnvFile(envPath);
+    const existing = existingEnv.DEEPSEEK_API_KEY ?? "";
+    const apiKey = existing || (await secret("DeepSeek API key"));
+    const baseUrl = await input("DeepSeek base URL", config.model.deepseekBaseUrl);
+    const modelName = await input("Model name", config.model.deepseekModel);
+
+    const ok = await checkDeepSeek(baseUrl, apiKey);
+    if (ok) {
+      success("DeepSeek API key validated");
+    } else {
+      warn("Could not validate API key — check the key and try again");
+    }
+
+    config.model.deepseekBaseUrl = baseUrl;
+    config.model.deepseekModel = modelName;
+    await saveConfig(config);
+    await mergeEnvFile(
+      envPath,
+      { DEEPSEEK_API_KEY: apiKey, DEEPSEEK_BASE_URL: baseUrl },
+      { force: ["DEEPSEEK_API_KEY", "DEEPSEEK_BASE_URL"] }
+    );
+
+    success(`DeepSeek configured: ${modelName}`);
+    hint("Set as active: pnpm manasvi models use deepseek");
   }
 
   if (provider === "ollama") {
@@ -168,7 +201,13 @@ export async function runModelsTest(): Promise<void> {
   const provider = config.model.provider;
   info(`Testing ${provider}…`);
 
-  if (provider === "ollama") {
+  if (provider === "deepseek") {
+    const env = await readEnvFile(envFilePath(config.projectPath));
+    const key = env.DEEPSEEK_API_KEY ?? "";
+    if (!key) { warn("DEEPSEEK_API_KEY not set"); return; }
+    const ok = await checkDeepSeek(config.model.deepseekBaseUrl, key);
+    ok ? success("DeepSeek API key is valid") : warn("DeepSeek API key validation failed");
+  } else if (provider === "ollama") {
     const ok = await checkOllama(config.model.ollamaBaseUrl);
     ok ? success("Ollama is reachable") : warn("Ollama is not reachable at " + config.model.ollamaBaseUrl);
   } else if (provider === "openai") {
@@ -198,6 +237,7 @@ export async function runModelsUse(provider?: string): Promise<void> {
 
   if (!provider) {
     provider = await select("Select active model provider:", [
+      { value: "deepseek", label: "DeepSeek (cloud)" },
       { value: "ollama", label: "Ollama (local)" },
       { value: "openai", label: "OpenAI (cloud)" },
       { value: "claude", label: "Claude (Anthropic)" },
@@ -205,9 +245,9 @@ export async function runModelsUse(provider?: string): Promise<void> {
     ]);
   }
 
-  const validProviders = ["ollama", "openai", "claude", "mock"];
+  const validProviders = ["deepseek", "ollama", "openai", "claude", "mock"];
   if (!validProviders.includes(provider)) {
-    warn(`Unknown provider: ${provider}. Valid: ollama, openai, claude, mock`);
+    warn(`Unknown provider: ${provider}. Valid: deepseek, ollama, openai, claude, mock`);
     return;
   }
 
@@ -216,20 +256,31 @@ export async function runModelsUse(provider?: string): Promise<void> {
 
   const envPath = envFilePath(config.projectPath);
   const envUpdates: Record<string, string> = {
-    MODEL_ADAPTER_MODE: provider
+    MODEL_ADAPTER_MODE: provider,
+    MANASVI_MODEL_PROVIDER: provider
   };
+
+  if (provider === "deepseek") {
+    envUpdates.PLANNER_MODEL = config.model.deepseekModel;
+    envUpdates.MANASVI_MODEL = config.model.deepseekModel;
+    envUpdates.DEEPSEEK_BASE_URL = config.model.deepseekBaseUrl;
+  }
   if (provider === "ollama") {
     envUpdates.PLANNER_MODEL = config.model.ollamaModel;
+    envUpdates.MANASVI_MODEL = config.model.ollamaModel;
     envUpdates.OLLAMA_BASE_URL = config.model.ollamaBaseUrl;
   }
   if (provider === "openai") {
     envUpdates.PLANNER_MODEL = config.model.openaiModel;
+    envUpdates.MANASVI_MODEL = config.model.openaiModel;
     envUpdates.OPENAI_BASE_URL = config.model.openaiBaseUrl;
   }
   if (provider === "claude") {
     envUpdates.PLANNER_MODEL = config.model.claudeModel;
+    envUpdates.MANASVI_MODEL = config.model.claudeModel;
     envUpdates.ANTHROPIC_BASE_URL = config.model.claudeBaseUrl;
   }
+
   await mergeEnvFile(envPath, envUpdates, { force: Object.keys(envUpdates) });
 
   success(`Active model provider: ${provider}`);

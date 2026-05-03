@@ -237,6 +237,7 @@ If a policy rule is missing, the tool invocation returns `POLICY_DENIED` with re
 - [Message, Nodes, and Agents List](./message-nodes-agents.md)
 
 ### Reference
+- [Tool Invocation Reference](./tool-invocation-reference.md) — all 30 tools with prompts and expected outputs
 - [Default Tool Sets](./default-sets.md)
 - [Demo Flows](./demo-flows.md)
 - [Troubleshooting](./troubleshooting.md)

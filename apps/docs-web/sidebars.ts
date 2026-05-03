@@ -22,6 +22,7 @@ const sidebars: SidebarsConfig = {
       label: "Models",
       collapsed: false,
       items: [
+        "setup/connect-deepseek",
         "setup/connect-ollama",
         "setup/connect-claude",
         "setup/connect-model"

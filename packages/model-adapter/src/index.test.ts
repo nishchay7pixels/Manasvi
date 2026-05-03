@@ -43,7 +43,8 @@ test("auto mode falls back to mock without provider key", async () => {
     timeoutMs: 1_000,
     openAiBaseUrl: "https://api.openai.com/v1",
     ollamaBaseUrl: "http://localhost:11434/v1",
-    anthropicBaseUrl: "https://api.anthropic.com"
+    anthropicBaseUrl: "https://api.anthropic.com",
+    deepseekBaseUrl: "https://api.deepseek.com"
   });
   const result = await adapter.invoke({
     requestId: "req-1",
@@ -69,9 +70,26 @@ test("openai mode fails fast without api key", () => {
         timeoutMs: 5_000,
         openAiBaseUrl: "https://api.openai.com/v1",
         ollamaBaseUrl: "http://localhost:11434/v1",
-        anthropicBaseUrl: "https://api.anthropic.com"
+        anthropicBaseUrl: "https://api.anthropic.com",
+    deepseekBaseUrl: "https://api.deepseek.com"
       }),
     /OPENAI_API_KEY/
+  );
+});
+
+test("deepseek mode fails fast without api key", () => {
+  assert.throws(
+    () =>
+      createModelAdapter({
+        mode: "deepseek",
+        model: "deepseek-v4-flash",
+        timeoutMs: 5_000,
+        openAiBaseUrl: "https://api.openai.com/v1",
+        ollamaBaseUrl: "http://localhost:11434/v1",
+        anthropicBaseUrl: "https://api.anthropic.com",
+        deepseekBaseUrl: "https://api.deepseek.com"
+      }),
+    /DEEPSEEK_API_KEY|DeepSeek API key is missing/
   );
 });
 
@@ -82,7 +100,8 @@ test("ollama mode does not require api key", () => {
     timeoutMs: 5_000,
     openAiBaseUrl: "https://api.openai.com/v1",
     ollamaBaseUrl: "http://localhost:11434/v1",
-    anthropicBaseUrl: "https://api.anthropic.com"
+    anthropicBaseUrl: "https://api.anthropic.com",
+    deepseekBaseUrl: "https://api.deepseek.com"
   });
   assert.equal(adapter.mode, "ollama");
 });
@@ -96,7 +115,8 @@ test("claude mode fails fast without api key", () => {
         timeoutMs: 5_000,
         openAiBaseUrl: "https://api.openai.com/v1",
         ollamaBaseUrl: "http://localhost:11434/v1",
-        anthropicBaseUrl: "https://api.anthropic.com"
+        anthropicBaseUrl: "https://api.anthropic.com",
+    deepseekBaseUrl: "https://api.deepseek.com"
       }),
     /ANTHROPIC_API_KEY/
   );
@@ -110,9 +130,24 @@ test("auto mode selects claude when anthropic key is set and openai key is absen
     anthropicApiKey: "test-anthropic-key",
     openAiBaseUrl: "https://api.openai.com/v1",
     ollamaBaseUrl: "http://localhost:11434/v1",
-    anthropicBaseUrl: "https://api.anthropic.com"
+    anthropicBaseUrl: "https://api.anthropic.com",
+    deepseekBaseUrl: "https://api.deepseek.com"
   });
   assert.equal(adapter.mode, "claude");
+});
+
+test("auto mode selects deepseek when deepseek key is set", () => {
+  const adapter = createModelAdapter({
+    mode: "auto",
+    model: "deepseek-v4-flash",
+    timeoutMs: 5_000,
+    deepseekApiKey: "test-deepseek-key",
+    openAiBaseUrl: "https://api.openai.com/v1",
+    ollamaBaseUrl: "http://localhost:11434/v1",
+    anthropicBaseUrl: "https://api.anthropic.com",
+    deepseekBaseUrl: "https://api.deepseek.com"
+  });
+  assert.equal(adapter.mode, "deepseek");
 });
 
 test("openai-compatible prompt masks internal control context and discourages governance leakage", async () => {
@@ -147,7 +182,8 @@ test("openai-compatible prompt masks internal control context and discourages go
       timeoutMs: 5_000,
       openAiBaseUrl: "https://api.openai.com/v1",
       ollamaBaseUrl: "http://localhost:11434/v1",
-      anthropicBaseUrl: "https://api.anthropic.com"
+      anthropicBaseUrl: "https://api.anthropic.com",
+    deepseekBaseUrl: "https://api.deepseek.com"
     });
     await adapter.invoke({
       requestId: "req-2",
@@ -202,7 +238,8 @@ test("claude mapping sends anthropic messages payload and parses text output", a
       anthropicApiKey: "test-anthropic-key",
       openAiBaseUrl: "https://api.openai.com/v1",
       ollamaBaseUrl: "http://localhost:11434/v1",
-      anthropicBaseUrl: "https://api.anthropic.com"
+      anthropicBaseUrl: "https://api.anthropic.com",
+    deepseekBaseUrl: "https://api.deepseek.com"
     });
     const result = await adapter.invoke({
       requestId: "req-claude",

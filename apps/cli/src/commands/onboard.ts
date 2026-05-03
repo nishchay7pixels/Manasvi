@@ -16,7 +16,7 @@ import {
 import {
   envFilePath, findProjectRoot, mergeEnvFile, readEnvFile
 } from "../lib/env.js";
-import { checkAnthropic, checkOllama, checkOpenAI, listAnthropicModels } from "../lib/health.js";
+import { checkAnthropic, checkDeepSeek, checkOllama, checkOpenAI, listAnthropicModels } from "../lib/health.js";
 
 export interface OnboardOptions {
   yes?: boolean;      // non-interactive: accept all defaults
@@ -40,7 +40,7 @@ export async function runOnboard(opts: OnboardOptions = {}): Promise<void> {
 
   section("Model Provider");
   info("Manasvi needs an AI model to generate responses and plan actions.");
-  info("Ollama is recommended — it's free, local, and needs no API key.");
+  info("DeepSeek is the default provider for cloud setup.");
 
   let provider: ModelProvider = config.model.provider;
 
@@ -49,15 +49,54 @@ export async function runOnboard(opts: OnboardOptions = {}): Promise<void> {
       "Which model provider do you want to use?",
       [
         { value: "ollama", label: "Ollama (local)", description: "Run models on your own machine — no API key needed" },
+        { value: "deepseek", label: "DeepSeek (cloud)", description: "Use DeepSeek via API key" },
         { value: "openai", label: "OpenAI (cloud)", description: "Use GPT models via OpenAI API key" },
         { value: "claude", label: "Claude (Anthropic cloud)", description: "Use Claude models via Anthropic API key" },
         { value: "mock", label: "Mock (testing only)", description: "Simulated responses — useful for testing the system" }
       ],
-      provider === "ollama" ? 0 : provider === "openai" ? 1 : provider === "claude" ? 2 : 3
+      provider === "deepseek" ? 0 : provider === "ollama" ? 1 : provider === "openai" ? 2 : provider === "claude" ? 3 : 4
     );
     provider = providerChoice as ModelProvider;
   } else if (opts.provider) {
     provider = opts.provider as ModelProvider;
+  }
+
+  if (provider === "deepseek") {
+    const existingEnv = await readEnvFile(envPath);
+    const existingKey = existingEnv.DEEPSEEK_API_KEY;
+    let apiKey = existingKey ?? "";
+    if (!apiKey && !opts.yes) {
+      info("You can get an API key from DeepSeek.");
+      apiKey = await secret("Enter your DeepSeek API key");
+    }
+
+    if (apiKey) {
+      const modelName = await (opts.yes
+        ? Promise.resolve(config.model.deepseekModel)
+        : input("Which DeepSeek model?", config.model.deepseekModel));
+      if (apiKey !== existingKey) {
+        const ok = await checkDeepSeek(config.model.deepseekBaseUrl, apiKey);
+        if (ok) {
+          success("DeepSeek API key validated");
+        } else {
+          warn("Could not validate DeepSeek API key — proceeding anyway");
+        }
+        envUpdates.DEEPSEEK_API_KEY = apiKey;
+      }
+      config = {
+        ...config,
+        model: { ...config.model, provider: "deepseek", deepseekModel: modelName }
+      };
+      envUpdates.MODEL_ADAPTER_MODE = "deepseek";
+      envUpdates.MANASVI_MODEL_PROVIDER = "deepseek";
+      envUpdates.MANASVI_MODEL = modelName;
+      envUpdates.PLANNER_MODEL = modelName;
+      envUpdates.DEEPSEEK_BASE_URL = config.model.deepseekBaseUrl;
+      success(`Model: DeepSeek / ${modelName}`);
+    } else {
+      warn("No API key provided — falling back to mock mode");
+      provider = "mock";
+    }
   }
 
   if (provider === "ollama") {
@@ -92,6 +131,8 @@ export async function runOnboard(opts: OnboardOptions = {}): Promise<void> {
         model: { ...config.model, provider: "ollama", ollamaModel: modelName }
       };
       envUpdates.MODEL_ADAPTER_MODE = "ollama";
+      envUpdates.MANASVI_MODEL_PROVIDER = "ollama";
+      envUpdates.MANASVI_MODEL = modelName;
       envUpdates.OLLAMA_BASE_URL = ollamaUrl;
       envUpdates.PLANNER_MODEL = modelName;
       success(`Model: Ollama / ${modelName}`);
@@ -129,6 +170,8 @@ export async function runOnboard(opts: OnboardOptions = {}): Promise<void> {
         model: { ...config.model, provider: "openai", openaiModel: modelName }
       };
       envUpdates.MODEL_ADAPTER_MODE = "openai";
+      envUpdates.MANASVI_MODEL_PROVIDER = "openai";
+      envUpdates.MANASVI_MODEL = modelName;
       envUpdates.PLANNER_MODEL = modelName;
       success(`Model: OpenAI / ${modelName}`);
     } else {
@@ -173,6 +216,8 @@ export async function runOnboard(opts: OnboardOptions = {}): Promise<void> {
         model: { ...config.model, provider: "claude", claudeModel: modelName }
       };
       envUpdates.MODEL_ADAPTER_MODE = "claude";
+      envUpdates.MANASVI_MODEL_PROVIDER = "claude";
+      envUpdates.MANASVI_MODEL = modelName;
       envUpdates.PLANNER_MODEL = modelName;
       envUpdates.ANTHROPIC_BASE_URL = config.model.claudeBaseUrl;
       success(`Model: Claude / ${modelName}`);
@@ -185,6 +230,7 @@ export async function runOnboard(opts: OnboardOptions = {}): Promise<void> {
   if (provider === "mock") {
     config = { ...config, model: { ...config.model, provider: "mock" } };
     envUpdates.MODEL_ADAPTER_MODE = "mock";
+    envUpdates.MANASVI_MODEL_PROVIDER = "mock";
     info("Using mock model mode (simulated responses, good for testing the pipeline)");
   }
 

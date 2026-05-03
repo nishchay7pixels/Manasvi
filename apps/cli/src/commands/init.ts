@@ -177,12 +177,17 @@ export async function runInit(args: { force?: boolean; projectPath?: string }): 
     INGRESS_RATE_LIMIT_WINDOW_MS: "60000",
     INGRESS_RATE_LIMIT_MAX_PER_SOURCE: "60",
     INGRESS_ANTI_SPAM_DUPLICATE_TTL_MS: "10000",
-    MODEL_ADAPTER_MODE: "mock",
-    MODEL_ADAPTER_TIMEOUT_MS: "20000",
+    MODEL_ADAPTER_MODE: "deepseek",
+    MANASVI_MODEL_PROVIDER: "deepseek",
+    MANASVI_MODEL: "deepseek-v4-flash",
+    PLANNER_MODEL: "deepseek-v4-flash",
+    MODEL_ADAPTER_TIMEOUT_MS: "60000",
     MODEL_ADAPTER_MAX_CONTEXT_CHUNKS: "24",
     OPENAI_BASE_URL: "https://api.openai.com/v1",
     ANTHROPIC_BASE_URL: "https://api.anthropic.com",
     OLLAMA_BASE_URL: "http://localhost:11434/v1",
+    DEEPSEEK_BASE_URL: "https://api.deepseek.com",
+    DEEPSEEK_TIMEOUT_MS: "60000",
     TELEGRAM_API_BASE_URL: "https://api.telegram.org",
     REPLY_POLL_TIMEOUT_MS: "12000",
     REPLY_POLL_INTERVAL_MS: "300",
@@ -218,6 +223,6 @@ export async function runInit(args: { force?: boolean; projectPath?: string }): 
 
   nextSteps([
     `Run ${"`pnpm manasvi onboard`"} to configure your model provider and channels`,
-    `Or run ${"`pnpm manasvi start`"} to start with defaults (mock model mode)`
+    `Or run ${"`pnpm manasvi start`"} to start with defaults (DeepSeek model mode)`
   ]);
 }

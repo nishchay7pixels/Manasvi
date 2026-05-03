@@ -5,7 +5,7 @@ import { z } from "zod";
 
 import type { ContextChunk } from "@manasvi/contracts";
 
-export const modelAdapterModeSchema = z.enum(["mock", "openai", "ollama", "claude", "auto"]);
+export const modelAdapterModeSchema = z.enum(["mock", "openai", "ollama", "claude", "deepseek", "auto"]);
 export type ModelAdapterMode = z.infer<typeof modelAdapterModeSchema>;
 
 export interface ModelAdapterConfig {
@@ -14,9 +14,11 @@ export interface ModelAdapterConfig {
   timeoutMs: number;
   openAiApiKey?: string;
   anthropicApiKey?: string;
+  deepseekApiKey?: string;
   openAiBaseUrl: string;
   ollamaBaseUrl: string;
   anthropicBaseUrl: string;
+  deepseekBaseUrl: string;
 }
 
 export interface AvailableToolSummary {
@@ -41,8 +43,8 @@ export interface ModelInvocationRequest {
 export interface ModelInvocationResult {
   requestId: string;
   outputText: string;
-  mode: "mock" | "openai" | "ollama" | "claude";
-  provider: "mock" | "openai" | "ollama" | "claude";
+  mode: "mock" | "openai" | "ollama" | "claude" | "deepseek";
+  provider: "mock" | "openai" | "ollama" | "claude" | "deepseek";
   model: string;
   latencyMs: number;
   usage?: {
@@ -52,12 +54,12 @@ export interface ModelInvocationResult {
 }
 
 export interface ModelAdapter {
-  mode: "mock" | "openai" | "ollama" | "claude";
+  mode: "mock" | "openai" | "ollama" | "claude" | "deepseek";
   invoke(input: ModelInvocationRequest): Promise<ModelInvocationResult>;
 }
 
 export function createModelAdapter(config: ModelAdapterConfig): ModelAdapter {
-  const normalizedMode = resolveMode(config.mode, config.openAiApiKey, config.anthropicApiKey);
+  const normalizedMode = resolveMode(config.mode, config.openAiApiKey, config.anthropicApiKey, config.deepseekApiKey);
   if (normalizedMode === "openai") {
     if (!config.openAiApiKey || config.openAiApiKey.length === 0) {
       throw new Error("MODEL_ADAPTER_MODE=openai requires OPENAI_API_KEY");
@@ -91,6 +93,19 @@ export function createModelAdapter(config: ModelAdapterConfig): ModelAdapter {
       baseUrl: config.anthropicBaseUrl
     });
   }
+  if (normalizedMode === "deepseek") {
+    if (!config.deepseekApiKey || config.deepseekApiKey.length === 0) {
+      throw new Error("DeepSeek API key is missing. Set DEEPSEEK_API_KEY or configure another provider.");
+    }
+    return new OpenAiCompatibleModelAdapter({
+      mode: "deepseek",
+      provider: "deepseek",
+      model: config.model,
+      timeoutMs: config.timeoutMs,
+      apiKey: config.deepseekApiKey,
+      baseUrl: config.deepseekBaseUrl
+    });
+  }
   return new MockModelAdapter({
     model: config.model
   });
@@ -99,10 +114,14 @@ export function createModelAdapter(config: ModelAdapterConfig): ModelAdapter {
 function resolveMode(
   mode: ModelAdapterMode,
   openAiApiKey?: string,
-  anthropicApiKey?: string
-): "mock" | "openai" | "ollama" | "claude" {
-  if (mode === "mock" || mode === "openai" || mode === "ollama" || mode === "claude") {
+  anthropicApiKey?: string,
+  deepseekApiKey?: string
+): "mock" | "openai" | "ollama" | "claude" | "deepseek" {
+  if (mode === "mock" || mode === "openai" || mode === "ollama" || mode === "claude" || mode === "deepseek") {
     return mode;
+  }
+  if (deepseekApiKey && deepseekApiKey.length > 0) {
+    return "deepseek";
   }
   if (openAiApiKey && openAiApiKey.length > 0) {
     return "openai";
@@ -145,12 +164,12 @@ class MockModelAdapter implements ModelAdapter {
 }
 
 class OpenAiCompatibleModelAdapter implements ModelAdapter {
-  readonly mode: "openai" | "ollama";
+  readonly mode: "openai" | "ollama" | "deepseek";
 
   constructor(
     private readonly config: {
-      mode: "openai" | "ollama";
-      provider: "openai" | "ollama";
+      mode: "openai" | "ollama" | "deepseek";
+      provider: "openai" | "ollama" | "deepseek";
       model: string;
       timeoutMs: number;
       apiKey?: string;
@@ -179,8 +198,14 @@ class OpenAiCompatibleModelAdapter implements ModelAdapter {
         signal: controller.signal
       });
       if (!response.ok) {
-        const body = await response.text();
-        throw new Error(`${this.config.provider} request failed: ${response.status} ${body}`);
+        const responseText = await response.text();
+        const reason = summarizeFailureReason(response.status, responseText);
+        if (this.config.provider === "deepseek") {
+          throw new Error(
+            `DeepSeek request failed with status ${response.status}. Reason: ${reason}. ${deepseekFixForStatus(response.status)}`
+          );
+        }
+        throw new Error(`${this.config.provider} request failed: ${response.status} ${reason}`);
       }
       const payload = openAiCompletionSchema.parse(await response.json());
       const content = payload.choices[0]?.message.content;
@@ -203,6 +228,14 @@ class OpenAiCompatibleModelAdapter implements ModelAdapter {
             }
           : {})
       };
+    } catch (error) {
+      if (error instanceof Error && error.name === "AbortError") {
+        if (this.config.provider === "deepseek") {
+          throw new Error(`DeepSeek request timed out after ${this.config.timeoutMs}ms.`);
+        }
+        throw new Error(`${this.config.provider} request timed out after ${this.config.timeoutMs}ms`);
+      }
+      throw error;
     } finally {
       clearTimeout(timeout);
     }
@@ -395,6 +428,36 @@ function truncateForEcho(input: string, maxLength = 120): string {
 
 function estimateTokens(input: string): number {
   return Math.max(1, Math.ceil(input.length / 4));
+}
+
+function summarizeFailureReason(status: number, responseText: string): string {
+  const normalized = responseText.trim();
+  if (status === 401 || status === 403) {
+    return "authentication failed";
+  }
+  if (status === 404) {
+    return "model or endpoint not found";
+  }
+  if (status === 429) {
+    return "rate limit exceeded";
+  }
+  if (normalized.length === 0) {
+    return "empty error response";
+  }
+  return truncateForEcho(normalized, 160);
+}
+
+function deepseekFixForStatus(status: number): string {
+  if (status === 401 || status === 403) {
+    return "Fix: verify DEEPSEEK_API_KEY.";
+  }
+  if (status === 404) {
+    return "Fix: verify MANASVI_MODEL/PLANNER_MODEL and DEEPSEEK_BASE_URL.";
+  }
+  if (status === 429) {
+    return "Fix: retry later or reduce request rate.";
+  }
+  return "Fix: verify DeepSeek configuration and network access.";
 }
 
 const openAiCompletionSchema = z.object({
