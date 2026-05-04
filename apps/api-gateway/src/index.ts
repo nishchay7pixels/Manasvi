@@ -126,7 +126,7 @@ async function main(): Promise<void> {
             timeoutMs: config.harnessPollTimeoutMs,
             intervalMs: config.harnessPollIntervalMs
           });
-          respondJson(res, result.status === "completed" ? 200 : 502, {
+          respondJson(res, result.status === "completed" ? 200 : result.status === "awaiting_approval" ? 202 : 502, {
             schemaVersion: CONTRACT_SCHEMA_VERSION,
             accepted: result.status === "completed",
             eventId: ingressBody.eventId,

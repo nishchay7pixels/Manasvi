@@ -246,6 +246,7 @@ function createRuntime(options: {
     toolRegistry: new InMemoryToolRegistry({ preloadBuiltIns: true }),
     servicePrincipal: { principalType: "service", principalId: "service:orchestrator-service" },
     createApprovalRequest: async () => ({ approvalRequestId: `approval:${randomUUID()}` }),
+    submitApprovalDecision: async () => ({ state: "approved" }),
     intentSigning: { keyId: "test-k1", secret: "test-signing-secret" },
     issueSystemArtifact: async () => ({
       artifact: {

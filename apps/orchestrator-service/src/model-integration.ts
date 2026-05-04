@@ -5,7 +5,7 @@ import type { AvailableToolSummary, ModelInvocationRequest, ModelInvocationResul
 
 export interface HarnessEventResultRecord {
   eventId: string;
-  status: "completed" | "failed";
+  status: "completed" | "failed" | "awaiting_approval";
   createdAt: string;
   completedAt: string;
   errorMessage?: string;

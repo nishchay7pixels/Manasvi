@@ -375,11 +375,18 @@ const handlers = {
   },
   "tool:shell-command": async (parameters) => {
     const { spawn } = require("node:child_process");
-    const command = String(parameters.command || "");
-    const args = Array.isArray(parameters.args) ? parameters.args.map(String) : [];
+    let command = String(parameters.command || "");
+    let args = Array.isArray(parameters.args) ? parameters.args.map(String) : [];
+    if (args.length === 0 && command.includes(" ")) {
+      const parts = command.trim().split(/\s+/).filter((part: string) => part.length > 0);
+      if (parts.length > 0) {
+        command = parts[0]!;
+        args = parts.slice(1);
+      }
+    }
     const allowedCommands = Array.isArray(parameters.allowedCommands)
       ? parameters.allowedCommands.map(String)
-      : ["echo", "pwd", "ls"];
+      : ["echo", "pwd", "ls", "node"];
     const timeoutMs = Math.max(1, Math.min(120000, Number(parameters.timeoutMs || 5000)));
     if (!allowedCommands.includes(command)) {
       const err = new Error("COMMAND_NOT_ALLOWED:" + command);

@@ -83,7 +83,7 @@ export async function pollForEventResult(input: {
   intervalMs: number;
   fetchFn?: typeof fetch;
 }): Promise<{
-  status: "completed" | "failed";
+  status: "completed" | "failed" | "awaiting_approval";
   result: unknown;
 }> {
   const started = Date.now();
@@ -107,6 +107,9 @@ export async function pollForEventResult(input: {
     const body = (await response.json()) as { result?: unknown };
     if (response.status === 200) {
       return { status: "completed", result: body.result };
+    }
+    if (response.status === 202) {
+      return { status: "awaiting_approval", result: body.result };
     }
     if (response.status >= 400) {
       return { status: "failed", result: body.result ?? body };

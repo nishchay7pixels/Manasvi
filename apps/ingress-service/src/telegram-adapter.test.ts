@@ -67,6 +67,15 @@ test("extractResponseTextFromOrchestratorResult handles harness and agent-runtim
   assert.equal(runtimeText, "runtime response");
 });
 
+test("extractResponseTextFromOrchestratorResult hides internal action proposal json", () => {
+  const response = extractResponseTextFromOrchestratorResult({
+    status: "awaiting_approval",
+    responseText:
+      "{\"decisionType\":\"action_proposal\",\"proposal\":{\"proposalType\":\"tool_invocation\",\"proposalId\":\"proposal-1\",\"toolId\":\"tool.shell-command\",\"purpose\":\"Run ls\",\"input\":{\"command\":\"ls -la /tmp/session-data\"}}}"
+  });
+  assert.equal(response, "This action needs approval. Reply yes to proceed or no to cancel.");
+});
+
 test("parseTelegramWebhook enforces webhook secret when configured", () => {
   const parsed = parseTelegramWebhook({
     body: {

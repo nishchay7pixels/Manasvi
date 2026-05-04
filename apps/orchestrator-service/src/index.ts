@@ -1,5 +1,8 @@
+import { randomUUID } from "node:crypto";
+
 import {
   CONTRACT_SCHEMA_VERSION,
+  approvedIntentArtifactSchema,
   actionClassSchema,
   executionIntentSchema,
   type MemoryContextCandidatesResponse,
@@ -174,6 +177,7 @@ async function main(): Promise<void> {
     }
   };
   const deadLetterStore = new InMemoryDeadLetterStore();
+  const pendingApprovalByConversation = new Map<string, { messageText: string; approvalRequestId?: string }>();
   const consumer = new EventConsumer({
     deadLetterStore,
     maxAttempts: config.maxEventHandlerAttempts,
@@ -229,24 +233,77 @@ async function main(): Promise<void> {
     if (!payload.text || payload.text.length === 0) {
       throw new RetryableError("Empty text payload is retryable while upstream normalizer settles");
     }
-    const run = await agentRuntime.runTurn({
-      tenantId: event.tenantId,
-      workspaceId: event.workspaceId,
-      messageText: payload.text,
-      principalContext,
-      trace: {
+    const conversationKey = [
+      event.tenantId,
+      event.workspaceId,
+      event.actor.principalId,
+      event.channel.principalId
+    ].join("|");
+    const isApprovalReply = /^(yes|y|approve|approved|ok|okay|confirm)$/i.test(payload.text.trim());
+    const pendingApproval = pendingApprovalByConversation.get(conversationKey);
+    const resolvedMessageText = isApprovalReply && pendingApproval ? pendingApproval.messageText : payload.text;
+    const approvalSimulation = isApprovalReply && pendingApproval ? "approved" : "pending";
+    let run;
+    try {
+      run = await agentRuntime.runTurn({
+        tenantId: event.tenantId,
+        workspaceId: event.workspaceId,
+        messageText: resolvedMessageText,
+        principalContext,
+        trace: {
+          traceId: event.trace.traceId,
+          correlationId: event.trace.correlationId,
+          ...(event.trace.parentTraceId ? { parentTraceId: event.trace.parentTraceId } : {})
+        },
+        ...(event.session.sessionId ? { sessionId: event.session.sessionId } : {}),
+        config: {
+          maxIterations: config.agentLoopMaxIterations,
+          maxConsecutiveFailures: config.agentLoopMaxConsecutiveFailures,
+          strictPlannerParsing: config.agentLoopStrictPlannerParsing
+        },
+        approvalSimulation
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      upsertHarnessEventResult({
+        eventId: event.eventId,
+        status: "failed",
+        createdAt: new Date().toISOString(),
+        completedAt: new Date().toISOString(),
+        errorMessage: `AGENT_RUNTIME_ERROR: ${message}`,
+        responseText: "I hit an internal runtime dependency error while processing your request.",
         traceId: event.trace.traceId,
         correlationId: event.trace.correlationId,
-        ...(event.trace.parentTraceId ? { parentTraceId: event.trace.parentTraceId } : {})
-      },
-      ...(event.session.sessionId ? { sessionId: event.session.sessionId } : {}),
-      config: {
-        maxIterations: config.agentLoopMaxIterations,
-        maxConsecutiveFailures: config.agentLoopMaxConsecutiveFailures,
-        strictPlannerParsing: config.agentLoopStrictPlannerParsing
-      },
-      approvalSimulation: "pending"
-    });
+        sessionId: event.session.sessionId ?? `session:unknown:${event.eventId}`,
+        contextTraceId: `ctx-trace:error:${event.eventId}`,
+        policyDecision: decision.decision,
+        policyReasonCodes: decision.reasonCodes,
+        ...(decision.auditRecordId ? { auditRecordId: decision.auditRecordId } : {}),
+        principal: {
+          callerPrincipalId: principalContext.caller.principalId,
+          actorPrincipalId: principalContext.actor.principalId
+        },
+        context: {
+          includedChunkCount: 0,
+          excludedChunkCount: 0,
+          includedChunks: [],
+          trustClassifications: ["CONTROL_TRUSTED"]
+        }
+      });
+      console.log(
+        JSON.stringify({
+          timestamp: new Date().toISOString(),
+          level: "error",
+          service: "orchestrator-service",
+          message: "Agent runtime failed while processing ingress event",
+          eventId: event.eventId,
+          traceId: event.trace.traceId,
+          correlationId: event.trace.correlationId,
+          error: message
+        })
+      );
+      return;
+    }
 
     const contextLoaded = run.transitions.find((transition) => transition.to === "context_loaded");
     const contextTraceId =
@@ -281,10 +338,28 @@ async function main(): Promise<void> {
         : runtimeFailureReason
           ? `${run.outcome.reasonCode ?? "RUNTIME_FAILURE"}: ${runtimeFailureReason}`
           : run.outcome.reasonCode ?? run.outcome.responseText ?? `agent runtime ended with status ${run.outcome.status}`;
+    const latestApprovalObservation = [...run.observations]
+      .reverse()
+      .find((observation) => observation.type === "approval_outcome");
+    if (run.outcome.status === "awaiting_approval") {
+      pendingApprovalByConversation.set(conversationKey, {
+        messageText: resolvedMessageText,
+        ...(latestApprovalObservation && typeof latestApprovalObservation.data.approvalRequestId === "string"
+          ? { approvalRequestId: latestApprovalObservation.data.approvalRequestId }
+          : {})
+      });
+    } else {
+      pendingApprovalByConversation.delete(conversationKey);
+    }
 
     upsertHarnessEventResult({
       eventId: event.eventId,
-      status: run.outcome.status === "completed" ? "completed" : "failed",
+      status:
+        run.outcome.status === "completed"
+          ? "completed"
+          : run.outcome.status === "awaiting_approval"
+            ? "awaiting_approval"
+            : "failed",
       createdAt: run.createdAt,
       completedAt: run.updatedAt,
       ...(errorMessage ? { errorMessage } : {}),
@@ -437,6 +512,44 @@ async function main(): Promise<void> {
     }
     return response.json();
   };
+  const submitApprovalDecision = async (input: {
+    intent: z.infer<typeof executionIntentSchema>;
+    approvalRequestId: string;
+    decision: "approved" | "rejected";
+  }) => {
+    const traceNow = {
+      traceId: randomUUID(),
+      correlationId: randomUUID()
+    };
+    const response = await fetch(`${config.approvalServiceBaseUrl}/approvals/requests/decision`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${issueServiceToken(["approval.request.decide", "service:orchestrator"])}`
+      },
+      body: JSON.stringify({
+        approvalRequestId: input.approvalRequestId,
+        intent: input.intent,
+        decision: {
+          decision: input.decision,
+          decidedBy: servicePrincipal,
+          decidedAt: new Date().toISOString(),
+          trace: traceNow
+        }
+      })
+    });
+    if (!response.ok) {
+      throw new Error(`Approval decision submission failed with status ${response.status}: ${await response.text()}`);
+    }
+    const body = await response.json() as {
+      request?: { state?: "approved" | "rejected" };
+      artifact?: unknown;
+    };
+    return {
+      state: body.request?.state === "rejected" ? "rejected" : "approved",
+      ...(body.artifact ? { artifact: approvedIntentArtifactSchema.parse(body.artifact) } : {})
+    } as const;
+  };
 
   const executeToolContract = async (contract: ReturnType<typeof buildGovernedToolExecutionContract>, dryRun: boolean) => {
     const response = await fetch(`${config.executionManagerBaseUrl}/execution/execute-tool-contract`, {
@@ -465,6 +578,7 @@ async function main(): Promise<void> {
     toolRegistry,
     servicePrincipal,
     createApprovalRequest,
+    submitApprovalDecision,
     issueSystemArtifact,
     executeToolContract,
     intentSigning: {
@@ -1061,7 +1175,7 @@ async function main(): Promise<void> {
           });
           return true;
         }
-        respondJson(res, result.status === "completed" ? 200 : 502, {
+        respondJson(res, result.status === "completed" ? 200 : result.status === "awaiting_approval" ? 202 : 502, {
           schemaVersion: CONTRACT_SCHEMA_VERSION,
           result
         });

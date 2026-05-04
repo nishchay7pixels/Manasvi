@@ -43,6 +43,10 @@ import { queryPolicyForOrchestration } from "./policy-integration.js";
 interface ApprovalRequestResult {
   approvalRequestId: string;
 }
+interface ApprovalDecisionResult {
+  state: "approved" | "rejected";
+  artifact?: ToolExecutionContract["artifact"];
+}
 
 interface SystemArtifactResult {
   artifact: ToolExecutionContract["artifact"];
@@ -190,6 +194,11 @@ export interface GovernedAgentRuntimeDependencies {
   toolRegistry: InMemoryToolRegistry;
   servicePrincipal: ResolvedPrincipalContext["caller"];
   createApprovalRequest: (intent: AgentRunRecord["intents"][number]) => Promise<ApprovalRequestResult>;
+  submitApprovalDecision: (input: {
+    intent: AgentRunRecord["intents"][number];
+    approvalRequestId: string;
+    decision: "approved" | "rejected";
+  }) => Promise<ApprovalDecisionResult>;
   issueSystemArtifact: (intent: AgentRunRecord["intents"][number]) => Promise<SystemArtifactResult>;
   executeToolContract: (contract: ToolExecutionContract, dryRun: boolean) => Promise<ToolExecutionResponse>;
   intentSigning: {
@@ -409,8 +418,15 @@ export class GovernedAgentRuntime {
       }
 
       let validatedInput: Record<string, unknown>;
+      const normalizedProposalInput = normalizeProposalToolInput({
+        toolId: toolEntry.toolId,
+        input: decision.proposal.input,
+        tenantId: input.tenantId,
+        workspaceId: input.workspaceId,
+        actorPrincipalId: principalContext.actor.principalId
+      });
       try {
-        validatedInput = validateToolInput(toolEntry.toolId, decision.proposal.input);
+        validatedInput = validateToolInput(toolEntry.toolId, normalizedProposalInput);
       } catch (error) {
         observations.push(
           this.createObservation({
@@ -525,7 +541,7 @@ export class GovernedAgentRuntime {
         requestedSecretRefs: toolEntry.manifest.runtimeHints.declaredSecretRefs,
         trace: input.trace
       });
-      const intent = buildExecutionIntentFromPolicy({
+      let intent = buildExecutionIntentFromPolicy({
         decision: decisionResponse,
         principalContext,
         tenantId: input.tenantId,
@@ -573,6 +589,7 @@ export class GovernedAgentRuntime {
           })
         );
 
+        let approvalArtifact: ToolExecutionContract["artifact"] | undefined;
         if ((input.approvalSimulation ?? "pending") === "pending") {
           finalOutcome = {
             status: "awaiting_approval",
@@ -593,6 +610,86 @@ export class GovernedAgentRuntime {
           };
           break;
         }
+        if (input.approvalSimulation === "approved") {
+          const decisionResult = await this.deps.submitApprovalDecision({
+            intent,
+            approvalRequestId: request.approvalRequestId,
+            decision: "approved"
+          });
+          approvalArtifact = decisionResult.artifact;
+          intent = {
+            ...intent,
+            approval: {
+              ...intent.approval,
+              state: "approved",
+              approvedBy: principalContext.actor,
+              approvedAt: this.now().toISOString(),
+              approvalRequestId: request.approvalRequestId
+            },
+            lifecycle: "execution_authorized",
+            updatedAt: this.now().toISOString()
+          };
+          intents[intents.length - 1] = intent;
+        }
+
+        transition("awaiting_execution", "execution_requested", {
+          intentId: intent.intentId
+        });
+        const artifactResult = approvalArtifact
+          ? { artifact: approvalArtifact }
+          : await this.deps.issueSystemArtifact(intent);
+        const contract = buildGovernedToolExecutionContract({
+          manifest: toolEntry.manifest,
+          invocation,
+          intent,
+          artifact: artifactResult.artifact,
+          trace: input.trace
+        });
+        const execution = await this.deps.executeToolContract(contract, false);
+        const executionStatus = execution.resultArtifact?.status ?? "failed";
+        const executionData = execution.toolOutput ?? execution.resultArtifact?.result ?? {};
+        if (execution.toolOutput) {
+          validateToolOutput(toolEntry.toolId, execution.toolOutput);
+        }
+          observations.push(
+            this.createObservation({
+              type: executionStatus === "completed" ? "tool_result" : "execution_result",
+              summary: executionStatus === "completed" ? "Tool execution completed" : "Execution completed with failure",
+              trustClassification: "MODEL_INTERMEDIATE",
+              data: {
+                toolId: toolEntry.toolId,
+              executionStatus,
+              output: executionData,
+              ...(execution.resultArtifact?.error ? { error: execution.resultArtifact.error } : {})
+            },
+            trace: input.trace
+          })
+        );
+        if (executionStatus !== "completed") {
+          transition("completed", "execution_failed_returned", {
+            intentId: intent.intentId,
+            status: executionStatus
+          });
+          const rawError = execution.resultArtifact?.error;
+          const executionError =
+            rawError && typeof rawError === "object" && "message" in rawError
+              ? String((rawError as { message?: unknown }).message ?? "unknown execution failure")
+              : rawError
+                ? JSON.stringify(rawError)
+                : `status=${executionStatus}; artifact=${JSON.stringify(execution.resultArtifact ?? {})}`;
+          finalOutcome = {
+            status: "completed",
+            responseText: `I could not complete the requested tool execution because it failed: ${executionError}.`
+          };
+          break;
+        }
+
+        transition("ingesting_observation", "execution_result_ingested", {
+          intentId: intent.intentId
+        });
+        lastCompletedToolOutputByProposal.set(proposalKey, executionData);
+        assembledContext = this.injectObservationIntoContext(assembledContext, observations[observations.length - 1]!);
+        continue;
       }
 
       transition("awaiting_execution", "execution_requested", {
@@ -640,7 +737,7 @@ export class GovernedAgentRuntime {
               : `status=${executionStatus}; artifact=${JSON.stringify(execution.resultArtifact ?? {})}`;
         finalOutcome = {
           status: "completed",
-          responseText: `I could not complete the web search because tool execution failed: ${executionError}.`
+          responseText: `I could not complete the requested tool execution because it failed: ${executionError}.`
         };
         break;
       }
@@ -1005,5 +1102,37 @@ function memoryRecordToContextSource(input: {
       derivedFromChunkIds: input.record.provenance.derivation.derivedFromRecordIds,
       derivedFromSourceRefs: input.record.provenance.derivation.derivedFromSourceRefs
     }
+  };
+}
+
+function normalizeProposalToolInput(input: {
+  toolId: string;
+  input: Record<string, unknown>;
+  tenantId: string;
+  workspaceId: string;
+  actorPrincipalId: string;
+}): Record<string, unknown> {
+  if (input.toolId !== "tool.memory-note-write") {
+    return input.input;
+  }
+
+  const raw = input.input;
+  const noteCandidate = [raw.note, raw.content, raw.text, raw.memory, raw.value]
+    .find((item) => typeof item === "string" && item.trim().length > 0);
+  const actorSlug = input.actorPrincipalId.replace(/[^a-zA-Z0-9_-]/g, "-");
+  const namespaceDefault = `tenant/${input.tenantId}/workspace/${input.workspaceId}/user/${actorSlug}/notes`;
+
+  return {
+    ...raw,
+    ...(typeof raw.namespace === "string" && raw.namespace.trim().length > 0 ? {} : { namespace: namespaceDefault }),
+    ...(typeof raw.note === "string" && raw.note.trim().length > 0
+      ? {}
+      : typeof noteCandidate === "string"
+        ? { note: noteCandidate }
+        : {}),
+    ...(typeof raw.trustClassification === "string" && raw.trustClassification.trim().length > 0
+      ? {}
+      : { trustClassification: "USER_OWNED" }),
+    ...(typeof raw.noteType === "string" && raw.noteType.trim().length > 0 ? {} : { noteType: "fact" })
   };
 }

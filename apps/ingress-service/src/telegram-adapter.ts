@@ -176,6 +176,7 @@ export function parseTelegramWebhook(input: {
 export function extractResponseTextFromOrchestratorResult(input: unknown): string {
   const parsed = z
     .object({
+      status: z.string().optional(),
       responseText: z.string().min(1).optional(),
       outcome: z
         .object({
@@ -189,11 +190,31 @@ export function extractResponseTextFromOrchestratorResult(input: unknown): strin
   if (!parsed.success) {
     return "Request processed, but no response text was available.";
   }
+  const status = parsed.data.status ?? parsed.data.outcome?.status;
   if (parsed.data.responseText) {
-    return parsed.data.responseText;
+    return sanitizeUserFacingResponse(parsed.data.responseText, status);
   }
   if (parsed.data.outcome?.responseText) {
-    return parsed.data.outcome.responseText;
+    return sanitizeUserFacingResponse(parsed.data.outcome.responseText, status);
   }
   return "Request processed, but no response text was available.";
+}
+
+function sanitizeUserFacingResponse(text: string, status?: string): string {
+  const trimmed = text.trim();
+  if (!trimmed.startsWith("{")) {
+    return text;
+  }
+  try {
+    const parsed = JSON.parse(trimmed) as { decisionType?: string };
+    if (parsed.decisionType === "action_proposal") {
+      if (status === "awaiting_approval") {
+        return "This action needs approval. Reply yes to proceed or no to cancel.";
+      }
+      return "Processing the requested action.";
+    }
+  } catch {
+    return text;
+  }
+  return text;
 }

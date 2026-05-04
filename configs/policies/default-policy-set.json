@@ -305,9 +305,9 @@
             "callerIds": ["service:orchestrator-service"],
             "actorIds": []
           },
-          "actionClasses": ["read", "access-filesystem"],
+          "actionClasses": ["read"],
           "resourceClasses": ["filesystem-zone", "tool-endpoint"],
-          "resourceIdPatterns": ["filesystem:*", "tool.local-file-read"],
+          "resourceIdPatterns": ["filesystem:*", "tool:file-read", "tool.local-file-read"],
           "requiredCapabilities": ["filesystem.read"],
           "conditions": {
             "requireTenantMatch": false,
@@ -318,6 +318,41 @@
           "metadata": {
             "highRiskCoverage": false,
             "tags": ["tooling", "filesystem", "read-only"]
+          }
+        },
+        {
+          "ruleId": "allow-orchestrator-write-filesystem-tool",
+          "description": "Allow orchestrator to invoke explicit filesystem write/edit tools.",
+          "priority": 681,
+          "effect": "allow",
+          "enabled": true,
+          "selectors": {
+            "callerTypes": ["service"],
+            "actorTypes": ["human_user", "agent"],
+            "callerIds": ["service:orchestrator-service"],
+            "actorIds": []
+          },
+          "actionClasses": ["write", "access-filesystem"],
+          "resourceClasses": ["filesystem-zone", "tool-endpoint"],
+          "resourceIdPatterns": [
+            "filesystem:workspace-write",
+            "tool:file-write",
+            "tool:file-edit",
+            "tool:file-apply-patch",
+            "tool.file-write",
+            "tool.file-edit",
+            "tool.file-apply-patch"
+          ],
+          "requiredCapabilities": ["filesystem.write"],
+          "conditions": {
+            "requireTenantMatch": false,
+            "requireWorkspaceMatch": false,
+            "allowSkipApproval": false,
+            "maxRiskLevel": "medium"
+          },
+          "metadata": {
+            "highRiskCoverage": false,
+            "tags": ["tooling", "filesystem", "write"]
           }
         },
         {
@@ -334,7 +369,7 @@
           },
           "actionClasses": ["access-network", "read"],
           "resourceClasses": ["network-zone", "tool-endpoint"],
-          "resourceIdPatterns": ["network:egress", "tool.http-fetch"],
+          "resourceIdPatterns": ["network:egress", "tool:http-get", "tool.http-fetch"],
           "requiredCapabilities": ["network.fetch"],
           "conditions": {
             "requireTenantMatch": true,
@@ -361,7 +396,7 @@
           },
           "actionClasses": ["access-network", "read"],
           "resourceClasses": ["network-zone", "tool-endpoint"],
-          "resourceIdPatterns": ["network:web-search", "tool.web-search"],
+          "resourceIdPatterns": ["network:web-search", "tool:web-search", "tool.web-search"],
           "requiredCapabilities": [],
           "conditions": {
             "requireTenantMatch": true,
@@ -414,7 +449,7 @@
           },
           "actionClasses": ["mutate-memory"],
           "resourceClasses": ["memory-namespace", "tool-endpoint"],
-          "resourceIdPatterns": ["memory:*", "tool.memory-note-write"],
+          "resourceIdPatterns": ["memory:*", "tool:memory-write", "tool.memory-note-write"],
           "requiredCapabilities": ["memory.write"],
           "conditions": {
             "requireTenantMatch": true,
@@ -501,7 +536,7 @@
           },
           "actionClasses": ["access-network", "read", "execute"],
           "resourceClasses": ["network-zone", "tool-endpoint"],
-          "resourceIdPatterns": ["network:web-search", "tool.web-search"],
+          "resourceIdPatterns": ["network:web-search", "tool:web-search", "tool.web-search"],
           "requiredCapabilities": [],
           "conditions": {
             "requireTenantMatch": true,
@@ -528,7 +563,7 @@
           },
           "actionClasses": ["access-network", "read", "execute"],
           "resourceClasses": ["network-zone", "tool-endpoint"],
-          "resourceIdPatterns": ["network:web-search", "tool.web-search"],
+          "resourceIdPatterns": ["network:web-search", "tool:web-search", "tool.web-search"],
           "requiredCapabilities": [],
           "conditions": {
             "requireTenantMatch": false,
@@ -539,6 +574,96 @@
           "metadata": {
             "highRiskCoverage": true,
             "tags": ["execution", "network", "web-search", "delegated"]
+          }
+        },
+        {
+          "ruleId": "allow-execution-phase-network-egress-via-orchestrator",
+          "description": "Allow execution-phase network egress checks for delegated orchestrator tool execution.",
+          "priority": 704,
+          "effect": "allow",
+          "enabled": true,
+          "selectors": {
+            "callerTypes": ["service"],
+            "actorTypes": ["service"],
+            "callerIds": ["service:orchestrator-service"],
+            "actorIds": ["service:orchestrator-service"]
+          },
+          "actionClasses": ["access-network", "read", "execute"],
+          "resourceClasses": ["network-zone", "tool-endpoint"],
+          "resourceIdPatterns": ["network:egress", "tool:http-get", "tool.http-fetch"],
+          "requiredCapabilities": [],
+          "conditions": {
+            "requireTenantMatch": false,
+            "requireWorkspaceMatch": false,
+            "allowSkipApproval": false,
+            "maxRiskLevel": "high"
+          },
+          "metadata": {
+            "highRiskCoverage": true,
+            "tags": ["execution", "network", "egress", "delegated"]
+          }
+        },
+        {
+          "ruleId": "allow-execution-manager-shell-command-approved",
+          "description": "Allow delegated execution-phase shell-command checks when orchestrator is caller+actor.",
+          "priority": 706,
+          "effect": "allow",
+          "enabled": true,
+          "selectors": {
+            "callerTypes": ["service"],
+            "actorTypes": ["service"],
+            "callerIds": ["service:orchestrator-service"],
+            "actorIds": ["service:orchestrator-service"]
+          },
+          "actionClasses": ["execute", "external-side-effect"],
+          "resourceClasses": ["tool-endpoint", "execution-node", "filesystem-zone", "network-zone"],
+          "resourceIdPatterns": ["tool:shell-command", "tool.shell-command", "node:*", "filesystem:*", "network:*"],
+          "requiredCapabilities": ["shell.execute"],
+          "conditions": {
+            "requireTenantMatch": false,
+            "requireWorkspaceMatch": false,
+            "allowSkipApproval": false,
+            "maxRiskLevel": "high"
+          },
+          "metadata": {
+            "highRiskCoverage": true,
+            "tags": ["execution", "shell", "approved"]
+          }
+        },
+        {
+          "ruleId": "allow-execution-phase-filesystem-via-orchestrator",
+          "description": "Allow delegated execution-phase filesystem checks when orchestrator is caller+actor.",
+          "priority": 707,
+          "effect": "allow",
+          "enabled": true,
+          "selectors": {
+            "callerTypes": ["service"],
+            "actorTypes": ["service"],
+            "callerIds": ["service:orchestrator-service"],
+            "actorIds": ["service:orchestrator-service"]
+          },
+          "actionClasses": ["access-filesystem", "write", "read", "execute"],
+          "resourceClasses": ["filesystem-zone", "tool-endpoint"],
+          "resourceIdPatterns": [
+            "filesystem:*",
+            "filesystem:workspace-write",
+            "tool:file-write",
+            "tool:file-edit",
+            "tool:file-apply-patch",
+            "tool.file-write",
+            "tool.file-edit",
+            "tool.file-apply-patch"
+          ],
+          "requiredCapabilities": [],
+          "conditions": {
+            "requireTenantMatch": false,
+            "requireWorkspaceMatch": false,
+            "allowSkipApproval": false,
+            "maxRiskLevel": "high"
+          },
+          "metadata": {
+            "highRiskCoverage": true,
+            "tags": ["execution", "filesystem", "delegated"]
           }
         },
         {

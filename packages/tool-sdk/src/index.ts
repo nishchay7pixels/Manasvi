@@ -62,7 +62,7 @@ const httpFetchOutputSchema = z.object({
 const shellCommandInputSchema = z.object({
   command: z.string().min(1),
   args: z.array(z.string()).default([]),
-  allowedCommands: z.array(z.string().min(1)).default(["echo", "pwd", "ls"]),
+  allowedCommands: z.array(z.string().min(1)).default(["echo", "pwd", "ls", "node"]),
   timeoutMs: z.number().int().positive().max(120000).default(5000)
 });
 const shellCommandOutputSchema = z.object({
@@ -504,7 +504,7 @@ export const BUILTIN_TOOL_SPECS: Record<BuiltInToolId, BuiltInToolSpec> = {
           command: prop("The command to execute. Must be in allowedCommands.", "string"),
           args: prop("Positional arguments to pass to the command.", "array"),
           allowedCommands: prop(
-            "Explicit allowlist of permitted commands. Defaults to [echo, pwd, ls]. Expand with care.",
+            "Explicit allowlist of permitted commands. Defaults to [echo, pwd, ls, node]. Expand with care.",
             "array"
           ),
           timeoutMs: prop("Execution timeout in milliseconds. Maximum 120 000 ms.", "number")
