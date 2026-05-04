@@ -294,6 +294,43 @@
           }
         },
         {
+          "ruleId": "allow-orchestrator-fs1-read-tools",
+          "description": "Allow orchestrator to invoke FS1 safe read-only filesystem tools (fs-read-file, fs-list-directory, fs-stat, fs-search-files). All paths are workspace-sandboxed at the runtime layer.",
+          "priority": 679,
+          "effect": "allow",
+          "enabled": true,
+          "selectors": {
+            "callerTypes": ["service"],
+            "actorTypes": ["human_user", "agent"],
+            "callerIds": ["service:orchestrator-service"],
+            "actorIds": []
+          },
+          "actionClasses": ["read"],
+          "resourceClasses": ["filesystem-zone", "tool-endpoint"],
+          "resourceIdPatterns": [
+            "filesystem:workspace",
+            "tool:fs-read-file",
+            "tool:fs-list-directory",
+            "tool:fs-stat",
+            "tool:fs-search-files",
+            "tool.fs-read-file",
+            "tool.fs-list-directory",
+            "tool.fs-stat",
+            "tool.fs-search-files"
+          ],
+          "requiredCapabilities": ["filesystem.read"],
+          "conditions": {
+            "requireTenantMatch": false,
+            "requireWorkspaceMatch": false,
+            "allowSkipApproval": false,
+            "maxRiskLevel": "medium"
+          },
+          "metadata": {
+            "highRiskCoverage": false,
+            "tags": ["tooling", "filesystem", "read-only", "fs1"]
+          }
+        },
+        {
           "ruleId": "allow-orchestrator-read-filesystem-tool",
           "description": "Allow orchestrator to invoke explicit read-only filesystem tools.",
           "priority": 680,
@@ -664,6 +701,43 @@
           "metadata": {
             "highRiskCoverage": true,
             "tags": ["execution", "filesystem", "delegated"]
+          }
+        },
+        {
+          "ruleId": "allow-execution-phase-fs1-read-via-orchestrator",
+          "description": "Allow execution-phase FS1 read-only filesystem checks when orchestrator is caller+actor. All paths are workspace-sandboxed at the runtime layer.",
+          "priority": 708,
+          "effect": "allow",
+          "enabled": true,
+          "selectors": {
+            "callerTypes": ["service"],
+            "actorTypes": ["service"],
+            "callerIds": ["service:orchestrator-service"],
+            "actorIds": ["service:orchestrator-service"]
+          },
+          "actionClasses": ["read", "execute"],
+          "resourceClasses": ["filesystem-zone", "tool-endpoint"],
+          "resourceIdPatterns": [
+            "filesystem:workspace",
+            "tool:fs-read-file",
+            "tool:fs-list-directory",
+            "tool:fs-stat",
+            "tool:fs-search-files",
+            "tool.fs-read-file",
+            "tool.fs-list-directory",
+            "tool.fs-stat",
+            "tool.fs-search-files"
+          ],
+          "requiredCapabilities": [],
+          "conditions": {
+            "requireTenantMatch": false,
+            "requireWorkspaceMatch": false,
+            "allowSkipApproval": false,
+            "maxRiskLevel": "high"
+          },
+          "metadata": {
+            "highRiskCoverage": false,
+            "tags": ["execution", "filesystem", "read-only", "fs1", "delegated"]
           }
         },
         {

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, rm } from "node:fs/promises";
+import { mkdir, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
@@ -252,6 +252,154 @@ if (fs.promises) {
   };
 }
 
+// ── FS1 safe read-only filesystem sandbox ──────────────────────────────────────
+// Milestone FS1: workspace-sandboxed, deny-pattern-filtered, size-limited reads.
+// The filesystem is a governed runtime capability, not a model capability.
+
+const fsConfig = {
+  workspaceRoot: payload.fsConfig && payload.fsConfig.workspaceRoot
+    ? String(payload.fsConfig.workspaceRoot)
+    : path.resolve("./workspace"),
+  maxReadBytes: payload.fsConfig && payload.fsConfig.maxReadBytes
+    ? Number(payload.fsConfig.maxReadBytes)
+    : 200000,
+  maxDirectoryEntries: payload.fsConfig && payload.fsConfig.maxDirectoryEntries
+    ? Number(payload.fsConfig.maxDirectoryEntries)
+    : 500,
+  maxSearchResults: payload.fsConfig && payload.fsConfig.maxSearchResults
+    ? Number(payload.fsConfig.maxSearchResults)
+    : 50,
+  maxSearchFileBytes: payload.fsConfig && payload.fsConfig.maxSearchFileBytes
+    ? Number(payload.fsConfig.maxSearchFileBytes)
+    : 200000
+};
+
+// Filenames and extensions that are always denied
+const FS1_DENY_FILENAMES = [".env", "id_rsa", "id_ed25519"];
+const FS1_DENY_EXTENSIONS = [".pem", ".key", ".crt"];
+// Path components (directory names) that are always denied
+const FS1_DENY_DIRECTORIES = [
+  ".ssh", ".aws", ".gcp", ".azure", ".git",
+  "node_modules", "dist", "build", "coverage",
+  ".next", ".turbo", ".cache"
+];
+
+const isDenied = (relativePath) => {
+  const normalized = relativePath.replace(/\\/g, "/");
+  const parts = normalized.split("/");
+  const filename = parts[parts.length - 1] || "";
+
+  // Block denied directory components anywhere in the path
+  for (const part of parts.slice(0, -1)) {
+    if (FS1_DENY_DIRECTORIES.includes(part)) return true;
+  }
+  // Also block if the target itself is a denied directory name
+  if (FS1_DENY_DIRECTORIES.includes(filename)) return true;
+
+  // Block denied exact filenames
+  if (FS1_DENY_FILENAMES.includes(filename)) return true;
+
+  // Block .env.* pattern (any file starting with .env)
+  if (filename.startsWith(".env")) return true;
+
+  // Block denied extensions
+  for (const ext of FS1_DENY_EXTENSIONS) {
+    if (filename.endsWith(ext)) return true;
+  }
+
+  return false;
+};
+
+// Resolve a user-provided path to an absolute path inside the workspace root.
+// Throws a structured error if the path escapes the workspace.
+const resolveWorkspacePath = async (userPath) => {
+  const workspaceRoot = fsConfig.workspaceRoot;
+  const realRoot = path.resolve(workspaceRoot);
+
+  // Reject empty path
+  if (!userPath || String(userPath).trim() === "") {
+    const err = new Error("INVALID_PATH: path must not be empty");
+    err.code = "INVALID_PATH";
+    throw err;
+  }
+
+  const userPathStr = String(userPath).trim();
+
+  // Reject absolute paths that are not within the workspace root
+  if (path.isAbsolute(userPathStr)) {
+    const normalized = path.normalize(userPathStr);
+    if (normalized !== realRoot && !normalized.startsWith(realRoot + path.sep)) {
+      const err = new Error("PATH_OUTSIDE_WORKSPACE: absolute path outside workspace root");
+      err.code = "PATH_OUTSIDE_WORKSPACE";
+      throw err;
+    }
+    const relativePath = path.relative(realRoot, normalized);
+    return { resolvedPath: normalized, relativePath, realRoot };
+  }
+
+  // Resolve relative to workspace root
+  const candidate = path.resolve(realRoot, userPathStr);
+
+  // Check candidate is inside workspace root
+  if (candidate !== realRoot && !candidate.startsWith(realRoot + path.sep)) {
+    const err = new Error("PATH_OUTSIDE_WORKSPACE: path traversal outside workspace root");
+    err.code = "PATH_OUTSIDE_WORKSPACE";
+    throw err;
+  }
+
+  // Symlink escape check: verify realpath of existing path or nearest existing parent
+  try {
+    const realCandidate = await fs.promises.realpath(candidate);
+    if (realCandidate !== realRoot && !realCandidate.startsWith(realRoot + path.sep)) {
+      const err = new Error("PATH_OUTSIDE_WORKSPACE: symlink target outside workspace root");
+      err.code = "PATH_OUTSIDE_WORKSPACE";
+      throw err;
+    }
+  } catch (symlinkErr) {
+    if (symlinkErr.code === "PATH_OUTSIDE_WORKSPACE") throw symlinkErr;
+    // Path may not exist — check nearest existing parent
+    if (symlinkErr.code === "ENOENT" || symlinkErr.code === "ENOTDIR") {
+      let parent = path.dirname(candidate);
+      while (parent !== realRoot && parent.startsWith(realRoot)) {
+        try {
+          const realParent = await fs.promises.realpath(parent);
+          if (realParent !== realRoot && !realParent.startsWith(realRoot + path.sep)) {
+            const err = new Error("PATH_OUTSIDE_WORKSPACE: parent symlink target outside workspace root");
+            err.code = "PATH_OUTSIDE_WORKSPACE";
+            throw err;
+          }
+          break;
+        } catch (parentErr) {
+          if (parentErr.code === "PATH_OUTSIDE_WORKSPACE") throw parentErr;
+          parent = path.dirname(parent);
+        }
+      }
+    }
+  }
+
+  const relativePath = path.relative(realRoot, candidate);
+  return { resolvedPath: candidate, relativePath, realRoot };
+};
+
+// Detect binary files by checking for null bytes or non-printable control chars
+const isBinaryBuffer = (buf) => {
+  const sample = buf.slice(0, Math.min(8000, buf.length));
+  for (let i = 0; i < sample.length; i++) {
+    const byte = sample[i];
+    if (byte === 0) return true;
+    if (byte < 32 && byte !== 9 && byte !== 10 && byte !== 13) return true;
+  }
+  return false;
+};
+
+// Create a structured safe error (no stack traces exposed to model)
+const fsSafeErr = (code, message) => {
+  const err = new Error(code + ": " + message);
+  err.code = code;
+  err.safeMessage = message;
+  return err;
+};
+
 const handlers = {
   "tool:echo": async (parameters) => {
     const message = String(parameters.message || "");
@@ -285,6 +433,233 @@ const handlers = {
       bytes: value.byteLength
     };
   },
+
+  // ── FS1 safe read-only tools ────────────────────────────────────────────────
+
+  "tool:fs-read-file": async (parameters) => {
+    const userPath = String(parameters.path || "");
+    if (!userPath) throw fsSafeErr("INVALID_PATH", "path must not be empty");
+
+    const { resolvedPath, relativePath } = await resolveWorkspacePath(userPath);
+
+    if (isDenied(relativePath)) {
+      throw fsSafeErr("PATH_DENIED", "Access to this path is denied by workspace policy");
+    }
+
+    let stats;
+    try {
+      stats = await fs.promises.stat(resolvedPath);
+    } catch (statErr) {
+      if (statErr.code === "ENOENT" || statErr.code === "ENOTDIR") {
+        throw fsSafeErr("FILE_NOT_FOUND", "File not found: " + relativePath);
+      }
+      throw fsSafeErr("FILE_NOT_FOUND", "Cannot access path: " + relativePath);
+    }
+
+    if (!stats.isFile()) {
+      throw fsSafeErr("INVALID_PATH", "Path is a directory, not a file: " + relativePath);
+    }
+
+    if (stats.size > fsConfig.maxReadBytes) {
+      throw fsSafeErr(
+        "FILE_TOO_LARGE",
+        "File size " + stats.size + " bytes exceeds maxReadBytes " + fsConfig.maxReadBytes +
+        ". Use a smaller file or request chunked reading (FS2)."
+      );
+    }
+
+    const buf = await fs.promises.readFile(resolvedPath);
+
+    if (isBinaryBuffer(buf)) {
+      throw fsSafeErr(
+        "BINARY_FILE_NOT_SUPPORTED",
+        "Binary files are not supported in FS1. Use a text file."
+      );
+    }
+
+    return {
+      path: relativePath,
+      sizeBytes: stats.size,
+      content: buf.toString("utf8"),
+      truncated: false
+    };
+  },
+
+  "tool:fs-list-directory": async (parameters) => {
+    const userPath = String(parameters.path || ".");
+    const { resolvedPath, relativePath } = await resolveWorkspacePath(userPath);
+
+    if (isDenied(relativePath)) {
+      throw fsSafeErr("PATH_DENIED", "Access to this directory is denied by workspace policy");
+    }
+
+    let dirEntries;
+    try {
+      dirEntries = await fs.promises.readdir(resolvedPath, { withFileTypes: true });
+    } catch (readdirErr) {
+      if (readdirErr.code === "ENOENT") {
+        throw fsSafeErr("FILE_NOT_FOUND", "Directory not found: " + (relativePath || "."));
+      }
+      if (readdirErr.code === "ENOTDIR") {
+        throw fsSafeErr("INVALID_PATH", "Path is a file, not a directory: " + (relativePath || "."));
+      }
+      throw fsSafeErr("FILE_NOT_FOUND", "Cannot list directory: " + (relativePath || "."));
+    }
+
+    const entries = [];
+    let hitLimit = false;
+
+    for (const entry of dirEntries) {
+      const entryRelPath = relativePath ? relativePath + "/" + entry.name : entry.name;
+
+      // Silently skip denied entries
+      if (isDenied(entryRelPath)) continue;
+
+      let sizeBytes;
+      try {
+        const entryStat = await fs.promises.stat(path.join(resolvedPath, entry.name));
+        if (entryStat.isFile()) sizeBytes = entryStat.size;
+      } catch {
+        // Skip unreadable entries
+        continue;
+      }
+
+      const entryInfo = {
+        name: entry.name,
+        path: entryRelPath,
+        type: entry.isDirectory() ? "directory" : "file"
+      };
+      if (sizeBytes !== undefined) entryInfo.sizeBytes = sizeBytes;
+      entries.push(entryInfo);
+
+      if (entries.length >= fsConfig.maxDirectoryEntries) {
+        hitLimit = true;
+        break;
+      }
+    }
+
+    return {
+      path: relativePath || ".",
+      entries,
+      truncated: hitLimit
+    };
+  },
+
+  "tool:fs-stat": async (parameters) => {
+    const userPath = String(parameters.path || "");
+    if (!userPath) throw fsSafeErr("INVALID_PATH", "path must not be empty");
+
+    const { resolvedPath, relativePath } = await resolveWorkspacePath(userPath);
+
+    if (isDenied(relativePath)) {
+      throw fsSafeErr("PATH_DENIED", "Access to this path is denied by workspace policy");
+    }
+
+    let stats;
+    try {
+      stats = await fs.promises.stat(resolvedPath);
+    } catch (statErr) {
+      if (statErr.code === "ENOENT" || statErr.code === "ENOTDIR") {
+        throw fsSafeErr("FILE_NOT_FOUND", "Path not found: " + relativePath);
+      }
+      throw fsSafeErr("FILE_NOT_FOUND", "Cannot access path: " + relativePath);
+    }
+
+    return {
+      path: relativePath,
+      type: stats.isDirectory() ? "directory" : "file",
+      sizeBytes: stats.size,
+      modifiedAt: stats.mtime.toISOString()
+    };
+  },
+
+  "tool:fs-search-files": async (parameters) => {
+    const query = String(parameters.query || "").trim();
+    if (!query) throw fsSafeErr("INVALID_PATH", "query must not be empty");
+
+    const userPath = String(parameters.path || ".");
+    const { resolvedPath, relativePath } = await resolveWorkspacePath(userPath);
+
+    if (isDenied(relativePath)) {
+      throw fsSafeErr("PATH_DENIED", "Search path is denied by workspace policy");
+    }
+
+    const results = [];
+    let truncated = false;
+
+    const walkDir = async (dir, relDir) => {
+      if (truncated) return;
+
+      let entries;
+      try {
+        entries = await fs.promises.readdir(dir, { withFileTypes: true });
+      } catch {
+        return;
+      }
+
+      for (const entry of entries) {
+        if (truncated) break;
+
+        const entryRelPath = relDir ? relDir + "/" + entry.name : entry.name;
+
+        // Silently skip denied paths
+        if (isDenied(entryRelPath)) continue;
+
+        const fullPath = path.join(dir, entry.name);
+
+        if (entry.isDirectory()) {
+          await walkDir(fullPath, entryRelPath);
+        } else if (entry.isFile()) {
+          let fileStat;
+          try {
+            fileStat = await fs.promises.stat(fullPath);
+          } catch {
+            continue;
+          }
+
+          // Skip files exceeding search size limit
+          if (fileStat.size > fsConfig.maxSearchFileBytes) continue;
+
+          let buf;
+          try {
+            buf = await fs.promises.readFile(fullPath);
+          } catch {
+            continue;
+          }
+
+          // Skip binary files
+          if (isBinaryBuffer(buf)) continue;
+
+          const text = buf.toString("utf8");
+          const lines = text.split("\n");
+
+          for (let i = 0; i < lines.length; i++) {
+            if (lines[i].includes(query)) {
+              results.push({
+                path: entryRelPath,
+                line: i + 1,
+                snippet: lines[i].slice(0, 200).trim()
+              });
+              if (results.length >= fsConfig.maxSearchResults) {
+                truncated = true;
+                break;
+              }
+            }
+          }
+        }
+      }
+    };
+
+    await walkDir(resolvedPath, relativePath);
+
+    return {
+      query,
+      searchPath: relativePath || ".",
+      results,
+      truncated
+    };
+  },
+
   "tool:http-get": async (parameters) => {
     const url = String(parameters.url || "");
     const response = await fetch(url);
@@ -682,6 +1057,14 @@ export async function runSandboxedExecution(input: SandboxRunInput): Promise<San
     pushLog("secret_injection", { injectedSecrets });
   }
 
+  // Resolve workspace root for FS1 tools — realpath canonicalises macOS /tmp → /private/tmp
+  const rawWorkspaceRoot = process.env.MANASVI_WORKSPACE_ROOT ?? "./workspace";
+  const absWorkspaceRoot = rawWorkspaceRoot.startsWith("/")
+    ? rawWorkspaceRoot
+    : join(process.cwd(), rawWorkspaceRoot);
+  const fs1WorkspaceRoot = await realpath(absWorkspaceRoot).catch(() => absWorkspaceRoot);
+  const isFs1Tool = request.toolRef.startsWith("tool:fs-");
+
   const workerPayload = {
     toolRef: request.toolRef,
     operation: request.operation,
@@ -690,11 +1073,27 @@ export async function runSandboxedExecution(input: SandboxRunInput): Promise<San
       network: request.runtimePolicy.network,
       filesystem: {
         ...request.runtimePolicy.filesystem,
-        readPaths: [...request.runtimePolicy.filesystem.readPaths, inputDir, outputDir, scratchDir, runRoot],
+        readPaths: [
+          ...request.runtimePolicy.filesystem.readPaths,
+          inputDir,
+          outputDir,
+          scratchDir,
+          runRoot,
+          // FS1 tools need access to the workspace root for reads
+          ...(isFs1Tool ? [fs1WorkspaceRoot] : [])
+        ],
         writePaths: [...request.runtimePolicy.filesystem.writePaths, outputDir, scratchDir]
       }
     },
-    injectedSecretRefs: injectedSecrets
+    injectedSecretRefs: injectedSecrets,
+    // FS1 filesystem sandbox config — passed explicitly so worker does not rely on env vars
+    fsConfig: {
+      workspaceRoot: fs1WorkspaceRoot,
+      maxReadBytes: parseInt(process.env.MANASVI_FS_MAX_READ_BYTES ?? "200000", 10),
+      maxDirectoryEntries: parseInt(process.env.MANASVI_FS_MAX_DIRECTORY_ENTRIES ?? "500", 10),
+      maxSearchResults: parseInt(process.env.MANASVI_FS_MAX_SEARCH_RESULTS ?? "50", 10),
+      maxSearchFileBytes: parseInt(process.env.MANASVI_FS_MAX_SEARCH_FILE_BYTES ?? "200000", 10)
+    }
   };
   baseEnv.MANASVI_TOOL_PAYLOAD = Buffer.from(JSON.stringify(workerPayload), "utf8").toString("base64");
 

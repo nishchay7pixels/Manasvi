@@ -343,12 +343,58 @@ export const WORKFLOW_OPERATOR_SET: ToolSetDefinition = {
   ]
 };
 
+/**
+ * FS1_SAFE_READ_SET — Milestone FS1 safe read-only filesystem tools.
+ *
+ * All tools are workspace-sandboxed: paths must be inside MANASVI_WORKSPACE_ROOT.
+ * Sensitive files and directories are blocked by server-side deny patterns.
+ * File size, directory entry count, and search results are all capped.
+ * No writes, no shell access, no network. Fully read-only.
+ *
+ * Operators must:
+ * 1. Set MANASVI_WORKSPACE_ROOT to the directory the agent should read from.
+ * 2. Create the workspace directory.
+ * 3. Add the FS1 policy rules from configs/policies/default-policy-set.json.
+ */
+export const FS1_SAFE_READ_SET: ToolSetDefinition = {
+  setId: "manasvi.toolset.fs1-safe-read",
+  name: "FS1 Safe Read Set",
+  description:
+    "Milestone FS1 safe read-only filesystem tools. " +
+    "Workspace-sandboxed: all paths resolve within MANASVI_WORKSPACE_ROOT. " +
+    "Sensitive files (.env, .pem, .key, .git, node_modules, etc.) are blocked by deny patterns. " +
+    "No writes, no shell, no network. File size and result counts are capped.",
+  useCases: [
+    "Read and summarise files in a controlled workspace",
+    "List workspace contents and navigate directory structure",
+    "Search file contents for specific values or patterns",
+    "Check file existence and metadata before reading"
+  ],
+  riskLevel: "low",
+  toolIds: [
+    "tool.fs-read-file",
+    "tool.fs-list-directory",
+    "tool.fs-stat",
+    "tool.fs-search-files"
+  ],
+  containsApprovalSensitiveTools: false,
+  requiresOperatorConfig: true,
+  operatorNotes: [
+    "Set MANASVI_WORKSPACE_ROOT to the directory the agent should read from (default: ./workspace).",
+    "Create the workspace directory before starting the agent.",
+    "Add the FS1 policy rules to configs/policies/default-policy-set.json.",
+    "File system access is sandboxed — absolute paths and path traversal are blocked by the runtime.",
+    "Deny patterns block: .env, .env.*, *.pem, *.key, *.crt, id_rsa, id_ed25519, .ssh/, .aws/, .gcp/, .azure/, .git/, node_modules/, dist/, build/, coverage/, .next/, .turbo/, .cache/"
+  ]
+};
+
 // ── Default set catalogue ──────────────────────────────────────────────────────
 
 /** All named tool sets, ordered by risk level. */
 export const BUILTIN_TOOL_SETS: ToolSetDefinition[] = [
   STARTER_SAFE_SET,
   STARTER_READ_SET,
+  FS1_SAFE_READ_SET,
   NOTES_SET,
   CONTROLLED_WRITE_SET,
   GOVERNED_ACTION_SET,
