@@ -8,7 +8,7 @@
 
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -61,6 +61,7 @@ async function runFs1Tool(input: RunFs1ToolInput) {
     ttlSeconds: 120
   });
 
+  const isFsWriteTool = ["tool:fs-write-file", "tool:fs-append-file", "tool:fs-apply-patch", "tool:fs-rename-file"].includes(input.toolRef);
   const request = {
     schemaVersion: "1.0",
     runId,
@@ -73,13 +74,13 @@ async function runFs1Tool(input: RunFs1ToolInput) {
     runtimePolicy: {
       schemaVersion: "1.0",
       policyId: "test-policy",
-      sandboxMode: "read_only_local",
+      sandboxMode: isFsWriteTool ? "no_network_compute" : "read_only_local",
       timeoutMs: 15000,
       cpuTimeLimitSeconds: 10,
       memoryLimitMb: 128,
       network: { mode: "none", egressAllowlist: [] },
       filesystem: {
-        mode: "read_only_inputs",
+        mode: isFsWriteTool ? "scratch_write" : "read_only_inputs",
         readPaths: [],
         writePaths: []
       },
@@ -729,6 +730,312 @@ test("blocked fs-read-file emits audit log events without file contents", async 
       assert.ok(!metaStr.includes("SECRET=x"), "Audit log must not contain file contents");
     }
   } finally {
+    await cleanup();
+  }
+});
+
+// ── FS2 write safety coverage ────────────────────────────────────────────────
+
+test("fs-write-file: writes disabled returns TOOL_NOT_AVAILABLE", async () => {
+  const { workspaceDir, sandboxDir, cleanup } = await createTestWorkspace();
+  const prevEnabled = process.env.MANASVI_FS_WRITES_ENABLED;
+  const prevRequire = process.env.MANASVI_FS_WRITES_REQUIRE_APPROVAL;
+  try {
+    process.env.MANASVI_FS_WRITES_ENABLED = "false";
+    process.env.MANASVI_FS_WRITES_REQUIRE_APPROVAL = "true";
+    const ts = makeTokenService();
+    const { artifact } = await runFs1Tool({
+      toolRef: "tool:fs-write-file",
+      operation: "fs_write_file",
+      parameters: { path: "docs/todo.md", content: "hello" },
+      workspaceRoot: workspaceDir,
+      sandboxRootDir: sandboxDir,
+      tokenService: ts
+    });
+    assert.equal(artifact.status, "failed");
+    assert.ok(JSON.stringify(artifact.failure ?? {}).includes("TOOL_NOT_AVAILABLE"));
+  } finally {
+    if (prevEnabled === undefined) delete process.env.MANASVI_FS_WRITES_ENABLED;
+    else process.env.MANASVI_FS_WRITES_ENABLED = prevEnabled;
+    if (prevRequire === undefined) delete process.env.MANASVI_FS_WRITES_REQUIRE_APPROVAL;
+    else process.env.MANASVI_FS_WRITES_REQUIRE_APPROVAL = prevRequire;
+    await cleanup();
+  }
+});
+
+test("fs-write-file: dryRun returns diff and does not modify file", async () => {
+  const { workspaceDir, sandboxDir, cleanup } = await createTestWorkspace();
+  const prevEnabled = process.env.MANASVI_FS_WRITES_ENABLED;
+  const prevRequire = process.env.MANASVI_FS_WRITES_REQUIRE_APPROVAL;
+  try {
+    process.env.MANASVI_FS_WRITES_ENABLED = "true";
+    process.env.MANASVI_FS_WRITES_REQUIRE_APPROVAL = "false";
+    await mkdir(join(workspaceDir, "docs"), { recursive: true });
+    await writeFile(join(workspaceDir, "docs", "todo.md"), "before");
+    const ts = makeTokenService();
+    const { artifact } = await runFs1Tool({
+      toolRef: "tool:fs-write-file",
+      operation: "fs_write_file",
+      parameters: { path: "docs/todo.md", content: "after", dryRun: true },
+      workspaceRoot: workspaceDir,
+      sandboxRootDir: sandboxDir,
+      tokenService: ts
+    });
+    assert.equal(artifact.status, "completed");
+    assert.equal(artifact.result.operation, "write");
+    assert.equal(artifact.result.dryRun, true);
+    assert.equal(String(artifact.result.diff).includes("--- a/docs/todo.md"), true);
+    const current = await readFile(join(workspaceDir, "docs", "todo.md"), "utf8");
+    assert.equal(current, "before");
+  } finally {
+    if (prevEnabled === undefined) delete process.env.MANASVI_FS_WRITES_ENABLED;
+    else process.env.MANASVI_FS_WRITES_ENABLED = prevEnabled;
+    if (prevRequire === undefined) delete process.env.MANASVI_FS_WRITES_REQUIRE_APPROVAL;
+    else process.env.MANASVI_FS_WRITES_REQUIRE_APPROVAL = prevRequire;
+    await cleanup();
+  }
+});
+
+test("fs-append-file: writes disabled returns TOOL_NOT_AVAILABLE", async () => {
+  const { workspaceDir, sandboxDir, cleanup } = await createTestWorkspace();
+  const prevEnabled = process.env.MANASVI_FS_WRITES_ENABLED;
+  const prevRequire = process.env.MANASVI_FS_WRITES_REQUIRE_APPROVAL;
+  try {
+    process.env.MANASVI_FS_WRITES_ENABLED = "false";
+    process.env.MANASVI_FS_WRITES_REQUIRE_APPROVAL = "true";
+    await writeFile(join(workspaceDir, "a.txt"), "x");
+    const ts = makeTokenService();
+    const { artifact } = await runFs1Tool({
+      toolRef: "tool:fs-append-file",
+      operation: "fs_append_file",
+      parameters: { path: "a.txt", content: "y" },
+      workspaceRoot: workspaceDir,
+      sandboxRootDir: sandboxDir,
+      tokenService: ts
+    });
+    assert.equal(artifact.status, "failed");
+    assert.ok(JSON.stringify(artifact.failure ?? {}).includes("TOOL_NOT_AVAILABLE"));
+  } finally {
+    if (prevEnabled === undefined) delete process.env.MANASVI_FS_WRITES_ENABLED;
+    else process.env.MANASVI_FS_WRITES_ENABLED = prevEnabled;
+    if (prevRequire === undefined) delete process.env.MANASVI_FS_WRITES_REQUIRE_APPROVAL;
+    else process.env.MANASVI_FS_WRITES_REQUIRE_APPROVAL = prevRequire;
+    await cleanup();
+  }
+});
+
+test("fs-apply-patch: writes disabled returns TOOL_NOT_AVAILABLE", async () => {
+  const { workspaceDir, sandboxDir, cleanup } = await createTestWorkspace();
+  const prevEnabled = process.env.MANASVI_FS_WRITES_ENABLED;
+  const prevRequire = process.env.MANASVI_FS_WRITES_REQUIRE_APPROVAL;
+  try {
+    process.env.MANASVI_FS_WRITES_ENABLED = "false";
+    process.env.MANASVI_FS_WRITES_REQUIRE_APPROVAL = "true";
+    await writeFile(join(workspaceDir, "p.txt"), "before\n");
+    const ts = makeTokenService();
+    const { artifact } = await runFs1Tool({
+      toolRef: "tool:fs-apply-patch",
+      operation: "fs_apply_patch",
+      parameters: { path: "p.txt", patch: "--- a/p.txt\n+++ b/p.txt\n@@ -1 +1 @@\n-before\n+after\n" },
+      workspaceRoot: workspaceDir,
+      sandboxRootDir: sandboxDir,
+      tokenService: ts
+    });
+    assert.equal(artifact.status, "failed");
+    assert.ok(JSON.stringify(artifact.failure ?? {}).includes("TOOL_NOT_AVAILABLE"));
+  } finally {
+    if (prevEnabled === undefined) delete process.env.MANASVI_FS_WRITES_ENABLED;
+    else process.env.MANASVI_FS_WRITES_ENABLED = prevEnabled;
+    if (prevRequire === undefined) delete process.env.MANASVI_FS_WRITES_REQUIRE_APPROVAL;
+    else process.env.MANASVI_FS_WRITES_REQUIRE_APPROVAL = prevRequire;
+    await cleanup();
+  }
+});
+
+test("fs-write-file: approved mode writes target file", async () => {
+  const { workspaceDir, sandboxDir, cleanup } = await createTestWorkspace();
+  const prevEnabled = process.env.MANASVI_FS_WRITES_ENABLED;
+  const prevRequire = process.env.MANASVI_FS_WRITES_REQUIRE_APPROVAL;
+  try {
+    process.env.MANASVI_FS_WRITES_ENABLED = "true";
+    process.env.MANASVI_FS_WRITES_REQUIRE_APPROVAL = "false";
+    await writeFile(join(workspaceDir, "w.txt"), "old");
+    const ts = makeTokenService();
+    const { artifact } = await runFs1Tool({
+      toolRef: "tool:fs-write-file",
+      operation: "fs_write_file",
+      parameters: { path: "w.txt", content: "new" },
+      workspaceRoot: workspaceDir,
+      sandboxRootDir: sandboxDir,
+      tokenService: ts
+    });
+    assert.equal(artifact.status, "completed");
+    assert.equal(artifact.result.changed, true);
+    const current = await readFile(join(workspaceDir, "w.txt"), "utf8");
+    assert.equal(current, "new");
+  } finally {
+    if (prevEnabled === undefined) delete process.env.MANASVI_FS_WRITES_ENABLED;
+    else process.env.MANASVI_FS_WRITES_ENABLED = prevEnabled;
+    if (prevRequire === undefined) delete process.env.MANASVI_FS_WRITES_REQUIRE_APPROVAL;
+    else process.env.MANASVI_FS_WRITES_REQUIRE_APPROVAL = prevRequire;
+    await cleanup();
+  }
+});
+
+test("fs-write-file: path traversal is blocked", async () => {
+  const { workspaceDir, sandboxDir, cleanup } = await createTestWorkspace();
+  const prevEnabled = process.env.MANASVI_FS_WRITES_ENABLED;
+  const prevRequire = process.env.MANASVI_FS_WRITES_REQUIRE_APPROVAL;
+  try {
+    process.env.MANASVI_FS_WRITES_ENABLED = "true";
+    process.env.MANASVI_FS_WRITES_REQUIRE_APPROVAL = "false";
+    const ts = makeTokenService();
+    const { artifact } = await runFs1Tool({
+      toolRef: "tool:fs-write-file",
+      operation: "fs_write_file",
+      parameters: { path: "../outside.txt", content: "x" },
+      workspaceRoot: workspaceDir,
+      sandboxRootDir: sandboxDir,
+      tokenService: ts
+    });
+    assert.equal(artifact.status, "failed");
+    assert.ok(JSON.stringify(artifact.failure ?? {}).includes("PATH_OUTSIDE_WORKSPACE"));
+  } finally {
+    if (prevEnabled === undefined) delete process.env.MANASVI_FS_WRITES_ENABLED;
+    else process.env.MANASVI_FS_WRITES_ENABLED = prevEnabled;
+    if (prevRequire === undefined) delete process.env.MANASVI_FS_WRITES_REQUIRE_APPROVAL;
+    else process.env.MANASVI_FS_WRITES_REQUIRE_APPROVAL = prevRequire;
+    await cleanup();
+  }
+});
+
+test("fs-write-file: denied path is blocked", async () => {
+  const { workspaceDir, sandboxDir, cleanup } = await createTestWorkspace();
+  const prevEnabled = process.env.MANASVI_FS_WRITES_ENABLED;
+  const prevRequire = process.env.MANASVI_FS_WRITES_REQUIRE_APPROVAL;
+  try {
+    process.env.MANASVI_FS_WRITES_ENABLED = "true";
+    process.env.MANASVI_FS_WRITES_REQUIRE_APPROVAL = "false";
+    const ts = makeTokenService();
+    const { artifact } = await runFs1Tool({
+      toolRef: "tool:fs-write-file",
+      operation: "fs_write_file",
+      parameters: { path: ".env", content: "SECRET=1" },
+      workspaceRoot: workspaceDir,
+      sandboxRootDir: sandboxDir,
+      tokenService: ts
+    });
+    assert.equal(artifact.status, "failed");
+    assert.ok(JSON.stringify(artifact.failure ?? {}).includes("PATH_DENIED"));
+  } finally {
+    if (prevEnabled === undefined) delete process.env.MANASVI_FS_WRITES_ENABLED;
+    else process.env.MANASVI_FS_WRITES_ENABLED = prevEnabled;
+    if (prevRequire === undefined) delete process.env.MANASVI_FS_WRITES_REQUIRE_APPROVAL;
+    else process.env.MANASVI_FS_WRITES_REQUIRE_APPROVAL = prevRequire;
+    await cleanup();
+  }
+});
+
+test("fs-write-file: max write bytes enforced", async () => {
+  const { workspaceDir, sandboxDir, cleanup } = await createTestWorkspace();
+  const prevEnabled = process.env.MANASVI_FS_WRITES_ENABLED;
+  const prevRequire = process.env.MANASVI_FS_WRITES_REQUIRE_APPROVAL;
+  const prevMax = process.env.MANASVI_FS_MAX_WRITE_BYTES;
+  try {
+    process.env.MANASVI_FS_WRITES_ENABLED = "true";
+    process.env.MANASVI_FS_WRITES_REQUIRE_APPROVAL = "false";
+    process.env.MANASVI_FS_MAX_WRITE_BYTES = "8";
+    const ts = makeTokenService();
+    const { artifact } = await runFs1Tool({
+      toolRef: "tool:fs-write-file",
+      operation: "fs_write_file",
+      parameters: { path: "b.txt", content: "0123456789" },
+      workspaceRoot: workspaceDir,
+      sandboxRootDir: sandboxDir,
+      tokenService: ts
+    });
+    assert.equal(artifact.status, "failed");
+    assert.ok(JSON.stringify(artifact.failure ?? {}).includes("WRITE_TOO_LARGE"));
+  } finally {
+    if (prevEnabled === undefined) delete process.env.MANASVI_FS_WRITES_ENABLED;
+    else process.env.MANASVI_FS_WRITES_ENABLED = prevEnabled;
+    if (prevRequire === undefined) delete process.env.MANASVI_FS_WRITES_REQUIRE_APPROVAL;
+    else process.env.MANASVI_FS_WRITES_REQUIRE_APPROVAL = prevRequire;
+    if (prevMax === undefined) delete process.env.MANASVI_FS_MAX_WRITE_BYTES;
+    else process.env.MANASVI_FS_MAX_WRITE_BYTES = prevMax;
+    await cleanup();
+  }
+});
+
+test("fs-rename-file: writes disabled returns TOOL_NOT_AVAILABLE", async () => {
+  const { workspaceDir, sandboxDir, cleanup } = await createTestWorkspace();
+  const prevEnabled = process.env.MANASVI_FS_WRITES_ENABLED;
+  try {
+    process.env.MANASVI_FS_WRITES_ENABLED = "false";
+    await writeFile(join(workspaceDir, "old.txt"), "x");
+    const ts = makeTokenService();
+    const { artifact } = await runFs1Tool({
+      toolRef: "tool:fs-rename-file",
+      operation: "fs_rename_file",
+      parameters: { fromPath: "old.txt", toPath: "new.txt", dryRun: false },
+      workspaceRoot: workspaceDir,
+      sandboxRootDir: sandboxDir,
+      tokenService: ts
+    });
+    assert.equal(artifact.status, "failed");
+    assert.ok(JSON.stringify(artifact.failure ?? {}).includes("TOOL_NOT_AVAILABLE"));
+  } finally {
+    if (prevEnabled === undefined) delete process.env.MANASVI_FS_WRITES_ENABLED;
+    else process.env.MANASVI_FS_WRITES_ENABLED = prevEnabled;
+    await cleanup();
+  }
+});
+
+test("fs-rename-file: renames file in approved mode", async () => {
+  const { workspaceDir, sandboxDir, cleanup } = await createTestWorkspace();
+  const prevEnabled = process.env.MANASVI_FS_WRITES_ENABLED;
+  try {
+    process.env.MANASVI_FS_WRITES_ENABLED = "true";
+    await writeFile(join(workspaceDir, "old.txt"), "x");
+    const ts = makeTokenService();
+    const { artifact } = await runFs1Tool({
+      toolRef: "tool:fs-rename-file",
+      operation: "fs_rename_file",
+      parameters: { fromPath: "old.txt", toPath: "new.txt", dryRun: false },
+      workspaceRoot: workspaceDir,
+      sandboxRootDir: sandboxDir,
+      tokenService: ts
+    });
+    assert.equal(artifact.status, "completed");
+    const moved = await readFile(join(workspaceDir, "new.txt"), "utf8");
+    assert.equal(moved, "x");
+  } finally {
+    if (prevEnabled === undefined) delete process.env.MANASVI_FS_WRITES_ENABLED;
+    else process.env.MANASVI_FS_WRITES_ENABLED = prevEnabled;
+    await cleanup();
+  }
+});
+
+test("fs-rename-file: missing destination directory returns safe error", async () => {
+  const { workspaceDir, sandboxDir, cleanup } = await createTestWorkspace();
+  const prevEnabled = process.env.MANASVI_FS_WRITES_ENABLED;
+  try {
+    process.env.MANASVI_FS_WRITES_ENABLED = "true";
+    await writeFile(join(workspaceDir, "old.txt"), "x");
+    const ts = makeTokenService();
+    const { artifact } = await runFs1Tool({
+      toolRef: "tool:fs-rename-file",
+      operation: "fs_rename_file",
+      parameters: { fromPath: "old.txt", toPath: "missing/new.txt", dryRun: false },
+      workspaceRoot: workspaceDir,
+      sandboxRootDir: sandboxDir,
+      tokenService: ts
+    });
+    assert.equal(artifact.status, "failed");
+    assert.ok(JSON.stringify(artifact.failure ?? {}).includes("FILE_NOT_FOUND"));
+  } finally {
+    if (prevEnabled === undefined) delete process.env.MANASVI_FS_WRITES_ENABLED;
+    else process.env.MANASVI_FS_WRITES_ENABLED = prevEnabled;
     await cleanup();
   }
 });

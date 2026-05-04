@@ -17,6 +17,7 @@ export interface ManasviConfig {
   version: "1";
   profile: "local" | "staging" | "production";
   projectPath: string;
+  workspacePath: string;
   initialized: boolean;
   onboarded: boolean;
   model: {
@@ -60,10 +61,12 @@ export interface ManasviConfig {
 // ── Defaults ──────────────────────────────────────────────────────────────────
 
 export function defaultConfig(projectPath: string): ManasviConfig {
+  const resolvedProject = resolve(projectPath);
   return {
     version: "1",
     profile: "local",
-    projectPath: resolve(projectPath),
+    projectPath: resolvedProject,
+    workspacePath: resolve(resolvedProject, "workspace"),
     initialized: false,
     onboarded: false,
     model: {

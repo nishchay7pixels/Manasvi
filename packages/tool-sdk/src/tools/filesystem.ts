@@ -756,12 +756,231 @@ const fsSearchFilesSpec: BuiltInToolSpec = {
   ]
 };
 
+// ── FS2 write tools ───────────────────────────────────────────────────────────
+
+const fsWriteFileInputSchema = z.object({
+  path: z.string().min(1),
+  content: z.string(),
+  dryRun: z.boolean().default(false)
+});
+
+const fsWriteFileOutputSchema = z.object({
+  path: z.string(),
+  operation: z.literal("write"),
+  dryRun: z.boolean(),
+  wouldChange: z.boolean(),
+  changed: z.boolean(),
+  approved: z.boolean(),
+  diff: z.string(),
+  truncated: z.boolean(),
+  hashBefore: z.string().nullable(),
+  hashAfter: z.string(),
+  sizeBefore: z.number().int().nonnegative(),
+  sizeAfter: z.number().int().nonnegative()
+});
+
+const fsWriteFileSpec: BuiltInToolSpec = {
+  manifest: parseManifest({
+    schemaVersion: "1.0",
+    contractVersion: "1.0.0",
+    toolId: "tool.fs-write-file",
+    name: "FS Write File",
+    version: "1.0.0",
+    description: "Approval-gated workspace file create/overwrite with dry-run diff preview and before/after hashes.",
+    owner: "manasvi-platform",
+    provider: "manasvi-core",
+    type: "built_in",
+    actionClass: "write",
+    sideEffectClass: "mutating",
+    mutability: "mutating",
+    capabilities: [{ capabilityId: "filesystem.write", required: true, scope: { tenantScoped: true, workspaceScoped: true, resourceClass: "filesystem-zone" }, constraints: {} }],
+    resourceClassesTouched: ["filesystem-zone"],
+    inputSchema: jsonSchemaObject(["path", "content"], { path: prop("Workspace-relative path.", "string"), content: prop("UTF-8 content.", "string"), dryRun: prop("Validate and preview without writing.", "boolean") }),
+    outputSchema: jsonSchemaObject(["path", "operation", "dryRun", "wouldChange", "changed", "approved"], { path: prop("Workspace-relative path.", "string"), operation: prop("Operation kind.", "string"), dryRun: prop("Whether this was a dry run.", "boolean"), wouldChange: prop("Whether resulting content differs.", "boolean"), changed: prop("Whether file changed on disk.", "boolean"), approved: prop("Whether approval requirement has been satisfied.", "boolean") }),
+    runtimeHints: { defaultTimeoutMs: 10000, defaultSandboxMode: "no_network_compute", egressProfiles: [], filesystemProfile: "scratch_write", declaredSecretRefs: [], requireExecutorPath: true, approvalSensitive: true },
+    runtimeBinding: { toolRef: "tool:fs-write-file", operation: "fs_write_file" },
+    policyBinding: { policyActionClass: "access-filesystem", resource: { resourceClass: "filesystem-zone", resourceId: "filesystem:workspace-write" }, requiresExplicitPolicy: true, approvalHint: "must_require" },
+    trustNotes: ["Approval required by default.", "Uses workspace sandbox and deny patterns.", "Diff preview is returned before execution when dryRun=true."],
+    tags: ["filesystem", "write", "fs2", "approval-required"],
+    status: "enabled",
+    createdAt: now(),
+    updatedAt: now()
+  }),
+  inputSchema: fsWriteFileInputSchema,
+  outputSchema: fsWriteFileOutputSchema,
+  examples: []
+};
+
+const fsAppendFileInputSchema = z.object({
+  path: z.string().min(1),
+  content: z.string(),
+  dryRun: z.boolean().default(false)
+});
+const fsAppendFileOutputSchema = z.object({
+  path: z.string(),
+  operation: z.literal("append"),
+  dryRun: z.boolean(),
+  wouldChange: z.boolean(),
+  changed: z.boolean(),
+  approved: z.boolean(),
+  diff: z.string(),
+  truncated: z.boolean(),
+  hashBefore: z.string().nullable(),
+  hashAfter: z.string(),
+  sizeBefore: z.number().int().nonnegative(),
+  sizeAfter: z.number().int().nonnegative()
+});
+const fsAppendFileSpec: BuiltInToolSpec = {
+  manifest: parseManifest({
+    schemaVersion: "1.0",
+    contractVersion: "1.0.0",
+    toolId: "tool.fs-append-file",
+    name: "FS Append File",
+    version: "1.0.0",
+    description: "Approval-gated workspace append with dry-run diff preview and before/after hashes.",
+    owner: "manasvi-platform",
+    provider: "manasvi-core",
+    type: "built_in",
+    actionClass: "write",
+    sideEffectClass: "mutating",
+    mutability: "mutating",
+    capabilities: [{ capabilityId: "filesystem.append", required: true, scope: { tenantScoped: true, workspaceScoped: true, resourceClass: "filesystem-zone" }, constraints: {} }],
+    resourceClassesTouched: ["filesystem-zone"],
+    inputSchema: jsonSchemaObject(["path", "content"], { path: prop("Workspace-relative path.", "string"), content: prop("Content to append.", "string"), dryRun: prop("Validate and preview without writing.", "boolean") }),
+    outputSchema: jsonSchemaObject(["path", "operation", "dryRun", "wouldChange", "changed", "approved"], { path: prop("Workspace-relative path.", "string"), operation: prop("Operation kind.", "string"), dryRun: prop("Whether this was a dry run.", "boolean"), wouldChange: prop("Whether resulting content differs.", "boolean"), changed: prop("Whether file changed on disk.", "boolean"), approved: prop("Whether approval requirement has been satisfied.", "boolean") }),
+    runtimeHints: { defaultTimeoutMs: 10000, defaultSandboxMode: "no_network_compute", egressProfiles: [], filesystemProfile: "scratch_write", declaredSecretRefs: [], requireExecutorPath: true, approvalSensitive: true },
+    runtimeBinding: { toolRef: "tool:fs-append-file", operation: "fs_append_file" },
+    policyBinding: { policyActionClass: "access-filesystem", resource: { resourceClass: "filesystem-zone", resourceId: "filesystem:workspace-write" }, requiresExplicitPolicy: true, approvalHint: "must_require" },
+    trustNotes: ["Approval required by default.", "Uses workspace sandbox and deny patterns."],
+    tags: ["filesystem", "append", "fs2", "approval-required"],
+    status: "enabled",
+    createdAt: now(),
+    updatedAt: now()
+  }),
+  inputSchema: fsAppendFileInputSchema,
+  outputSchema: fsAppendFileOutputSchema,
+  examples: []
+};
+
+const fsApplyPatchInputSchema = z.object({
+  path: z.string().min(1),
+  patch: z.string().min(1),
+  dryRun: z.boolean().default(false)
+});
+const fsApplyPatchOutputSchema = z.object({
+  path: z.string(),
+  operation: z.literal("patch"),
+  dryRun: z.boolean(),
+  wouldChange: z.boolean(),
+  changed: z.boolean(),
+  approved: z.boolean(),
+  diff: z.string(),
+  truncated: z.boolean(),
+  hashBefore: z.string(),
+  hashAfter: z.string(),
+  sizeBefore: z.number().int().nonnegative(),
+  sizeAfter: z.number().int().nonnegative()
+});
+const fsApplyPatchSpec: BuiltInToolSpec = {
+  manifest: parseManifest({
+    schemaVersion: "1.0",
+    contractVersion: "1.0.0",
+    toolId: "tool.fs-apply-patch",
+    name: "FS Apply Patch",
+    version: "1.0.0",
+    description: "Approval-gated single-file patch apply with dry-run diff preview and before/after hashes.",
+    owner: "manasvi-platform",
+    provider: "manasvi-core",
+    type: "built_in",
+    actionClass: "write",
+    sideEffectClass: "mutating",
+    mutability: "mutating",
+    capabilities: [{ capabilityId: "filesystem.patch", required: true, scope: { tenantScoped: true, workspaceScoped: true, resourceClass: "filesystem-zone" }, constraints: {} }],
+    resourceClassesTouched: ["filesystem-zone"],
+    inputSchema: jsonSchemaObject(["path", "patch"], { path: prop("Workspace-relative path.", "string"), patch: prop("Unified diff patch text.", "string"), dryRun: prop("Validate and preview without writing.", "boolean") }),
+    outputSchema: jsonSchemaObject(["path", "operation", "dryRun", "wouldChange", "changed", "approved"], { path: prop("Workspace-relative path.", "string"), operation: prop("Operation kind.", "string"), dryRun: prop("Whether this was a dry run.", "boolean"), wouldChange: prop("Whether resulting content differs.", "boolean"), changed: prop("Whether file changed on disk.", "boolean"), approved: prop("Whether approval requirement has been satisfied.", "boolean") }),
+    runtimeHints: { defaultTimeoutMs: 15000, defaultSandboxMode: "no_network_compute", egressProfiles: [], filesystemProfile: "scratch_write", declaredSecretRefs: [], requireExecutorPath: true, approvalSensitive: true },
+    runtimeBinding: { toolRef: "tool:fs-apply-patch", operation: "fs_apply_patch" },
+    policyBinding: { policyActionClass: "access-filesystem", resource: { resourceClass: "filesystem-zone", resourceId: "filesystem:workspace-write" }, requiresExplicitPolicy: true, approvalHint: "must_require" },
+    trustNotes: ["Approval required by default.", "Uses workspace sandbox and deny patterns.", "Patch is size-limited and validated before write."],
+    tags: ["filesystem", "patch", "fs2", "approval-required"],
+    status: "enabled",
+    createdAt: now(),
+    updatedAt: now()
+  }),
+  inputSchema: fsApplyPatchInputSchema,
+  outputSchema: fsApplyPatchOutputSchema,
+  examples: []
+};
+
+const fsRenameFileInputSchema = z.preprocess((value) => {
+  if (!value || typeof value !== "object") return value;
+  const input = value as Record<string, unknown>;
+  const fromPath =
+    (typeof input.fromPath === "string" ? input.fromPath : undefined) ??
+    (typeof input.path === "string" ? input.path : undefined) ??
+    (typeof input.sourcePath === "string" ? input.sourcePath : undefined);
+  const toPath =
+    (typeof input.toPath === "string" ? input.toPath : undefined) ??
+    (typeof input.newPath === "string" ? input.newPath : undefined) ??
+    (typeof input.destinationPath === "string" ? input.destinationPath : undefined);
+  return { ...input, fromPath, toPath };
+}, z.object({
+  fromPath: z.string().min(1),
+  toPath: z.string().min(1),
+  dryRun: z.boolean().default(false)
+}));
+const fsRenameFileOutputSchema = z.object({
+  fromPath: z.string(),
+  toPath: z.string(),
+  operation: z.literal("rename"),
+  dryRun: z.boolean(),
+  wouldChange: z.boolean(),
+  changed: z.boolean(),
+  approved: z.boolean()
+});
+const fsRenameFileSpec: BuiltInToolSpec = {
+  manifest: parseManifest({
+    schemaVersion: "1.0",
+    contractVersion: "1.0.0",
+    toolId: "tool.fs-rename-file",
+    name: "FS Rename File",
+    version: "1.0.0",
+    description: "Approval-gated workspace file rename/move within the configured workspace root.",
+    owner: "manasvi-platform",
+    provider: "manasvi-core",
+    type: "built_in",
+    actionClass: "write",
+    sideEffectClass: "mutating",
+    mutability: "mutating",
+    capabilities: [{ capabilityId: "filesystem.write", required: true, scope: { tenantScoped: true, workspaceScoped: true, resourceClass: "filesystem-zone" }, constraints: {} }],
+    resourceClassesTouched: ["filesystem-zone"],
+    inputSchema: jsonSchemaObject(["fromPath", "toPath"], { fromPath: prop("Source workspace-relative path.", "string"), toPath: prop("Destination workspace-relative path.", "string"), dryRun: prop("Validate only, no rename.", "boolean") }),
+    outputSchema: jsonSchemaObject(["fromPath", "toPath", "operation", "dryRun", "wouldChange", "changed", "approved"], { fromPath: prop("Source path.", "string"), toPath: prop("Destination path.", "string"), operation: prop("Operation kind.", "string"), dryRun: prop("Whether this was a dry run.", "boolean"), wouldChange: prop("Whether source and destination differ.", "boolean"), changed: prop("Whether rename happened on disk.", "boolean"), approved: prop("Whether approval requirement has been satisfied.", "boolean") }),
+    runtimeHints: { defaultTimeoutMs: 10000, defaultSandboxMode: "no_network_compute", egressProfiles: [], filesystemProfile: "scratch_write", declaredSecretRefs: [], requireExecutorPath: true, approvalSensitive: true },
+    runtimeBinding: { toolRef: "tool:fs-rename-file", operation: "fs_rename_file" },
+    policyBinding: { policyActionClass: "access-filesystem", resource: { resourceClass: "filesystem-zone", resourceId: "filesystem:workspace-write" }, requiresExplicitPolicy: true, approvalHint: "must_require" },
+    trustNotes: ["Approval required by default.", "Both source and destination must pass workspace sandbox and deny checks."],
+    tags: ["filesystem", "rename", "fs2", "approval-required"],
+    status: "enabled",
+    createdAt: now(),
+    updatedAt: now()
+  }),
+  inputSchema: fsRenameFileInputSchema,
+  outputSchema: fsRenameFileOutputSchema,
+  examples: []
+};
+
 // ── exports ────────────────────────────────────────────────────────────────────
 
 export const FILESYSTEM_TOOL_SPECS = {
   "tool.file-write": fileWriteSpec,
   "tool.file-edit": fileEditSpec,
   "tool.file-apply-patch": fileApplyPatchSpec,
+  "tool.fs-write-file": fsWriteFileSpec,
+  "tool.fs-append-file": fsAppendFileSpec,
+  "tool.fs-apply-patch": fsApplyPatchSpec,
+  "tool.fs-rename-file": fsRenameFileSpec,
   // FS1 safe read-only tools
   "tool.fs-read-file": fsReadFileSpec,
   "tool.fs-list-directory": fsListDirectorySpec,

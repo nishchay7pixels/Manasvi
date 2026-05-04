@@ -86,6 +86,7 @@ export async function runStatus(opts: { verbose?: boolean } = {}): Promise<void>
   table([
     { label: "Profile", value: config.profile },
     { label: "Project", value: config.projectPath },
+    { label: "Workspace", value: config.workspacePath },
     { label: "Model", value: providerLabels[config.model.provider] ?? config.model.provider },
     { label: "Channels", value: channelList },
     { label: "Docs UI", value: config.ui.docsEnabled ? `http://localhost:${config.ui.docsPort}` : "disabled" }

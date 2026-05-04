@@ -1112,6 +1112,23 @@ function normalizeProposalToolInput(input: {
   workspaceId: string;
   actorPrincipalId: string;
 }): Record<string, unknown> {
+  if (input.toolId === "tool.fs-rename-file") {
+    const raw = input.input;
+    const fromPath =
+      (typeof raw.fromPath === "string" ? raw.fromPath : undefined) ??
+      (typeof raw.path === "string" ? raw.path : undefined) ??
+      (typeof raw.sourcePath === "string" ? raw.sourcePath : undefined);
+    const toPath =
+      (typeof raw.toPath === "string" ? raw.toPath : undefined) ??
+      (typeof raw.newPath === "string" ? raw.newPath : undefined) ??
+      (typeof raw.destinationPath === "string" ? raw.destinationPath : undefined);
+    return {
+      ...raw,
+      ...(fromPath ? { fromPath } : {}),
+      ...(toPath ? { toPath } : {})
+    };
+  }
+
   if (input.toolId !== "tool.memory-note-write") {
     return input.input;
   }

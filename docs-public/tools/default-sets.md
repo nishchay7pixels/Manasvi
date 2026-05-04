@@ -121,7 +121,7 @@ Broad read-only agents needing workspace context, session awareness, and memory 
 **Requires operator config:** Filesystem write zone, channel adapter config
 
 **Included tools:**
-- `tool.file-write`, `tool.file-edit`
+- `tool.fs-write-file`, `tool.fs-append-file`, `tool.fs-rename-file`
 - `tool.sessions-send`, `tool.sessions-yield`
 - `tool.canvas`, `tool.message`
 
@@ -138,7 +138,7 @@ Agents that produce written outputs, send notifications, and continue session wo
 
 **Included tools:**
 - `tool.exec`, `tool.bash`, `tool.code-execution`, `tool.process`
-- `tool.file-apply-patch`, `tool.approval-request`
+- `tool.fs-apply-patch`, `tool.approval-request`
 
 **Best for:**
 Trusted operator-controlled execution workflows. All tools require approval. CI/CD agents, code build agents.

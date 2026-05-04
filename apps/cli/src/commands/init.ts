@@ -72,7 +72,7 @@ function isManasviRepo(projectRoot: string): boolean {
   }
 }
 
-export async function runInit(args: { force?: boolean; projectPath?: string }): Promise<void> {
+export async function runInit(args: { force?: boolean; projectPath?: string; workspacePath?: string }): Promise<void> {
   banner("init");
 
   const projectRoot = findProjectRoot(args.projectPath);
@@ -121,6 +121,9 @@ export async function runInit(args: { force?: boolean; projectPath?: string }): 
 
   // Write config
   const config = defaultConfig(projectRoot);
+  const workspaceRoot = resolve(args.workspacePath ?? join(projectRoot, "workspace"));
+  await mkdir(workspaceRoot, { recursive: true });
+  config.workspacePath = workspaceRoot;
   config.initialized = true;
   await saveConfig(config);
   success("Config file written");
@@ -208,7 +211,8 @@ export async function runInit(args: { force?: boolean; projectPath?: string }): 
     NODE_ID: "node:local-agent",
     NODE_CLASS: "restricted_utility_node",
     EXECUTION_EGRESS_WHITELIST_POLICY_JSON:
-      '{"schemaVersion":"1.0","policyId":"egress:local-default-deny","description":"Default deny egress policy for local runtime","rules":[]}'
+      '{"schemaVersion":"1.0","policyId":"egress:local-default-deny","description":"Default deny egress policy for local runtime","rules":[]}',
+    MANASVI_WORKSPACE_ROOT: workspaceRoot
   };
 
   await mergeEnvFile(envPath, { ...baseEnv, ...secrets }, {
@@ -220,6 +224,7 @@ export async function runInit(args: { force?: boolean; projectPath?: string }): 
 
   section("Done");
   success("Manasvi initialized successfully");
+  info(`Workspace root: ${workspaceRoot}`);
 
   nextSteps([
     `Run ${"`pnpm manasvi onboard`"} to configure your model provider and channels`,

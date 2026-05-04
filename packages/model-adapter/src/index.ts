@@ -420,7 +420,7 @@ function buildSystemInstruction(): string {
     "- For general web/news/current-information queries, prefer tool.web-search.",
     "- Use tool.x-search only when the user explicitly asks for X/Twitter content.",
     "- If the user explicitly asks to read a file and no completed file-read result exists, propose the file-read tool if available.",
-    "- If the user asks to save/write/create/update file content, prefer file-write/edit tools (for example tool.file-write) instead of file-read tools.",
+    "- If the user asks to save/write/create/update file content, prefer FS2 filesystem write tools (tool.fs-write-file, tool.fs-append-file, tool.fs-apply-patch) instead of read tools.",
     "- If the user asks to remember, save, note, or store something, prefer memory tools.",
     "- For tool.memory-note-write, include required input fields: namespace, note, trustClassification.",
     "- For tool.memory-note-write, use noteType=fact unless the user asks for another note type or the tool schema requires something else.",

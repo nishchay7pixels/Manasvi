@@ -23,7 +23,7 @@ All flows assume services are running. Start them with `pnpm manasvi start`.
 - [Flow D — Approval Request](#demo-flow-d--approval-request) — `tool.approval-request`
 
 **New flows (B5 tools)**
-- [Flow E — File Write](#demo-flow-e--file-write) — `tool.file-write`
+- [Flow E — File Write](#demo-flow-e--file-write) — `tool.fs-write-file`
 - [Flow F — Code Execution](#demo-flow-f--code-execution) — `tool.code-execution`
 - [Flow G — Memory Search](#demo-flow-g--memory-search) — `tool.memory-search`
 - [Flow H — Sessions List + Status](#demo-flow-h--sessions-list--status) — `tool.sessions-list`, `tool.session-status`
@@ -385,9 +385,9 @@ curl -X POST http://localhost:4010/tools/invoke \
 ### What happens
 
 ```
-1. Agent plans: tool.file-write with { path: "output/summary.txt", content: "...", overwrite: false }
+1. Agent plans: tool.fs-write-file with { path: "output/summary.txt", content: "...", dryRun: true }
 
-2. Tool lookup: tool.file-write  status: enabled  ✓
+2. Tool lookup: tool.fs-write-file  status: enabled  ✓
 
 3. Input validation: path, content, overwrite  ✓
 

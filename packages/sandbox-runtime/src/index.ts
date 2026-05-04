@@ -22,6 +22,7 @@ const net = require("node:net");
 const tls = require("node:tls");
 const http = require("node:http");
 const https = require("node:https");
+const crypto = require("node:crypto");
 
 const payload = JSON.parse(Buffer.from(process.env.MANASVI_TOOL_PAYLOAD || "", "base64").toString("utf8"));
 const usage = {
@@ -273,6 +274,23 @@ const fsConfig = {
     ? Number(payload.fsConfig.maxSearchFileBytes)
     : 200000
 };
+const fsWriteConfig = {
+  writesEnabled: payload.fsConfig && payload.fsConfig.writesEnabled !== undefined
+    ? Boolean(payload.fsConfig.writesEnabled)
+    : false,
+  requireApproval: payload.fsConfig && payload.fsConfig.requireApproval !== undefined
+    ? Boolean(payload.fsConfig.requireApproval)
+    : true,
+  maxWriteBytes: payload.fsConfig && payload.fsConfig.maxWriteBytes
+    ? Number(payload.fsConfig.maxWriteBytes)
+    : 500000,
+  maxPatchBytes: payload.fsConfig && payload.fsConfig.maxPatchBytes
+    ? Number(payload.fsConfig.maxPatchBytes)
+    : 200000,
+  maxDiffBytes: payload.fsConfig && payload.fsConfig.maxDiffBytes
+    ? Number(payload.fsConfig.maxDiffBytes)
+    : 100000
+};
 
 // Filenames and extensions that are always denied
 const FS1_DENY_FILENAMES = [".env", "id_rsa", "id_ed25519"];
@@ -398,6 +416,74 @@ const fsSafeErr = (code, message) => {
   err.code = code;
   err.safeMessage = message;
   return err;
+};
+
+const toSha256 = (value) => "sha256:" + crypto.createHash("sha256").update(value).digest("hex");
+
+const truncateUtf8 = (value, maxBytes) => {
+  if (Buffer.byteLength(value, "utf8") <= maxBytes) return { text: value, truncated: false };
+  let out = value;
+  while (Buffer.byteLength(out, "utf8") > maxBytes) {
+    out = out.slice(0, Math.max(1, Math.floor(out.length * 0.9)));
+  }
+  return { text: out, truncated: true };
+};
+
+const buildUnifiedDiff = (relativePath, beforeText, afterText) => {
+  const beforeLines = beforeText.split("\n");
+  const afterLines = afterText.split("\n");
+  const maxLen = Math.max(beforeLines.length, afterLines.length);
+  const lines = ["--- a/" + relativePath, "+++ b/" + relativePath, "@@ -1,0 +1,0 @@"];
+  for (let i = 0; i < maxLen; i++) {
+    const b = beforeLines[i];
+    const a = afterLines[i];
+    if (b === a) {
+      if (b !== undefined) lines.push(" " + b);
+      continue;
+    }
+    if (b !== undefined) lines.push("-" + b);
+    if (a !== undefined) lines.push("+" + a);
+  }
+  return truncateUtf8(lines.join("\n"), fsWriteConfig.maxDiffBytes);
+};
+
+const applySingleFileUnifiedPatch = (beforeText, patchText) => {
+  const lines = patchText.split("\n");
+  const plusHeader = lines.find((line) => line.startsWith("+++ "));
+  if (!plusHeader) throw fsSafeErr("PATCH_APPLY_FAILED", "Missing +++ header");
+  const oldLines = beforeText.split("\n");
+  const output = [];
+  let srcIdx = 0;
+  let inHunk = false;
+  for (const line of lines) {
+    if (line.startsWith("@@")) {
+      inHunk = true;
+      continue;
+    }
+    if (!inHunk) continue;
+    if (line.startsWith(" ")) {
+      const expected = line.slice(1);
+      if (oldLines[srcIdx] !== expected) throw fsSafeErr("PATCH_APPLY_FAILED", "Patch context mismatch");
+      output.push(expected);
+      srcIdx += 1;
+      continue;
+    }
+    if (line.startsWith("-")) {
+      const expected = line.slice(1);
+      if (oldLines[srcIdx] !== expected) throw fsSafeErr("PATCH_APPLY_FAILED", "Patch removal mismatch");
+      srcIdx += 1;
+      continue;
+    }
+    if (line.startsWith("+")) {
+      output.push(line.slice(1));
+      continue;
+    }
+  }
+  while (srcIdx < oldLines.length) {
+    output.push(oldLines[srcIdx]);
+    srcIdx += 1;
+  }
+  return output.join("\n");
 };
 
 const handlers = {
@@ -657,6 +743,204 @@ const handlers = {
       searchPath: relativePath || ".",
       results,
       truncated
+    };
+  },
+  "tool:fs-write-file": async (parameters) => {
+    if (!fsWriteConfig.writesEnabled) throw fsSafeErr("TOOL_NOT_AVAILABLE", "Filesystem writes are disabled");
+
+    const userPath = String(parameters.path || "");
+    const content = String(parameters.content ?? "");
+    const dryRun = Boolean(parameters.dryRun);
+    if (!userPath) throw fsSafeErr("INVALID_PATH", "path must not be empty");
+
+    const contentBytes = Buffer.byteLength(content, "utf8");
+    if (contentBytes > fsWriteConfig.maxWriteBytes) throw fsSafeErr("WRITE_TOO_LARGE", "Write content exceeds maxWriteBytes");
+
+    const { resolvedPath, relativePath } = await resolveWorkspacePath(userPath);
+    if (isDenied(relativePath)) throw fsSafeErr("PATH_DENIED", "Writes to this path are blocked by filesystem policy.");
+
+    let before = "";
+    let exists = true;
+    try {
+      before = (await fs.promises.readFile(resolvedPath)).toString("utf8");
+    } catch {
+      exists = false;
+    }
+
+    const diffOut = buildUnifiedDiff(relativePath, before, content);
+    if (!dryRun) {
+      await fs.promises.writeFile(resolvedPath, content, "utf8");
+    }
+
+    return {
+      path: relativePath,
+      operation: "write",
+      dryRun,
+      wouldChange: before !== content,
+      changed: dryRun ? false : before !== content,
+      approved: true,
+      diff: diffOut.text,
+      truncated: diffOut.truncated,
+      hashBefore: exists ? toSha256(before) : null,
+      hashAfter: toSha256(content),
+      sizeBefore: Buffer.byteLength(before, "utf8"),
+      sizeAfter: contentBytes
+    };
+  },
+  "tool:fs-append-file": async (parameters) => {
+    if (!fsWriteConfig.writesEnabled) throw fsSafeErr("TOOL_NOT_AVAILABLE", "Filesystem writes are disabled");
+
+    const userPath = String(parameters.path || "");
+    const content = String(parameters.content ?? "");
+    const dryRun = Boolean(parameters.dryRun);
+    if (!userPath) throw fsSafeErr("INVALID_PATH", "path must not be empty");
+
+    const appendBytes = Buffer.byteLength(content, "utf8");
+    if (appendBytes > fsWriteConfig.maxWriteBytes) throw fsSafeErr("WRITE_TOO_LARGE", "Append content exceeds maxWriteBytes");
+
+    const { resolvedPath, relativePath } = await resolveWorkspacePath(userPath);
+    if (isDenied(relativePath)) throw fsSafeErr("PATH_DENIED", "Writes to this path are blocked by filesystem policy.");
+
+    let before = "";
+    let exists = true;
+    try {
+      before = (await fs.promises.readFile(resolvedPath)).toString("utf8");
+    } catch {
+      exists = false;
+    }
+    const after = before + content;
+    const afterBytes = Buffer.byteLength(after, "utf8");
+    if (afterBytes > fsWriteConfig.maxWriteBytes) throw fsSafeErr("WRITE_TOO_LARGE", "Resulting file exceeds maxWriteBytes");
+
+    const diffOut = buildUnifiedDiff(relativePath, before, after);
+    if (!dryRun) {
+      await fs.promises.appendFile(resolvedPath, content, "utf8");
+    }
+
+    return {
+      path: relativePath,
+      operation: "append",
+      dryRun,
+      wouldChange: content.length > 0,
+      changed: dryRun ? false : content.length > 0,
+      approved: true,
+      diff: diffOut.text,
+      truncated: diffOut.truncated,
+      hashBefore: exists ? toSha256(before) : null,
+      hashAfter: toSha256(after),
+      sizeBefore: Buffer.byteLength(before, "utf8"),
+      sizeAfter: afterBytes
+    };
+  },
+  "tool:fs-apply-patch": async (parameters) => {
+    if (!fsWriteConfig.writesEnabled) throw fsSafeErr("TOOL_NOT_AVAILABLE", "Filesystem writes are disabled");
+
+    const userPath = String(parameters.path || "");
+    const patchText = String(parameters.patch ?? "");
+    const dryRun = Boolean(parameters.dryRun);
+    if (!userPath) throw fsSafeErr("INVALID_PATH", "path must not be empty");
+    if (!patchText.trim()) throw fsSafeErr("PATCH_APPLY_FAILED", "patch must not be empty");
+    if (Buffer.byteLength(patchText, "utf8") > fsWriteConfig.maxPatchBytes) {
+      throw fsSafeErr("PATCH_TOO_LARGE", "Patch size exceeds maxPatchBytes");
+    }
+
+    const { resolvedPath, relativePath } = await resolveWorkspacePath(userPath);
+    if (isDenied(relativePath)) throw fsSafeErr("PATH_DENIED", "Writes to this path are blocked by filesystem policy.");
+
+    let before = "";
+    try {
+      before = (await fs.promises.readFile(resolvedPath)).toString("utf8");
+    } catch (err) {
+      if (err && typeof err === "object" && "code" in err && (err.code === "ENOENT" || err.code === "ENOTDIR")) {
+        throw fsSafeErr("FILE_NOT_FOUND", "File not found: " + relativePath);
+      }
+      throw fsSafeErr("FILE_NOT_FOUND", "Cannot access path: " + relativePath);
+    }
+
+    const after = applySingleFileUnifiedPatch(before, patchText);
+    const afterBytes = Buffer.byteLength(after, "utf8");
+    if (afterBytes > fsWriteConfig.maxWriteBytes) throw fsSafeErr("WRITE_TOO_LARGE", "Resulting file exceeds maxWriteBytes");
+
+    const diffOut = buildUnifiedDiff(relativePath, before, after);
+    if (!dryRun) {
+      await fs.promises.writeFile(resolvedPath, after, "utf8");
+    }
+    return {
+      path: relativePath,
+      operation: "patch",
+      dryRun,
+      wouldChange: before !== after,
+      changed: dryRun ? false : before !== after,
+      approved: true,
+      diff: diffOut.text,
+      truncated: diffOut.truncated,
+      hashBefore: toSha256(before),
+      hashAfter: toSha256(after),
+      sizeBefore: Buffer.byteLength(before, "utf8"),
+      sizeAfter: afterBytes
+    };
+  },
+  "tool:fs-rename-file": async (parameters) => {
+    if (!fsWriteConfig.writesEnabled) throw fsSafeErr("TOOL_NOT_AVAILABLE", "Filesystem writes are disabled");
+    const fromUserPath = String(parameters.fromPath || "");
+    const toUserPath = String(parameters.toPath || "");
+    const dryRun = Boolean(parameters.dryRun);
+    if (!fromUserPath || !toUserPath) throw fsSafeErr("INVALID_PATH", "fromPath and toPath must not be empty");
+
+    const fromResolved = await resolveWorkspacePath(fromUserPath);
+    const toResolved = await resolveWorkspacePath(toUserPath);
+    if (isDenied(fromResolved.relativePath) || isDenied(toResolved.relativePath)) {
+      throw fsSafeErr("PATH_DENIED", "Writes to this path are blocked by filesystem policy.");
+    }
+    if (fromResolved.relativePath === toResolved.relativePath) {
+      return {
+        fromPath: fromResolved.relativePath,
+        toPath: toResolved.relativePath,
+        operation: "rename",
+        dryRun,
+        wouldChange: false,
+        changed: false,
+        approved: true
+      };
+    }
+
+    try {
+      const stat = await fs.promises.stat(fromResolved.resolvedPath);
+      if (!stat.isFile()) throw fsSafeErr("INVALID_PATH", "Source path is not a file");
+    } catch (err) {
+      if (err && typeof err === "object" && "code" in err && (err.code === "ENOENT" || err.code === "ENOTDIR")) {
+        throw fsSafeErr("FILE_NOT_FOUND", "Source file not found: " + fromResolved.relativePath);
+      }
+      if (err && typeof err === "object" && "safeMessage" in err) throw err;
+      throw fsSafeErr("FILE_NOT_FOUND", "Cannot access source path: " + fromResolved.relativePath);
+    }
+
+    if (!dryRun) {
+      try {
+        await fs.promises.rename(fromResolved.resolvedPath, toResolved.resolvedPath);
+      } catch (err) {
+        if (err && typeof err === "object" && "code" in err) {
+          if (err.code === "ENOENT" || err.code === "ENOTDIR") {
+            throw fsSafeErr("FILE_NOT_FOUND", "Source file or destination directory not found");
+          }
+          if (err.code === "EXDEV") {
+            throw fsSafeErr("UNSUPPORTED_OPERATION", "Cross-device rename is not supported");
+          }
+          if (err.code === "EACCES" || err.code === "EPERM") {
+            throw fsSafeErr("PATH_DENIED", "Writes to this path are blocked by filesystem policy.");
+          }
+        }
+        throw fsSafeErr("UNSUPPORTED_OPERATION", "Rename failed");
+      }
+    }
+    return {
+      fromPath: fromResolved.relativePath,
+      toPath: toResolved.relativePath,
+      operation: "rename",
+      dryRun,
+      wouldChange: true,
+      changed: !dryRun,
+      approved: true
     };
   },
 
@@ -1063,7 +1347,7 @@ export async function runSandboxedExecution(input: SandboxRunInput): Promise<San
     ? rawWorkspaceRoot
     : join(process.cwd(), rawWorkspaceRoot);
   const fs1WorkspaceRoot = await realpath(absWorkspaceRoot).catch(() => absWorkspaceRoot);
-  const isFs1Tool = request.toolRef.startsWith("tool:fs-");
+  const isFsTool = request.toolRef.startsWith("tool:fs-");
 
   const workerPayload = {
     toolRef: request.toolRef,
@@ -1080,9 +1364,14 @@ export async function runSandboxedExecution(input: SandboxRunInput): Promise<San
           scratchDir,
           runRoot,
           // FS1 tools need access to the workspace root for reads
-          ...(isFs1Tool ? [fs1WorkspaceRoot] : [])
+          ...(isFsTool ? [fs1WorkspaceRoot] : [])
         ],
-        writePaths: [...request.runtimePolicy.filesystem.writePaths, outputDir, scratchDir]
+        writePaths: [
+          ...request.runtimePolicy.filesystem.writePaths,
+          outputDir,
+          scratchDir,
+          ...(isFsTool ? [fs1WorkspaceRoot] : [])
+        ]
       }
     },
     injectedSecretRefs: injectedSecrets,
@@ -1092,7 +1381,12 @@ export async function runSandboxedExecution(input: SandboxRunInput): Promise<San
       maxReadBytes: parseInt(process.env.MANASVI_FS_MAX_READ_BYTES ?? "200000", 10),
       maxDirectoryEntries: parseInt(process.env.MANASVI_FS_MAX_DIRECTORY_ENTRIES ?? "500", 10),
       maxSearchResults: parseInt(process.env.MANASVI_FS_MAX_SEARCH_RESULTS ?? "50", 10),
-      maxSearchFileBytes: parseInt(process.env.MANASVI_FS_MAX_SEARCH_FILE_BYTES ?? "200000", 10)
+      maxSearchFileBytes: parseInt(process.env.MANASVI_FS_MAX_SEARCH_FILE_BYTES ?? "200000", 10),
+      writesEnabled: (process.env.MANASVI_FS_WRITES_ENABLED ?? "false").toLowerCase() === "true",
+      requireApproval: (process.env.MANASVI_FS_WRITES_REQUIRE_APPROVAL ?? "true").toLowerCase() === "true",
+      maxWriteBytes: parseInt(process.env.MANASVI_FS_MAX_WRITE_BYTES ?? "500000", 10),
+      maxPatchBytes: parseInt(process.env.MANASVI_FS_MAX_PATCH_BYTES ?? "200000", 10),
+      maxDiffBytes: parseInt(process.env.MANASVI_FS_MAX_DIFF_BYTES ?? "100000", 10)
     }
   };
   baseEnv.MANASVI_TOOL_PAYLOAD = Buffer.from(JSON.stringify(workerPayload), "utf8").toString("base64");

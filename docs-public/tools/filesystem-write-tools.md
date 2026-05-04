@@ -1,67 +1,86 @@
 # Filesystem Write Tools
 
-Three governed tools for writing to the workspace filesystem: `file-write`, `file-edit`, and `file-apply-patch`. All are scoped to the operator-configured write zone. Path traversal outside the zone is blocked at the runtime boundary.
+FS2 adds governed workspace write tools: `tool.fs-write-file`, `tool.fs-append-file`, `tool.fs-apply-patch`, and `tool.fs-rename-file`.
+The filesystem is not a capability of the model. It is a governed capability of the Manasvi runtime.
+All FS2 writes are workspace-sandboxed, deny-pattern filtered, and approval-gated by default.
 
 ---
 
-## file-write — `tool.file-write`
+## fs-write-file — `tool.fs-write-file`
 
-Creates or overwrites a file within the write zone.
+Creates or overwrites a file within the workspace write zone.
 
-**Action class:** `write` | **Side effects:** `mutating` | **Approval:** may require
+**Action class:** `write` | **Side effects:** `mutating` | **Approval:** required by default
 
 ### Input
 | Field | Type | Default | Description |
 |---|---|---|---|
 | `path` | string | — | Path within the write zone |
 | `content` | string | — | File content |
-| `encoding` | enum | `utf8` | `utf8` or `base64` |
-| `overwrite` | boolean | `false` | Allow overwrite of existing files |
-| `createDirectories` | boolean | `false` | Create parent directories |
+| `dryRun` | boolean | `false` | Validate and preview without writing |
 
 ### Safety notes
-- `overwrite=false` is the safe default — prevents accidental file destruction
-- All writes are recorded in the audit trail
+- Returns `diff` preview, `hashBefore`, `hashAfter`, and size metadata
+- Denylist + workspace-sandbox checks enforced before write
 
 ---
 
-## file-edit — `tool.file-edit`
+## fs-append-file — `tool.fs-append-file`
 
-Performs a targeted string replacement in an existing file.
+Appends content to a file in the workspace write zone.
 
-**Action class:** `write` | **Side effects:** `mutating` | **Approval:** may require
+**Action class:** `write` | **Side effects:** `mutating` | **Approval:** required by default
 
 ### Input
 | Field | Type | Default | Description |
 |---|---|---|---|
 | `path` | string | — | Target file (must exist) |
-| `oldString` | string | — | Exact string to replace |
-| `newString` | string | — | Replacement |
-| `replaceAll` | boolean | `false` | Replace all occurrences |
+| `content` | string | — | Content to append |
+| `dryRun` | boolean | `false` | Validate and preview without writing |
 
 ### Safety notes
-- `oldString` must be unique in the file by default (prevents unintended bulk replacements)
-- Edit is atomic — file written as a whole after replacement
+- Returns `diff` preview, `hashBefore`, `hashAfter`, and size metadata
+- Denylist + workspace-sandbox checks enforced before append
 
 ---
 
-## file-apply-patch — `tool.file-apply-patch`
+## fs-apply-patch — `tool.fs-apply-patch`
 
-Applies a unified-diff (git diff) patch to one or more files.
+Applies a unified-diff patch to a single target file in the workspace.
 
-**Action class:** `write` | **Side effects:** `mutating` | **Approval:** required
+**Action class:** `write` | **Side effects:** `mutating` | **Approval:** required by default
 
 ### Input
 | Field | Type | Default | Description |
 |---|---|---|---|
+| `path` | string | — | Target file path in workspace |
 | `patch` | string | — | Unified-diff patch text |
-| `baseDir` | string | `/workspace` | Base directory for path resolution |
-| `dryRun` | boolean | `false` | Preview without writing |
+| `dryRun` | boolean | `false` | Validate and preview without writing |
 
 ### Safety notes
-- Approval required — a patch can modify multiple files simultaneously
+- Patch and resulting file size limits enforced
 - Use `dryRun=true` to review changes before committing
-- All patched paths must resolve within the write zone
+- Target path must resolve within workspace and pass deny rules
+
+---
+
+## fs-rename-file — `tool.fs-rename-file`
+
+Renames or moves a file within the workspace write zone.
+
+**Action class:** `write` | **Side effects:** `mutating` | **Approval:** required by default
+
+### Input
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `fromPath` | string | — | Source file path in workspace |
+| `toPath` | string | — | Destination file path in workspace |
+| `dryRun` | boolean | `false` | Validate without renaming |
+
+### Safety notes
+- Source and destination must both pass workspace sandbox and deny rules
+- Path traversal and sensitive paths are blocked
+- Returns structured result with `wouldChange` and `changed` flags
 
 ---
 
@@ -69,8 +88,8 @@ Applies a unified-diff (git diff) patch to one or more files.
 
 | Set | Includes |
 |---|---|
-| `manasvi.toolset.controlled-write` | `file-write`, `file-edit` |
-| `manasvi.toolset.governed-execute` | `file-apply-patch` |
+| `manasvi.toolset.controlled-write` | `fs-write-file`, `fs-append-file`, `fs-rename-file` |
+| `manasvi.toolset.governed-execute` | `fs-apply-patch` |
 
 ---
 
@@ -84,6 +103,11 @@ Applies a unified-diff (git diff) patch to one or more files.
 ```
 
 Configure the filesystem write zone paths in the execution-manager policy before enabling.
+
+## Legacy tools
+
+Legacy `tool.file-write`, `tool.file-edit`, and `tool.file-apply-patch` may still exist for backward compatibility.
+New integrations should use FS2 `tool.fs-*` write tools.
 
 ---
 

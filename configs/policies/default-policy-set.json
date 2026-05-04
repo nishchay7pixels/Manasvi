@@ -358,10 +358,10 @@
           }
         },
         {
-          "ruleId": "allow-orchestrator-write-filesystem-tool",
-          "description": "Allow orchestrator to invoke explicit filesystem write/edit tools.",
+          "ruleId": "require-approval-orchestrator-write-filesystem-tool",
+          "description": "Require approval for orchestrator filesystem writes (FS2 + legacy write tools).",
           "priority": 681,
-          "effect": "allow",
+          "effect": "require_approval",
           "enabled": true,
           "selectors": {
             "callerTypes": ["service"],
@@ -376,20 +376,28 @@
             "tool:file-write",
             "tool:file-edit",
             "tool:file-apply-patch",
+            "tool:fs-write-file",
+            "tool:fs-append-file",
+            "tool:fs-apply-patch",
+            "tool:fs-rename-file",
             "tool.file-write",
             "tool.file-edit",
-            "tool.file-apply-patch"
+            "tool.file-apply-patch",
+            "tool.fs-write-file",
+            "tool.fs-append-file",
+            "tool.fs-apply-patch",
+            "tool.fs-rename-file"
           ],
-          "requiredCapabilities": ["filesystem.write"],
+          "requiredCapabilities": [],
           "conditions": {
             "requireTenantMatch": false,
             "requireWorkspaceMatch": false,
             "allowSkipApproval": false,
-            "maxRiskLevel": "medium"
+            "maxRiskLevel": "high"
           },
           "metadata": {
-            "highRiskCoverage": false,
-            "tags": ["tooling", "filesystem", "write"]
+            "highRiskCoverage": true,
+            "tags": ["tooling", "filesystem", "write", "approval"]
           }
         },
         {
@@ -687,9 +695,17 @@
             "tool:file-write",
             "tool:file-edit",
             "tool:file-apply-patch",
+            "tool:fs-write-file",
+            "tool:fs-append-file",
+            "tool:fs-apply-patch",
+            "tool:fs-rename-file",
             "tool.file-write",
             "tool.file-edit",
-            "tool.file-apply-patch"
+            "tool.file-apply-patch",
+            "tool.fs-write-file",
+            "tool.fs-append-file",
+            "tool.fs-apply-patch",
+            "tool.fs-rename-file"
           ],
           "requiredCapabilities": [],
           "conditions": {

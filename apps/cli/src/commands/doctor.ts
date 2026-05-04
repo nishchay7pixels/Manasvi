@@ -70,8 +70,8 @@ async function runChecks(config: Awaited<ReturnType<typeof loadConfig>>): Promis
     fix: envExists ? undefined : "Run: pnpm manasvi init"
   });
 
-  if (envExists) {
-    const env = await readEnvFile(envPath);
+    if (envExists) {
+      const env = await readEnvFile(envPath);
 
     const requiredSecrets = [
       "INTERNAL_AUTH_KEY_ID",
@@ -111,6 +111,23 @@ async function runChecks(config: Awaited<ReturnType<typeof loadConfig>>): Promis
         fix: hasKey ? undefined : "Fix: set DEEPSEEK_API_KEY"
       });
     }
+
+    const fsWritesEnabled = (env.MANASVI_FS_WRITES_ENABLED ?? "false").toLowerCase() === "true";
+    const fsWritesRequireApproval = (env.MANASVI_FS_WRITES_REQUIRE_APPROVAL ?? "true").toLowerCase() === "true";
+    checks.push({
+      label: "Filesystem writes",
+      status: fsWritesEnabled ? "warn" : "pass",
+      detail: fsWritesEnabled ? "enabled" : "disabled"
+    });
+    checks.push({
+      label: "Filesystem write approval required",
+      status: fsWritesEnabled && !fsWritesRequireApproval ? "fail" : "pass",
+      detail: fsWritesRequireApproval ? "true" : "false",
+      fix:
+        fsWritesEnabled && !fsWritesRequireApproval
+          ? "Set MANASVI_FS_WRITES_REQUIRE_APPROVAL=true (writes enabled without approval is unsafe)"
+          : undefined
+    });
 
     if (modelMode === "openai") {
       const hasKey = env.OPENAI_API_KEY && env.OPENAI_API_KEY !== "replace-me";

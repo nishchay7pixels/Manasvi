@@ -33,6 +33,13 @@ const WRITE_TOOL_IDS = [
   "tool.file-apply-patch"
 ] as const;
 
+const FS2_WRITE_TOOL_IDS = [
+  "tool.fs-write-file",
+  "tool.fs-append-file",
+  "tool.fs-apply-patch",
+  "tool.fs-rename-file"
+] as const;
+
 // ── Manifest validation ───────────────────────────────────────────────────────
 
 test("all filesystem tool manifests validate against schema", () => {
@@ -51,6 +58,12 @@ test("FS1 tool IDs are present in FILESYSTEM_TOOL_SPECS", () => {
 test("write tool IDs are present in FILESYSTEM_TOOL_SPECS", () => {
   for (const toolId of WRITE_TOOL_IDS) {
     assert.ok(toolId in FILESYSTEM_TOOL_SPECS, `Missing write tool: ${toolId}`);
+  }
+});
+
+test("FS2 write tool IDs are present in FILESYSTEM_TOOL_SPECS", () => {
+  for (const toolId of FS2_WRITE_TOOL_IDS) {
+    assert.ok(toolId in FILESYSTEM_TOOL_SPECS, `Missing FS2 write tool: ${toolId}`);
   }
 });
 
@@ -155,13 +168,22 @@ test("all FS1 tools have read_only_local sandbox mode", () => {
 // ── Write tool safety properties ──────────────────────────────────────────────
 
 test("write tools are mutating (not read_only)", () => {
-  for (const toolId of WRITE_TOOL_IDS) {
+  for (const toolId of [...WRITE_TOOL_IDS, ...FS2_WRITE_TOOL_IDS]) {
     const spec = FILESYSTEM_TOOL_SPECS[toolId];
     assert.equal(
       spec.manifest.mutability,
       "mutating",
       `${toolId} must be mutating`
     );
+  }
+});
+
+test("FS2 write tools are approval-sensitive and must_require", () => {
+  for (const toolId of FS2_WRITE_TOOL_IDS) {
+    const spec = FILESYSTEM_TOOL_SPECS[toolId];
+    assert.equal(spec.manifest.runtimeHints.approvalSensitive, true, `${toolId} must be approvalSensitive`);
+    assert.equal(spec.manifest.policyBinding.approvalHint, "must_require", `${toolId} must have must_require approvalHint`);
+    assert.equal(spec.manifest.actionClass, "write", `${toolId} must be actionClass write`);
   }
 });
 
@@ -250,6 +272,22 @@ test("tool.fs-search-files input schema accepts query and path", () => {
   assert.ok(result.success);
   assert.equal(result.data.query, "hello");
   assert.equal(result.data.path, "src");
+});
+
+test("tool.fs-rename-file input schema accepts canonical fields", () => {
+  const spec = FILESYSTEM_TOOL_SPECS["tool.fs-rename-file"];
+  const result = spec.inputSchema.safeParse({ fromPath: "hello.txt", toPath: "hellow.txt" });
+  assert.ok(result.success);
+  assert.equal(result.data.fromPath, "hello.txt");
+  assert.equal(result.data.toPath, "hellow.txt");
+});
+
+test("tool.fs-rename-file input schema accepts path/newPath aliases", () => {
+  const spec = FILESYSTEM_TOOL_SPECS["tool.fs-rename-file"];
+  const result = spec.inputSchema.safeParse({ path: "hello.txt", newPath: "hellow.txt" });
+  assert.ok(result.success);
+  assert.equal(result.data.fromPath, "hello.txt");
+  assert.equal(result.data.toPath, "hellow.txt");
 });
 
 // ── Output schema validation ──────────────────────────────────────────────────

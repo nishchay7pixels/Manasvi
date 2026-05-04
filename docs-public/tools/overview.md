@@ -23,9 +23,10 @@ Manasvi ships with **30 built-in tools** across 10 categories.
 | Tool ID | Name | Risk | Approval | What it does |
 |---|---|---|---|---|
 | `tool.local-file-read` | Local File Read | Low | Not required | Reads a file in the sandbox |
-| `tool.file-write` | File Write | Medium | May require | Creates or overwrites a file in the write zone |
-| `tool.file-edit` | File Edit | Medium | May require | Targeted string replacement in an existing file |
-| `tool.file-apply-patch` | File Apply Patch | High | Must require | Applies a unified-diff patch to workspace files |
+| `tool.fs-write-file` | FS Write File | Medium | Must require | Creates or overwrites a file in the workspace write zone |
+| `tool.fs-append-file` | FS Append File | Medium | Must require | Appends content to a file in the workspace write zone |
+| `tool.fs-apply-patch` | FS Apply Patch | High | Must require | Applies a unified-diff patch to a workspace file |
+| `tool.fs-rename-file` | FS Rename File | Medium | Must require | Renames or moves a file within the workspace |
 
 ### Web
 
@@ -126,7 +127,7 @@ Tool output is always classified. Manasvi never auto-promotes trust.
 
 | Category | Tools | Output trust class |
 |---|---|---|
-| Filesystem | `local-file-read`, `file-write`, `file-edit`, `file-apply-patch` | `EXTERNAL_UNTRUSTED` |
+| Filesystem | `local-file-read`, `fs-write-file`, `fs-append-file`, `fs-apply-patch`, `fs-rename-file` | `EXTERNAL_UNTRUSTED` |
 | Web | `http-fetch`, `web-search`, `x-search` | `EXTERNAL_UNTRUSTED` |
 | Runtime | `exec`, `bash`, `code-execution`, `process`, `shell-command` | `EXTERNAL_UNTRUSTED` |
 | Memory write | `memory-note-write` | Preserves the trust class supplied by the caller |
@@ -146,9 +147,10 @@ Tool output is always classified. Manasvi never auto-promotes trust.
 | Tool | Sandbox mode | Network | Filesystem |
 |---|---|---|---|
 | `tool.local-file-read` | `read_only_local` | blocked | read-only inputs |
-| `tool.file-write` | `no_network_compute` | blocked | scratch write |
-| `tool.file-edit` | `no_network_compute` | blocked | scratch write |
-| `tool.file-apply-patch` | `no_network_compute` | blocked | privileged bounded |
+| `tool.fs-write-file` | `no_network_compute` | blocked | scratch write |
+| `tool.fs-append-file` | `no_network_compute` | blocked | scratch write |
+| `tool.fs-apply-patch` | `no_network_compute` | blocked | scratch write |
+| `tool.fs-rename-file` | `no_network_compute` | blocked | scratch write |
 | `tool.http-fetch` | `restricted_remote` | allowlist only | none |
 | `tool.web-search` | `restricted_remote` | allowlist only | none |
 | `tool.x-search` | `restricted_remote` | allowlist only | none |
@@ -228,7 +230,7 @@ If a policy rule is missing, the tool invocation returns `POLICY_DENIED` with re
 
 ### New tools (B5)
 - [Runtime Tools — exec, process, code-execution, bash](./runtime-tools.md)
-- [Filesystem Write Tools — file-write, file-edit, file-apply-patch](./filesystem-write-tools.md)
+- [Filesystem Write Tools — fs-write-file, fs-append-file, fs-apply-patch, fs-rename-file](./filesystem-write-tools.md)
 - [Session Tools — sessions-list/history/send/spawn/yield, subagents, session-status](./session-tools.md)
 - [Memory Tools — memory-search, memory-get](./memory-tools.md)
 - [X Search](./x-search.md)

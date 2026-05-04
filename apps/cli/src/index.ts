@@ -139,6 +139,8 @@ ${style.bold("Options:")}
   ${style.dim("--verbose, -v")}      Verbose output
   ${style.dim("--yes, -y")}          Non-interactive mode (accept defaults)
   ${style.dim("--force")}            Force re-run (bypasses already-done checks)
+  ${style.dim("--project <path>")}   Project root for init
+  ${style.dim("--workspace <path>")} Workspace root for filesystem tools (init)
 
 ${style.bold("Quick start:")}
   ${style.dim("$")} ${style.cyan("pnpm manasvi init")}
@@ -182,7 +184,11 @@ async function main(): Promise<void> {
   try {
     switch (cmd) {
       case "init":
-        await runInit({ force, projectPath: flagValue(args, "--project") });
+        await runInit({
+          force,
+          projectPath: flagValue(args, "--project"),
+          workspacePath: flagValue(args, "--workspace")
+        });
         break;
 
       case "onboard":

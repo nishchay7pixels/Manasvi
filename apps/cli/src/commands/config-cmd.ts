@@ -21,6 +21,7 @@ export async function runConfigShow(): Promise<void> {
   table([
     { label: "Profile", value: config.profile },
     { label: "Project", value: config.projectPath },
+    { label: "Workspace", value: config.workspacePath },
     { label: "Initialized", value: config.initialized ? "yes" : "no", status: config.initialized ? "ok" : "error" },
     { label: "Onboarded", value: config.onboarded ? "yes" : "no", status: config.onboarded ? "ok" : "warn" }
   ]);

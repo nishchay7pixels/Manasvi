@@ -259,11 +259,11 @@ The model should follow these rules when using filesystem tools:
 
 ## What is not supported in FS1
 
-FS1 is intentionally read-only. The following are **not available** in this milestone:
+FS1 is intentionally read-only. The following are **not available inside FS1**:
 
-- Writing files (`tool.file-write`, `tool.file-edit`)
-- Applying patches (`tool.file-apply-patch`)
-- Deleting or renaming files
+- Writing files (`tool.fs-write-file`, `tool.fs-append-file`)
+- Applying patches (`tool.fs-apply-patch`)
+- Deleting files
 - Creating directories
 - Shell execution
 - Reading arbitrary absolute paths
@@ -273,12 +273,12 @@ FS1 is intentionally read-only. The following are **not available** in this mile
 
 ## Future milestones
 
-**FS2 (planned)** — Governed write access:
-- Workspace-sandboxed file write with approval
-- Workspace-sandboxed directory creation
-- Chunked reading for large files
-- Allowlist patterns (in addition to denylist)
-- Doctor/status integration showing workspace health
+**FS2 (implemented)** — Governed write access:
+- Workspace-sandboxed writes with approval-required by default
+- `tool.fs-write-file`, `tool.fs-append-file`, `tool.fs-apply-patch`, `tool.fs-rename-file`
+- Dry-run diff preview and before/after hash metadata
+- Write/patch/diff limits via env config
+- Doctor safety checks for writes-without-approval misconfiguration
 
 **FS3 (planned)** — Advanced operations:
 - Atomic patch application with rollback

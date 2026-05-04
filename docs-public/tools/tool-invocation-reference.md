@@ -20,26 +20,27 @@ All 30 Manasvi built-in tools. For each tool: ID, a natural language prompt you 
 | 8 | [tool.process](#toolprocess) | Runtime |
 | 9 | [tool.code-execution](#toolcode-execution) | Runtime |
 | 10 | [tool.bash](#toolbash) | Runtime |
-| 11 | [tool.file-write](#toolfile-write) | Filesystem (write) |
-| 12 | [tool.file-edit](#toolfile-edit) | Filesystem (write) |
-| 13 | [tool.file-apply-patch](#toolfile-apply-patch) | Filesystem (write) |
-| 14 | [tool.sessions-list](#toolsessions-list) | Sessions |
-| 15 | [tool.sessions-history](#toolsessions-history) | Sessions |
-| 16 | [tool.session-status](#toolsession-status) | Sessions |
-| 17 | [tool.sessions-send](#toolsessions-send) | Sessions |
-| 18 | [tool.sessions-yield](#toolsessions-yield) | Sessions |
-| 19 | [tool.sessions-spawn](#toolsessions-spawn) | Sessions |
-| 20 | [tool.subagents](#toolsubagents) | Sessions |
-| 21 | [tool.memory-search](#toolmemory-search) | Memory |
-| 22 | [tool.memory-get](#toolmemory-get) | Memory |
-| 23 | [tool.x-search](#toolx-search) | Web |
-| 24 | [tool.browser](#toolbrowser) | UI |
-| 25 | [tool.canvas](#toolcanvas) | UI |
-| 26 | [tool.cron](#toolcron) | Automation |
-| 27 | [tool.gateway](#toolgateway) | Automation |
-| 28 | [tool.message](#toolmessage) | Messaging |
-| 29 | [tool.nodes](#toolnodes) | Nodes |
-| 30 | [tool.agents-list](#toolagents-list) | Agents |
+| 11 | [tool.fs-write-file](#toolfs-write-file) | Filesystem (write) |
+| 12 | [tool.fs-append-file](#toolfs-append-file) | Filesystem (write) |
+| 13 | [tool.fs-apply-patch](#toolfs-apply-patch) | Filesystem (write) |
+| 14 | [tool.fs-rename-file](#toolfs-rename-file) | Filesystem (write) |
+| 15 | [tool.sessions-list](#toolsessions-list) | Sessions |
+| 16 | [tool.sessions-history](#toolsessions-history) | Sessions |
+| 17 | [tool.session-status](#toolsession-status) | Sessions |
+| 18 | [tool.sessions-send](#toolsessions-send) | Sessions |
+| 19 | [tool.sessions-yield](#toolsessions-yield) | Sessions |
+| 20 | [tool.sessions-spawn](#toolsessions-spawn) | Sessions |
+| 21 | [tool.subagents](#toolsubagents) | Sessions |
+| 22 | [tool.memory-search](#toolmemory-search) | Memory |
+| 23 | [tool.memory-get](#toolmemory-get) | Memory |
+| 24 | [tool.x-search](#toolx-search) | Web |
+| 25 | [tool.browser](#toolbrowser) | UI |
+| 26 | [tool.canvas](#toolcanvas) | UI |
+| 27 | [tool.cron](#toolcron) | Automation |
+| 28 | [tool.gateway](#toolgateway) | Automation |
+| 29 | [tool.message](#toolmessage) | Messaging |
+| 30 | [tool.nodes](#toolnodes) | Nodes |
+| 31 | [tool.agents-list](#toolagents-list) | Agents |
 
 ---
 
@@ -280,9 +281,9 @@ All 30 Manasvi built-in tools. For each tool: ID, a natural language prompt you 
 
 ## Filesystem Write Tools (B5)
 
-### tool.file-write
+### tool.fs-write-file
 
-**Category:** Filesystem (write) | **Approval:** may require | **Mutability:** mutating
+**Category:** Filesystem (write) | **Approval:** required by default | **Mutability:** mutating
 
 **Prompt to invoke:**
 > "Save this analysis to `output/summary.txt`: 'Monthly traffic increased 12% in April.'"
@@ -291,37 +292,48 @@ All 30 Manasvi built-in tools. For each tool: ID, a natural language prompt you 
 ```json
 {
   "path": "output/summary.txt",
-  "bytesWritten": 44,
-  "overwritten": false,
-  "createdAt": "2026-05-03T10:00:00.000Z"
+  "operation": "write",
+  "dryRun": false,
+  "wouldChange": true,
+  "changed": true,
+  "approved": true,
+  "hashBefore": null,
+  "hashAfter": "sha256:...",
+  "sizeBefore": 0,
+  "sizeAfter": 44
 }
 ```
 
 ---
 
-### tool.file-edit
+### tool.fs-append-file
 
-**Category:** Filesystem (write) | **Approval:** may require | **Mutability:** mutating
+**Category:** Filesystem (write) | **Approval:** required by default | **Mutability:** mutating
 
 **Prompt to invoke:**
-> "In `src/config.ts`, replace `timeout: 5000` with `timeout: 10000`."
+> "Append this line to `notes/todo.md`: `- follow up with policy review`."
 
 **Expected output:**
 ```json
 {
-  "path": "src/config.ts",
-  "replacementsApplied": 1,
-  "oldString": "timeout: 5000",
-  "newString": "timeout: 10000",
-  "replaceAll": false
+  "path": "notes/todo.md",
+  "operation": "append",
+  "dryRun": false,
+  "wouldChange": true,
+  "changed": true,
+  "approved": true,
+  "hashBefore": "sha256:...",
+  "hashAfter": "sha256:...",
+  "sizeBefore": 120,
+  "sizeAfter": 151
 }
 ```
 
 ---
 
-### tool.file-apply-patch
+### tool.fs-apply-patch
 
-**Category:** Filesystem (write) | **Approval:** required | **Mutability:** mutating
+**Category:** Filesystem (write) | **Approval:** required by default | **Mutability:** mutating
 
 **Prompt to invoke:**
 > "Apply this patch to update the README title: `--- a/README.md\n+++ b/README.md\n@@ -1 +1 @@\n-# Old Title\n+# New Title`"
@@ -329,10 +341,38 @@ All 30 Manasvi built-in tools. For each tool: ID, a natural language prompt you 
 **Expected output (after operator approval):**
 ```json
 {
-  "filesPatched": ["README.md"],
-  "hunksApplied": 1,
+  "path": "README.md",
+  "operation": "patch",
   "dryRun": false,
-  "baseDir": "/workspace"
+  "wouldChange": true,
+  "changed": true,
+  "approved": true,
+  "hashBefore": "sha256:...",
+  "hashAfter": "sha256:...",
+  "sizeBefore": 980,
+  "sizeAfter": 984
+}
+```
+
+---
+
+### tool.fs-rename-file
+
+**Category:** Filesystem (write) | **Approval:** required by default | **Mutability:** mutating
+
+**Prompt to invoke:**
+> "Rename `docs/old-name.md` to `docs/new-name.md`."
+
+**Expected output (after operator approval):**
+```json
+{
+  "fromPath": "docs/old-name.md",
+  "toPath": "docs/new-name.md",
+  "operation": "rename",
+  "dryRun": false,
+  "wouldChange": true,
+  "changed": true,
+  "approved": true
 }
 ```
 
