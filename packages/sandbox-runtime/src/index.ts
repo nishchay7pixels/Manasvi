@@ -333,9 +333,44 @@ const handlers = {
             }
           ]
         : [];
+    let results = [...firstResult, ...parsedRelated].slice(0, maxResults);
+
+    if (results.length === 0 && query.length > 0) {
+      const htmlEndpoint = "https://duckduckgo.com/html/?q=" + encodeURIComponent(query);
+      const htmlResponse = await fetch(htmlEndpoint);
+      const html = await htmlResponse.text();
+      const matches = [...html.matchAll(/<a[^>]+class="result__a"[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/g)];
+      const decodeHtml = (value: string): string => {
+        let decoded = value;
+        decoded = decoded.replace(/&amp;/g, "&");
+        decoded = decoded.replace(/&quot;/g, '"');
+        decoded = decoded.replace(/&#x27;/g, "'");
+        decoded = decoded.replace(/&#39;/g, "'");
+        decoded = decoded.replace(/&lt;/g, "<");
+        decoded = decoded.replace(/&gt;/g, ">");
+        return decoded;
+      };
+      results = matches.slice(0, maxResults).map((match) => {
+        const rawUrl = decodeHtml(String(match[1] || "https://duckduckgo.com"));
+        let url = rawUrl;
+        if (rawUrl.startsWith("//")) {
+          url = "https:" + rawUrl;
+        } else if (rawUrl.startsWith("/")) {
+          url = "https://duckduckgo.com" + rawUrl;
+        }
+        const titleRaw = String(match[2] || "Result");
+        const title = titleRaw.replace(/<[^>]*>/g, "").replace(/\s+/g, " ").trim();
+        return {
+          title: title || "Result",
+          url,
+          snippet: title || query
+        };
+      });
+    }
+
     return {
       query,
-      results: [...firstResult, ...parsedRelated].slice(0, maxResults)
+      results
     };
   },
   "tool:shell-command": async (parameters) => {

@@ -14,6 +14,9 @@ export const executionConfigSchema = baseServiceConfigSchema.extend({
   internalAuthVerificationKeys: z.record(z.string().min(1)).refine((value) => Object.keys(value).length > 0, {
     message: "At least one internal auth verification key is required"
   }),
+  intentVerificationKeys: z.record(z.string().min(1)).refine((value) => Object.keys(value).length > 0, {
+    message: "At least one intent verification key is required"
+  }),
   approvalVerificationKeys: z.record(z.string().min(1)).refine((value) => Object.keys(value).length > 0, {
     message: "At least one approval verification key is required"
   }),
@@ -31,12 +34,47 @@ export const executionConfigSchema = baseServiceConfigSchema.extend({
 
 export type ExecutionManagerConfig = z.infer<typeof executionConfigSchema>;
 
+function parseKeyMap(value: string | undefined): Record<string, string> {
+  return (value ?? "")
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0)
+    .reduce<Record<string, string>>((acc, entry) => {
+      const separator = entry.indexOf(":");
+      if (separator <= 0 || separator >= entry.length - 1) {
+        return acc;
+      }
+      const keyId = entry.slice(0, separator).trim();
+      const secret = entry.slice(separator + 1).trim();
+      if (!keyId || !secret) {
+        return acc;
+      }
+      acc[keyId] = secret;
+      return acc;
+    }, {});
+}
+
 export async function loadExecutionManagerConfig(): Promise<ExecutionManagerConfig> {
   return loadValidatedConfig({
     serviceName: "execution-manager",
     schema: executionConfigSchema,
-    buildConfig: async ({ env, profile, secrets }) => ({
-      ...(function () {
+    buildConfig: async ({ env, profile, secrets }) => {
+      const internalAuthVerificationKeys = parseKeyMap(
+        await secrets.require("INTERNAL_AUTH_VERIFICATION_KEYS")
+      );
+      const fromIntentVerificationEnv = parseKeyMap((env.INTENT_VERIFICATION_KEYS ?? "").trim());
+      const intentSigningKeyId = env.INTENT_SIGNING_KEY_ID?.trim();
+      const intentSigningSecret = env.INTENT_SIGNING_SECRET?.trim();
+      const intentVerificationKeys: Record<string, string> = {
+        ...internalAuthVerificationKeys,
+        ...fromIntentVerificationEnv
+      };
+      if (intentSigningKeyId && intentSigningSecret) {
+        intentVerificationKeys[intentSigningKeyId] = intentSigningSecret;
+      }
+
+      return {
+        ...(function () {
         const egressPolicyRaw =
           env.EXECUTION_EGRESS_WHITELIST_POLICY_JSON ??
           JSON.stringify({
@@ -71,34 +109,9 @@ export async function loadExecutionManagerConfig(): Promise<ExecutionManagerConf
       internalAuthAudience: env.INTERNAL_AUTH_AUDIENCE ?? "manasvi.internal.services",
       internalAuthKeyId: await secrets.require("INTERNAL_AUTH_KEY_ID"),
       internalAuthSigningSecret: await secrets.require("INTERNAL_AUTH_SIGNING_SECRET"),
-      internalAuthVerificationKeys: (await secrets.require("INTERNAL_AUTH_VERIFICATION_KEYS"))
-        .split(",")
-        .map((entry) => entry.trim())
-        .filter((entry) => entry.length > 0)
-        .reduce<Record<string, string>>((acc, entry) => {
-          const separator = entry.indexOf(":");
-          if (separator <= 0 || separator >= entry.length - 1) {
-            return acc;
-          }
-          const keyId = entry.slice(0, separator);
-          const secret = entry.slice(separator + 1);
-          acc[keyId] = secret;
-          return acc;
-        }, {}),
-      approvalVerificationKeys: (await secrets.require("APPROVAL_VERIFICATION_KEYS"))
-        .split(",")
-        .map((entry) => entry.trim())
-        .filter((entry) => entry.length > 0)
-        .reduce<Record<string, string>>((acc, entry) => {
-          const separator = entry.indexOf(":");
-          if (separator <= 0 || separator >= entry.length - 1) {
-            return acc;
-          }
-          const keyId = entry.slice(0, separator);
-          const secret = entry.slice(separator + 1);
-          acc[keyId] = secret;
-          return acc;
-        }, {}),
+      internalAuthVerificationKeys,
+      intentVerificationKeys,
+      approvalVerificationKeys: parseKeyMap(await secrets.require("APPROVAL_VERIFICATION_KEYS")),
       executionTokenTtlSeconds: Number(env.EXECUTION_TOKEN_TTL_SECONDS ?? 90),
       sandboxRootDir: env.SANDBOX_ROOT_DIR ?? "/tmp/manasvi-runs",
       sandboxMaxOutputBytes: Number(env.SANDBOX_MAX_OUTPUT_BYTES ?? 64 * 1024),
@@ -110,6 +123,7 @@ export async function loadExecutionManagerConfig(): Promise<ExecutionManagerConf
         profile === "staging" || profile === "production"
           ? await secrets.require("EXECUTION_CONTROL_TOKEN")
           : await secrets.optional("EXECUTION_CONTROL_TOKEN")
-    })
+    };
+    }
   });
 }

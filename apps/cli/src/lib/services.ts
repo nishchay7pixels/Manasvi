@@ -4,7 +4,7 @@
  */
 
 import { spawn } from "node:child_process";
-import { mkdir, appendFile } from "node:fs/promises";
+import { mkdir, open } from "node:fs/promises";
 import { join } from "node:path";
 import { logsDir, loadPids, savePids, type ManasviConfig, type PidMap } from "./config.js";
 import { waitForService, getServiceSpecs, type ServiceSpec } from "./health.js";
@@ -45,6 +45,7 @@ async function spawnService(
   const logPath = join(logDir, `${serviceName}.log`);
 
   try {
+    const logFile = await open(logPath, "a");
     const proc = spawn(
       "node_modules/.bin/tsx",
       ["watch", `apps/${serviceName}/src/index.ts`],
@@ -52,21 +53,11 @@ async function spawnService(
         cwd: projectRoot,
         env: { ...process.env, ...env, FORCE_COLOR: "0" },
         detached: true,
-        stdio: ["ignore", "pipe", "pipe"]
+        stdio: ["ignore", logFile.fd, logFile.fd]
       }
     );
 
-    // Pipe output to log file
-    if (proc.stdout) {
-      proc.stdout.on("data", (d: Buffer) => {
-        void appendFile(logPath, d.toString());
-      });
-    }
-    if (proc.stderr) {
-      proc.stderr.on("data", (d: Buffer) => {
-        void appendFile(logPath, d.toString());
-      });
-    }
+    await logFile.close();
 
     proc.unref();
     return { pid: proc.pid };

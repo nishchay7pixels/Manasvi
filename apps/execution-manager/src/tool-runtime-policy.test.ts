@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 import test from "node:test";
 
 import { BUILTIN_TOOL_MANIFESTS, createGovernedToolInvocation } from "@manasvi/tool-sdk";
@@ -115,6 +116,7 @@ test("tool runtime hints tighten timeout and restrict undeclared secrets", () =>
         intentVersion: "1.0",
         intentPayloadHash: intent.payloadHash,
         approvalState: "not_required",
+        nonce: randomUUID(),
         issuedAt: new Date().toISOString(),
         expiresAt: new Date(Date.now() + 60_000).toISOString(),
         issuedByService: "approval-service",

@@ -216,7 +216,7 @@ async function main(): Promise<void> {
           })
           .parse(await readJsonBody(req));
         const intent = body.intent;
-        const signatureVerification = verifyExecutionIntentSignature(intent, config.internalAuthVerificationKeys);
+        const signatureVerification = verifyExecutionIntentSignature(intent, config.intentVerificationKeys);
         if (!signatureVerification.ok) {
           respondJson(res, 422, {
             schemaVersion: CONTRACT_SCHEMA_VERSION,
@@ -318,7 +318,7 @@ async function main(): Promise<void> {
           .parse(await readJsonBody(req));
         const signatureVerification = verifyExecutionIntentSignature(
           body.intent,
-          config.internalAuthVerificationKeys
+          config.intentVerificationKeys
         );
         if (!signatureVerification.ok) {
           respondJson(res, 422, {
@@ -442,7 +442,7 @@ async function main(): Promise<void> {
           .parse(await readJsonBody(req));
         const signatureVerification = verifyExecutionIntentSignature(
           body.intent,
-          config.internalAuthVerificationKeys
+          config.intentVerificationKeys
         );
         if (!signatureVerification.ok) {
           respondJson(res, 422, {

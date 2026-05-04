@@ -249,7 +249,7 @@ async function main(): Promise<void> {
           intent: incoming.intent,
           artifact: incoming.artifact,
           verificationSecretsByKeyId: config.approvalVerificationKeys,
-          intentVerificationSecretsByKeyId: config.internalAuthVerificationKeys,
+          intentVerificationSecretsByKeyId: config.intentVerificationKeys,
           consumedArtifactIds: consumedArtifacts,
           consumedArtifactNonces
         });
@@ -530,7 +530,7 @@ async function main(): Promise<void> {
           intent: incoming.contract.intent,
           artifact: incoming.contract.artifact,
           verificationSecretsByKeyId: config.approvalVerificationKeys,
-          intentVerificationSecretsByKeyId: config.internalAuthVerificationKeys,
+          intentVerificationSecretsByKeyId: config.intentVerificationKeys,
           consumedArtifactIds: consumedArtifacts,
           consumedArtifactNonces
         });

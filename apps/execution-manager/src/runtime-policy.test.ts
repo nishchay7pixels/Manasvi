@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 import test from "node:test";
 
 import { createExecutionIntent, type EgressWhitelistPolicy, type PolicyEvaluationResponse } from "@manasvi/contracts";
@@ -98,6 +99,7 @@ test("deriveRuntimePolicy selects restricted_remote for network action", () => {
       intentVersion: "1.0",
       intentPayloadHash: intent.payloadHash,
       approvalState: "not_required",
+      nonce: randomUUID(),
       issuedAt: new Date().toISOString(),
       expiresAt: new Date(Date.now() + 60_000).toISOString(),
       issuedByService: "approval-service",
@@ -183,6 +185,7 @@ test("deriveRuntimePolicy exposes secret refs only when requested", () => {
       intentVersion: "1.0",
       intentPayloadHash: intent.payloadHash,
       approvalState: "approved",
+      nonce: randomUUID(),
       issuedAt: new Date().toISOString(),
       expiresAt: new Date(Date.now() + 60_000).toISOString(),
       issuedByService: "approval-service",
@@ -268,6 +271,7 @@ test("deriveRuntimePolicy escalates to privileged mode for critical risk", () =>
       intentVersion: "1.0",
       intentPayloadHash: intent.payloadHash,
       approvalState: "approved",
+      nonce: randomUUID(),
       issuedAt: new Date().toISOString(),
       expiresAt: new Date(Date.now() + 60_000).toISOString(),
       issuedByService: "approval-service",

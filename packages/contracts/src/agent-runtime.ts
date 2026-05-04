@@ -222,7 +222,7 @@ export const plannerOutputEnvelopeSchema = z.object({
   proposal: z
     .object({
       proposalType: z.enum(["tool_invocation", "memory_write", "approval_request"]),
-      proposalId: z.string().min(1),
+      proposalId: z.string().min(1).optional(),
       toolId: z.string().optional(),
       toolVersion: z.string().optional(),
       purpose: z.string().optional(),
@@ -268,13 +268,18 @@ export function parsePlannerDecisionEnvelope(input: unknown): PlannerDecision {
       throw new Error("planner proposal missing");
     }
     if (parsed.proposal.proposalType === "tool_invocation") {
-      const purpose = parsed.proposal.purpose ?? parsed.proposal.rationale;
+      const purpose = parsed.proposal.purpose ?? parsed.proposal.rationale ?? "Use tool to complete request";
+      const proposalId = parsed.proposal.proposalId || "proposal:auto";
+      const toolId = parsed.proposal.toolId;
+      if (!toolId) {
+        throw new Error("planner tool invocation missing toolId");
+      }
       return plannerDecisionSchema.parse({
         decisionType: "action_proposal",
         proposal: {
           proposalType: "tool_invocation",
-          proposalId: parsed.proposal.proposalId,
-          toolId: parsed.proposal.toolId,
+          proposalId,
+          toolId,
           toolVersion: parsed.proposal.toolVersion,
           purpose,
           input: parsed.proposal.input ?? parsed.proposal.inputPayload ?? {},
@@ -288,25 +293,27 @@ export function parsePlannerDecisionEnvelope(input: unknown): PlannerDecision {
       });
     }
     if (parsed.proposal.proposalType === "memory_write") {
+      const proposalId = parsed.proposal.proposalId || "proposal:auto";
       return plannerDecisionSchema.parse({
         decisionType: "action_proposal",
         proposal: {
           proposalType: "memory_write",
-          proposalId: parsed.proposal.proposalId,
+          proposalId,
           namespace: parsed.proposal.namespace,
           content: parsed.proposal.content,
-          purpose: parsed.proposal.purpose
+          purpose: parsed.proposal.purpose ?? "Store memory"
         },
         reasoningSummary: parsed.reasoningSummary
       });
     }
+    const proposalId = parsed.proposal.proposalId || "proposal:auto";
     return plannerDecisionSchema.parse({
       decisionType: "action_proposal",
       proposal: {
         proposalType: "approval_request",
-        proposalId: parsed.proposal.proposalId,
+        proposalId,
         intentId: parsed.proposal.intentId,
-        summary: parsed.proposal.summary
+        summary: parsed.proposal.summary ?? "Approval required"
       },
       reasoningSummary: parsed.reasoningSummary
     });

@@ -31,6 +31,22 @@ test("planner envelope parses tool action proposal", () => {
   }
 });
 
+test("planner envelope normalizes tool proposal when proposalId is missing", () => {
+  const decision = parsePlannerDecisionEnvelope({
+    decisionType: "action_proposal",
+    proposal: {
+      proposalType: "tool_invocation",
+      toolId: "tool.web-search",
+      input: { query: "typescript 5.5" }
+    }
+  });
+  assert.equal(decision.decisionType, "action_proposal");
+  if (decision.decisionType === "action_proposal" && decision.proposal.proposalType === "tool_invocation") {
+    assert.equal(decision.proposal.proposalId, "proposal:auto");
+    assert.equal(decision.proposal.purpose, "Use tool to complete request");
+  }
+});
+
 test("planner decision schema rejects missing fields", () => {
   assert.equal(
     plannerDecisionSchema.safeParse({

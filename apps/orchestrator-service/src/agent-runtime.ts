@@ -104,7 +104,7 @@ export class AdapterBackedPlannerProvider implements PlannerModelProvider {
         responseText: modelResponse.outputText
       };
     }
-    const parsed = extractJsonObject(modelResponse.outputText);
+    const parsed = extractJsonObject(modelResponse.outputText) ?? extractTruncatedJsonObject(modelResponse.outputText);
     if (!parsed) {
       const fallback = modelResponse.outputText.trim();
       if (!fallback) {
@@ -116,7 +116,18 @@ export class AdapterBackedPlannerProvider implements PlannerModelProvider {
       };
     }
     try {
-      return parsePlannerDecisionEnvelope(parsed);
+      const envelopeDecision = parsePlannerDecisionEnvelope(parsed);
+      if (envelopeDecision.decisionType === "final_response") {
+        const nested = extractJsonObject(envelopeDecision.responseText);
+        if (nested) {
+          try {
+            return parsePlannerDecisionEnvelope(nested);
+          } catch {
+            return envelopeDecision;
+          }
+        }
+      }
+      return envelopeDecision;
     } catch {
       const fallback = modelResponse.outputText.trim();
       if (!fallback) {
@@ -149,6 +160,26 @@ function extractJsonObject(input: string): unknown | null {
     }
   }
   return null;
+}
+
+function extractTruncatedJsonObject(input: string): unknown | null {
+  const trimmed = input.trim();
+  const first = trimmed.indexOf("{");
+  if (first < 0) {
+    return null;
+  }
+  const candidate = trimmed.slice(first);
+  const openCount = (candidate.match(/\{/g) ?? []).length;
+  const closeCount = (candidate.match(/\}/g) ?? []).length;
+  if (openCount <= closeCount) {
+    return null;
+  }
+  const repaired = `${candidate}${"}".repeat(openCount - closeCount)}`;
+  try {
+    return JSON.parse(repaired);
+  } catch {
+    return null;
+  }
 }
 
 export interface GovernedAgentRuntimeDependencies {
@@ -198,6 +229,8 @@ export class GovernedAgentRuntime {
     let state: AgentRuntimeState = "initialized";
     let iterations = 0;
     let consecutiveFailures = 0;
+    const proposalAttempts = new Map<string, number>();
+    const lastCompletedToolOutputByProposal = new Map<string, unknown>();
     const transitions: AgentRunRecord["transitions"] = [];
     const observations: AgentObservation[] = [];
     const intents: AgentRunRecord["intents"] = [];
@@ -397,6 +430,22 @@ export class GovernedAgentRuntime {
         continue;
       }
 
+      const proposalKey = `${toolEntry.toolId}:${JSON.stringify(validatedInput)}`;
+      const attempts = (proposalAttempts.get(proposalKey) ?? 0) + 1;
+      proposalAttempts.set(proposalKey, attempts);
+      const previousOutput = lastCompletedToolOutputByProposal.get(proposalKey);
+      if (attempts > 1 && previousOutput !== undefined) {
+        transition("completed", "duplicate_tool_proposal_short_circuit", {
+          toolId: toolEntry.toolId,
+          attempts
+        });
+        finalOutcome = {
+          status: "completed",
+          responseText: `I completed the web search. Results: ${JSON.stringify(previousOutput)}`
+        };
+        break;
+      }
+
       transition("awaiting_policy", "policy_evaluation_requested", {
         toolId: toolEntry.toolId
       });
@@ -578,28 +627,66 @@ export class GovernedAgentRuntime {
         })
       );
       if (executionStatus !== "completed") {
-        transition("recovering_from_failure", "execution_failed", {
+        transition("completed", "execution_failed_returned", {
           intentId: intent.intentId,
           status: executionStatus
         });
-        continue;
+        const rawError = execution.resultArtifact?.error;
+        const executionError =
+          rawError && typeof rawError === "object" && "message" in rawError
+            ? String((rawError as { message?: unknown }).message ?? "unknown execution failure")
+            : rawError
+              ? JSON.stringify(rawError)
+              : `status=${executionStatus}; artifact=${JSON.stringify(execution.resultArtifact ?? {})}`;
+        finalOutcome = {
+          status: "completed",
+          responseText: `I could not complete the web search because tool execution failed: ${executionError}.`
+        };
+        break;
       }
 
       transition("ingesting_observation", "execution_result_ingested", {
         intentId: intent.intentId
       });
+      lastCompletedToolOutputByProposal.set(proposalKey, executionData);
       assembledContext = this.injectObservationIntoContext(assembledContext, observations[observations.length - 1]!);
     }
 
     if (iterations >= config.maxIterations && finalOutcome.status === "failed") {
-      transition("failed", "max_iterations_reached", {
-        maxIterations: config.maxIterations
-      });
-      finalOutcome = {
-        status: "failed",
-        reasonCode: "MAX_ITERATIONS_REACHED",
-        responseText: "I could not safely complete this request within iteration limits."
-      };
+      const latestToolResult = [...observations]
+        .reverse()
+        .find((item) => item.type === "tool_result");
+      if (latestToolResult && typeof latestToolResult.data === "object" && latestToolResult.data !== null) {
+        const payload = latestToolResult.data as Record<string, unknown>;
+        transition("completed", "max_iterations_with_tool_result_fallback", {
+          maxIterations: config.maxIterations
+        });
+        finalOutcome = {
+          status: "completed",
+          responseText: `I completed the requested tool execution. Results: ${JSON.stringify(payload.output ?? payload)}`
+        };
+      } else {
+        const latestObservation = observations[observations.length - 1];
+        if (latestObservation) {
+          transition("completed", "max_iterations_observation_fallback", {
+            maxIterations: config.maxIterations,
+            observationType: latestObservation.type
+          });
+          finalOutcome = {
+            status: "completed",
+            responseText: `I reached the iteration limit, but here is the latest available result: ${latestObservation.summary}.`
+          };
+        } else {
+          transition("failed", "max_iterations_reached", {
+            maxIterations: config.maxIterations
+          });
+          finalOutcome = {
+            status: "failed",
+            reasonCode: "MAX_ITERATIONS_REACHED",
+            responseText: "I could not safely complete this request within iteration limits."
+          };
+        }
+      }
     }
 
     return agentRunRecordSchema.parse({

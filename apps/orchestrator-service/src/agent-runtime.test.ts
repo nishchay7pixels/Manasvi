@@ -11,9 +11,10 @@ import type {
   ResolvedPrincipalContext
 } from "@manasvi/contracts";
 import { plannerDecisionSchema } from "@manasvi/contracts";
+import type { ModelAdapter } from "@manasvi/model-adapter";
 import { InMemoryToolRegistry } from "@manasvi/tool-registry";
 
-import { type PlannerModelProvider, GovernedAgentRuntime } from "./agent-runtime.js";
+import { AdapterBackedPlannerProvider, type PlannerModelProvider, GovernedAgentRuntime } from "./agent-runtime.js";
 
 function basePrincipalContext(): ResolvedPrincipalContext {
   return {
@@ -572,4 +573,96 @@ test("suspicious control claims from untrusted context are blocked even when pol
     run.observations.some((obs) => obs.summary.includes("Suspicious proposal markers detected")),
     true
   );
+});
+
+test("adapter-backed planner unwraps nested action proposal encoded in final_response text", async () => {
+  const adapter: ModelAdapter = {
+    mode: "deepseek",
+    invoke: async () => ({
+      requestId: "req-1",
+      outputText: JSON.stringify({
+        decisionType: "final_response",
+        responseText: JSON.stringify({
+          decisionType: "action_proposal",
+          proposal: {
+            proposalType: "tool_invocation",
+            toolId: "tool.web-search",
+            purpose: "Search latest news",
+            input: { query: "TypeScript 5.5 news" }
+          }
+        })
+      }),
+      mode: "deepseek",
+      provider: "deepseek",
+      model: "deepseek-v4-flash",
+      latencyMs: 10
+    })
+  };
+  const provider = new AdapterBackedPlannerProvider(adapter);
+  const response = await provider.invokePlanner({
+    plannerRequest: {
+      schemaVersion: "1.0",
+      requestId: "planner-1",
+      runtimeState: "planning",
+      principalContext: basePrincipalContext(),
+      trace: { traceId: randomUUID(), correlationId: randomUUID() },
+      session: { sessionId: "session:test", tenantId: "tenant-local", workspaceId: "workspace-local" },
+      userInput: "search",
+      iteration: 1,
+      availableTools: [],
+      contextChunks: [],
+      observations: []
+    },
+    modelRequest: {
+      requestId: "req-1",
+      messageId: "msg-1",
+      sessionId: "session:test",
+      traceId: randomUUID(),
+      correlationId: randomUUID(),
+      userInput: "search",
+      contextChunks: []
+    }
+  });
+  assert.equal(response.plannerResponse.decision.decisionType, "action_proposal");
+});
+
+test("adapter-backed planner recovers truncated action proposal json", async () => {
+  const adapter: ModelAdapter = {
+    mode: "deepseek",
+    invoke: async () => ({
+      requestId: "req-2",
+      outputText:
+        "{\"decisionType\":\"action_proposal\",\"proposal\":{\"proposalType\":\"tool_invocation\",\"proposalId\":\"proposal-1\",\"toolId\":\"tool.web-search\",\"purpose\":\"Search recent TypeScript news\",\"input\":{\"query\":\"TypeScript 5.5 news\"}}",
+      mode: "deepseek",
+      provider: "deepseek",
+      model: "deepseek-v4-flash",
+      latencyMs: 10
+    })
+  };
+  const provider = new AdapterBackedPlannerProvider(adapter);
+  const response = await provider.invokePlanner({
+    plannerRequest: {
+      schemaVersion: "1.0",
+      requestId: "planner-2",
+      runtimeState: "planning",
+      principalContext: basePrincipalContext(),
+      trace: { traceId: randomUUID(), correlationId: randomUUID() },
+      session: { sessionId: "session:test", tenantId: "tenant-local", workspaceId: "workspace-local" },
+      userInput: "search",
+      iteration: 1,
+      availableTools: [],
+      contextChunks: [],
+      observations: []
+    },
+    modelRequest: {
+      requestId: "req-2",
+      messageId: "msg-2",
+      sessionId: "session:test",
+      traceId: randomUUID(),
+      correlationId: randomUUID(),
+      userInput: "search",
+      contextChunks: []
+    }
+  });
+  assert.equal(response.plannerResponse.decision.decisionType, "action_proposal");
 });

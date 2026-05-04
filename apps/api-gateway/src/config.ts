@@ -11,7 +11,7 @@ export const apiGatewayConfigSchema = baseServiceConfigSchema.extend({
   internalAuthAudience: z.string().min(1).default("manasvi.internal.services"),
   internalAuthKeyId: z.string().min(1),
   internalAuthSigningSecret: z.string().min(1),
-  harnessPollTimeoutMs: z.number().int().positive().default(12000),
+  harnessPollTimeoutMs: z.number().int().positive().default(30000),
   harnessPollIntervalMs: z.number().int().positive().default(250)
 });
 
@@ -35,7 +35,7 @@ export async function loadApiGatewayConfig(): Promise<ApiGatewayConfig> {
       internalAuthAudience: env.INTERNAL_AUTH_AUDIENCE ?? "manasvi.internal.services",
       internalAuthKeyId: await secrets.require("INTERNAL_AUTH_KEY_ID"),
       internalAuthSigningSecret: await secrets.require("INTERNAL_AUTH_SIGNING_SECRET"),
-      harnessPollTimeoutMs: Number(env.HARNESS_POLL_TIMEOUT_MS ?? 12000),
+      harnessPollTimeoutMs: Number(env.HARNESS_POLL_TIMEOUT_MS ?? 30000),
       harnessPollIntervalMs: Number(env.HARNESS_POLL_INTERVAL_MS ?? 250),
       gatewayAuthToken:
         profile === "staging" || profile === "production"

@@ -10,6 +10,9 @@ export const approvalServiceConfigSchema = baseServiceConfigSchema.extend({
   internalAuthVerificationKeys: z.record(z.string().min(1)).refine((value) => Object.keys(value).length > 0, {
     message: "At least one internal auth verification key is required"
   }),
+  intentVerificationKeys: z.record(z.string().min(1)).refine((value) => Object.keys(value).length > 0, {
+    message: "At least one intent verification key is required"
+  }),
   approvalSigningKeyId: z.string().min(1),
   approvalSigningSecret: z.string().min(1),
   approvalRequestTtlSeconds: z.number().int().positive().max(86400).default(3600),
@@ -29,8 +32,11 @@ function parseKeyMap(value: string | undefined): Record<string, string> {
       if (separator <= 0 || separator >= entry.length - 1) {
         return acc;
       }
-      const keyId = entry.slice(0, separator);
-      const secret = entry.slice(separator + 1);
+      const keyId = entry.slice(0, separator).trim();
+      const secret = entry.slice(separator + 1).trim();
+      if (!keyId || !secret) {
+        return acc;
+      }
       acc[keyId] = secret;
       return acc;
     }, {});
@@ -42,6 +48,16 @@ export async function loadApprovalServiceConfig(): Promise<ApprovalServiceConfig
     schema: approvalServiceConfigSchema,
     buildConfig: async ({ env, profile, secrets }) => {
       const internalAuthVerificationKeys = parseKeyMap(await secrets.require("INTERNAL_AUTH_VERIFICATION_KEYS"));
+      const intentVerificationKeysFromEnv = parseKeyMap((await secrets.optional("INTENT_VERIFICATION_KEYS")) ?? "");
+      const intentSigningKeyId = await secrets.optional("INTENT_SIGNING_KEY_ID");
+      const intentSigningSecret = await secrets.optional("INTENT_SIGNING_SECRET");
+      const intentVerificationKeys: Record<string, string> = {
+        ...internalAuthVerificationKeys,
+        ...intentVerificationKeysFromEnv
+      };
+      if (intentSigningKeyId && intentSigningSecret) {
+        intentVerificationKeys[intentSigningKeyId.trim()] = intentSigningSecret.trim();
+      }
       const approvalSigningKeys = parseKeyMap(await secrets.require("APPROVAL_SIGNING_KEYS"));
       const approvalSigningKeyId =
         (await secrets.optional("APPROVAL_SIGNING_KEY_ID")) ?? Object.keys(approvalSigningKeys)[0] ?? "";
@@ -57,6 +73,7 @@ export async function loadApprovalServiceConfig(): Promise<ApprovalServiceConfig
         internalAuthIssuer: env.INTERNAL_AUTH_ISSUER ?? "manasvi.internal.auth",
         internalAuthAudience: env.INTERNAL_AUTH_AUDIENCE ?? "manasvi.internal.services",
         internalAuthVerificationKeys,
+        intentVerificationKeys,
         approvalSigningKeyId,
         approvalSigningSecret: approvalSigningSecret ?? "",
         approvalRequestTtlSeconds: Number(env.APPROVAL_REQUEST_TTL_SECONDS ?? 3600),
