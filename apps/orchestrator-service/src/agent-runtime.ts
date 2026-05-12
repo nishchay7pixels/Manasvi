@@ -1117,6 +1117,46 @@ function normalizeProposalToolInput(input: {
   workspaceId: string;
   actorPrincipalId: string;
 }): Record<string, unknown> {
+  if (
+    input.toolId === "tool.gmail-send-message" ||
+    input.toolId === "tool.gmail-create-draft" ||
+    input.toolId === "tool.gmail-create-reply-draft"
+  ) {
+    const raw = input.input;
+    const normalizeRecipients = (value: unknown): Array<{ email: string }> | undefined => {
+      if (typeof value === "string" && value.trim().length > 0) {
+        return [{ email: value.trim() }];
+      }
+      if (Array.isArray(value)) {
+        return value
+          .map((item) => {
+            if (typeof item === "string" && item.trim().length > 0) return { email: item.trim() };
+            if (
+              item &&
+              typeof item === "object" &&
+              "email" in item &&
+              typeof (item as { email?: unknown }).email === "string" &&
+              (item as { email: string }).email.trim().length > 0
+            ) {
+              return { email: (item as { email: string }).email.trim() };
+            }
+            return null;
+          })
+          .filter((item): item is { email: string } => item !== null);
+      }
+      return undefined;
+    };
+    const to = normalizeRecipients(raw.to);
+    const cc = normalizeRecipients(raw.cc);
+    const bcc = normalizeRecipients(raw.bcc);
+    return {
+      ...raw,
+      ...(to ? { to } : {}),
+      ...(cc ? { cc } : {}),
+      ...(bcc ? { bcc } : {})
+    };
+  }
+
   if (input.toolId === "tool.fs-rename-file") {
     const raw = input.input;
     const fromPath =

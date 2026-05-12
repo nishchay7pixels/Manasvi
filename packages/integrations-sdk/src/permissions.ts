@@ -223,6 +223,7 @@ export interface GooglePermissionCheckInput {
   tenantId: string;
   workspaceId: string;
   trace: PolicyTrace;
+  approvalPresent?: boolean;
   pluginId?: string;
   policyClient?: PolicyClient;
 }
@@ -248,6 +249,7 @@ export function buildGooglePolicyBinding(input: {
   tenantId: string;
   workspaceId: string;
   trace: PolicyTrace;
+  approvalPresent?: boolean;
   pluginId?: string;
 }): PolicyEvaluationRequest {
   return createPolicyEvaluationRequest({
@@ -291,7 +293,7 @@ export function buildGooglePolicyBinding(input: {
     tenantId: input.tenantId,
     workspaceId: input.workspaceId,
     approval: {
-      approvalPresent: false,
+      approvalPresent: input.approvalPresent ?? false,
       skipApprovalRequested: false
     },
     risk: {
@@ -360,6 +362,7 @@ export async function checkGoogleActionPermission(
     tenantId: input.tenantId,
     workspaceId: input.workspaceId,
     trace: input.trace,
+    ...(typeof input.approvalPresent === "boolean" ? { approvalPresent: input.approvalPresent } : {}),
     ...(input.pluginId ? { pluginId: input.pluginId } : {})
   });
 
@@ -395,7 +398,7 @@ export async function checkGoogleActionPermission(
     };
   }
 
-  if (decision.decision === "REQUIRE_APPROVAL" || action.approvalSensitivity === "required") {
+  if (decision.decision === "REQUIRE_APPROVAL" || (action.approvalSensitivity === "required" && !input.approvalPresent)) {
     return {
       decision: "require_approval",
       approvalRequired: true,

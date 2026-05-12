@@ -482,6 +482,33 @@
           }
         },
         {
+          "ruleId": "allow-api-gateway-send-google-gmail-external-side-effect",
+          "description": "Allow api-gateway to execute Gmail send policy checks as external-side-effect after upstream approval handling.",
+          "priority": 683,
+          "effect": "allow",
+          "enabled": true,
+          "selectors": {
+            "callerTypes": ["service"],
+            "actorTypes": ["human_user", "agent", "service"],
+            "callerIds": ["service:api-gateway"],
+            "actorIds": []
+          },
+          "actionClasses": ["external-side-effect"],
+          "resourceClasses": ["service-endpoint"],
+          "resourceIdPatterns": ["integration:google:*"],
+          "requiredCapabilities": [],
+          "conditions": {
+            "requireTenantMatch": true,
+            "requireWorkspaceMatch": true,
+            "allowSkipApproval": false,
+            "maxRiskLevel": "high"
+          },
+          "metadata": {
+            "highRiskCoverage": true,
+            "tags": ["integrations", "google", "gmail", "send", "api-gateway"]
+          }
+        },
+        {
           "ruleId": "allow-execution-phase-gmail-write-via-orchestrator",
           "description": "Allow execution-phase Gmail write (draft/archive/label) checks when orchestrator is both caller and actor during delegated execution.",
           "priority": 683,

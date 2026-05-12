@@ -1128,6 +1128,7 @@ const handlers = {
     const baseUrl = String(process.env.MANASVI_GATEWAY_URL || process.env.GATEWAY_URL || "http://127.0.0.1:4100");
     const payload = { ...(parameters || {}) };
     if (payload.actorPrincipalType === "user") payload.actorPrincipalType = "human_user";
+    if (process.env.MANASVI_APPROVAL_STATE === "approved") payload.approvalState = "approved";
     const response = await fetch(baseUrl + "/integrations/google/gmail/drafts/create", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -1146,6 +1147,7 @@ const handlers = {
     const baseUrl = String(process.env.MANASVI_GATEWAY_URL || process.env.GATEWAY_URL || "http://127.0.0.1:4100");
     const payload = { ...(parameters || {}) };
     if (payload.actorPrincipalType === "user") payload.actorPrincipalType = "human_user";
+    if (process.env.MANASVI_APPROVAL_STATE === "approved") payload.approvalState = "approved";
     const response = await fetch(baseUrl + "/integrations/google/gmail/drafts/reply", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -1164,6 +1166,7 @@ const handlers = {
     const baseUrl = String(process.env.MANASVI_GATEWAY_URL || process.env.GATEWAY_URL || "http://127.0.0.1:4100");
     const payload = { ...(parameters || {}) };
     if (payload.actorPrincipalType === "user") payload.actorPrincipalType = "human_user";
+    if (process.env.MANASVI_APPROVAL_STATE === "approved") payload.approvalState = "approved";
     const response = await fetch(baseUrl + "/integrations/google/gmail/messages/send", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -1172,7 +1175,13 @@ const handlers = {
     const body = await response.json();
     if (!response.ok) {
       // 202 means approval required — surface this explicitly so the caller knows to request approval
-      const err = new Error("GMAIL_SEND_FAILED:" + response.status);
+      const upstreamDetail =
+        typeof body?.error?.message === "string"
+          ? body.error.message
+          : typeof body?.message === "string"
+            ? body.message
+            : "";
+      const err = new Error("GMAIL_SEND_FAILED:" + response.status + (upstreamDetail ? ":" + upstreamDetail : ""));
       err.code = response.status === 202 ? "GMAIL_SEND_APPROVAL_REQUIRED" : "TOOL_UPSTREAM_ERROR";
       err.details = body;
       err.approvalRequired = response.status === 202;
@@ -1191,6 +1200,7 @@ const handlers = {
     const payload = { ...(parameters || {}) };
     delete payload.messageId;
     if (payload.actorPrincipalType === "user") payload.actorPrincipalType = "human_user";
+    if (process.env.MANASVI_APPROVAL_STATE === "approved") payload.approvalState = "approved";
     const response = await fetch(
       baseUrl + "/integrations/google/gmail/messages/" + encodeURIComponent(messageId) + "/archive",
       {
@@ -1219,6 +1229,7 @@ const handlers = {
     const payload = { ...(parameters || {}) };
     delete payload.messageId;
     if (payload.actorPrincipalType === "user") payload.actorPrincipalType = "human_user";
+    if (process.env.MANASVI_APPROVAL_STATE === "approved") payload.approvalState = "approved";
     const response = await fetch(
       baseUrl + "/integrations/google/gmail/messages/" + encodeURIComponent(messageId) + "/labels",
       {
@@ -1626,6 +1637,9 @@ export async function runSandboxedExecution(input: SandboxRunInput): Promise<San
   baseEnv.HOME = runRoot;
   baseEnv.MANASVI_RUN_ID = request.runId;
   baseEnv.MANASVI_SANDBOX_MODE = request.runtimePolicy.sandboxMode;
+  if (request.approvalState) {
+    baseEnv.MANASVI_APPROVAL_STATE = request.approvalState;
+  }
 
   const injectedSecrets: string[] = [];
   for (const secretRef of request.runtimePolicy.secrets.allowedSecretRefs) {

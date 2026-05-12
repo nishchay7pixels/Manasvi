@@ -249,7 +249,7 @@ test("checkGoogleActionPermission requires approval for gmail.draft.reply (polic
   assert.equal(result.decision, "allow");
 });
 
-test("checkGoogleActionPermission always requires approval for gmail.message.send", async () => {
+test("checkGoogleActionPermission requires approval for gmail.message.send when approval is not present", async () => {
   const result = await checkGoogleActionPermission({
     account: writeAccount,
     actionId: "gmail.message.send",
@@ -270,4 +270,28 @@ test("checkGoogleActionPermission always requires approval for gmail.message.sen
     policyClient: new StaticPolicyClient("ALLOW")
   });
   assert.equal(result.decision, "require_approval");
+});
+
+test("checkGoogleActionPermission allows gmail.message.send when approval is already present", async () => {
+  const result = await checkGoogleActionPermission({
+    account: writeAccount,
+    actionId: "gmail.message.send",
+    principalContext: {
+      caller: { principalId: "service:api-gateway", principalType: "service" },
+      actor: { principalId: "user:alice", principalType: "human_user" },
+      scopes: [],
+      authnStrength: "strong",
+      authenticated: true,
+      tenantId: "tenant-local",
+      workspaceId: "workspace-local"
+    },
+    actor: { principalId: "user:alice", principalType: "human_user" },
+    caller: { principalId: "service:api-gateway", principalType: "service" },
+    tenantId: "tenant-local",
+    workspaceId: "workspace-local",
+    trace: { traceId: "11111111-1111-4111-8111-111111111111", correlationId: "22222222-2222-4222-8222-222222222222" },
+    approvalPresent: true,
+    policyClient: new StaticPolicyClient("ALLOW")
+  });
+  assert.equal(result.decision, "allow");
 });

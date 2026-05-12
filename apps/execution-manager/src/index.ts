@@ -324,9 +324,13 @@ async function main(): Promise<void> {
           runId,
           intentId: incoming.intent.intentId,
           artifactId: incoming.artifact.artifactId,
+          approvalState: incoming.artifact.approvalState,
           toolRef: incoming.intent.snapshot.action.toolRef ?? "tool:echo",
           operation: incoming.intent.snapshot.action.operation,
-          parameters: incoming.intent.snapshot.action.parameters,
+          parameters: {
+            ...incoming.intent.snapshot.action.parameters,
+            ...(incoming.artifact.approvalState === "approved" ? { approvalState: "approved" } : {})
+          },
           runtimePolicy,
           executionToken,
           trace
@@ -625,9 +629,13 @@ async function main(): Promise<void> {
           runId,
           intentId: incoming.contract.intent.intentId,
           artifactId: incoming.contract.artifact.artifactId,
+          approvalState: incoming.contract.artifact.approvalState,
           toolRef: incoming.contract.manifest.runtimeBinding.toolRef,
           operation: incoming.contract.manifest.runtimeBinding.operation,
-          parameters: validatedInput,
+          parameters: {
+            ...validatedInput,
+            ...(incoming.contract.artifact.approvalState === "approved" ? { approvalState: "approved" } : {})
+          },
           runtimePolicy,
           executionToken,
           trace

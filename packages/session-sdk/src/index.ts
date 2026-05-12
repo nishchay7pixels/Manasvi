@@ -358,40 +358,25 @@ export class ContextAssembler {
     );
 
     for (const previous of previousMessages) {
+      const contentCategory = previous.sender.principalType === "service" ? "assistant-output" : "user-input";
       candidates.push(
-        contextChunkSchema.parse({
-          chunkId: `chunk:session-message:${previous.messageId}`,
-          sessionId: previous.sessionId,
-          tenantId: previous.tenantId,
-          workspaceId: previous.workspaceId,
-          content: previous.text,
-          tokenEstimate: estimateTokens(previous.text),
-          createdAt: previous.createdAt,
-          expiresAt: new Date(
-            new Date(previous.createdAt).getTime() + this.options.ttlSeconds.recentSessionMessage * 1000
-          ).toISOString(),
-          sticky: false,
-          stale: false,
-          role: "user_goal",
-          provenance: contextProvenanceSchema.parse({
+        toContextChunk({
+          source: {
             sourceType: "session-message",
             sourceId: previous.messageId,
             sourceRef: previous.sourceRef,
+            content: previous.text,
+            contentCategory,
+            trustClassification: previous.trustClassification,
             originatingPrincipal: previous.sender,
             observedAt: previous.createdAt,
-            trustClassification: previous.trustClassification,
             tenantId: previous.tenantId,
             workspaceId: previous.workspaceId,
             sessionId: previous.sessionId,
-            contentCategory: "user-input",
-            authority: "informational",
-            transformation: {
-              transformed: false,
-              derivedFromChunkIds: [],
-              derivedFromSourceRefs: []
-            }
-          }),
-          metadata: {}
+            sticky: false,
+            ttlSeconds: this.options.ttlSeconds.recentSessionMessage
+          },
+          session
         })
       );
     }

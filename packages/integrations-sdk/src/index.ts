@@ -400,7 +400,11 @@ export class FetchOAuthClient implements OAuthClient {
       headers: { "content-type": "application/x-www-form-urlencoded" },
       body: body.toString()
     });
-    if (!response.ok) throw new Error(`OAuth token refresh failed (${response.status})`);
+    if (!response.ok) {
+      const upstreamBody = await response.text().catch(() => "");
+      const detail = upstreamBody.trim().slice(0, 600);
+      throw new Error(`OAuth token refresh failed (${response.status})${detail ? `: ${detail}` : ""}`);
+    }
     return buildTokenResult((await response.json()) as Record<string, unknown>);
   }
 

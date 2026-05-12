@@ -25,6 +25,30 @@ export const telegramUpdateSchema = z.object({
         })
         .optional()
     })
+    .optional(),
+  callback_query: z
+    .object({
+      id: z.string().min(1),
+      data: z.string().min(1).optional(),
+      from: z.object({
+        id: z.union([z.number().int(), z.string().min(1)]),
+        is_bot: z.boolean(),
+        username: z.string().optional(),
+        first_name: z.string().optional(),
+        last_name: z.string().optional()
+      }),
+      message: z
+        .object({
+          message_id: z.number().int(),
+          chat: z.object({
+            id: z.union([z.number().int(), z.string().min(1)]),
+            type: z.string().min(1),
+            title: z.string().optional(),
+            username: z.string().optional()
+          })
+        })
+        .optional()
+    })
     .optional()
 });
 
@@ -44,15 +68,23 @@ export function normalizeTelegramUpdate(input: {
     return null;
   }
   const message = parsed.data.message;
-  if (!message?.text || message.text.trim().length === 0) {
+  const callbackQuery = parsed.data.callback_query;
+  const callbackMessage = callbackQuery?.message;
+  const callbackData = callbackQuery?.data?.trim();
+  const hasTextMessage = Boolean(message?.text && message.text.trim().length > 0);
+  const hasCallbackData = Boolean(callbackData && callbackMessage);
+  if (!hasTextMessage && !hasCallbackData) {
     return null;
   }
-  const chatId = String(message.chat.id);
-  const fromId = String(message.from?.id ?? `chat:${chatId}`);
-  const actorType: "human_user" | "agent" = message.from?.is_bot ? "agent" : "human_user";
+  const normalizedText = hasTextMessage ? message?.text?.trim() ?? "" : callbackData ?? "";
+  const isCallback = !hasTextMessage && hasCallbackData;
+  const chatId = String(isCallback ? callbackMessage?.chat.id : message?.chat.id);
+  const sender = isCallback ? callbackQuery?.from : message?.from;
+  const fromId = String(sender?.id ?? `chat:${chatId}`);
+  const actorType: "human_user" | "agent" = sender?.is_bot ? "agent" : "human_user";
   const displayName =
-    [message.from?.first_name, message.from?.last_name].filter((value) => Boolean(value && value.length > 0)).join(" ") ||
-    message.from?.username;
+    [sender?.first_name, sender?.last_name].filter((value) => Boolean(value && value.length > 0)).join(" ") ||
+    sender?.username;
   const actor = principalReferenceSchema.parse({
     principalType: actorType,
     principalId: `telegram-user:${fromId}`,
@@ -61,17 +93,22 @@ export function normalizeTelegramUpdate(input: {
   const channel = principalReferenceSchema.parse({
     principalType: "channel",
     principalId: `telegram-chat:${chatId}`,
-    ...(message.chat.title ? { displayName: message.chat.title } : {})
+    ...((isCallback ? callbackMessage?.chat.title : message?.chat.title)
+      ? { displayName: isCallback ? callbackMessage?.chat.title : message?.chat.title }
+      : {})
   });
   const telegramMetadata: Record<string, unknown> = {
     updateId: parsed.data.update_id,
-    chatType: message.chat.type
+    chatType: isCallback ? callbackMessage?.chat.type : message?.chat.type
   };
-  if (message.chat.username) {
-    telegramMetadata.chatUsername = message.chat.username;
+  if ((isCallback ? callbackMessage?.chat.username : message?.chat.username)) {
+    telegramMetadata.chatUsername = isCallback ? callbackMessage?.chat.username : message?.chat.username;
   }
-  if (message.from?.username) {
-    telegramMetadata.senderUsername = message.from.username;
+  if (sender?.username) {
+    telegramMetadata.senderUsername = sender.username;
+  }
+  if (isCallback && callbackQuery?.id) {
+    telegramMetadata.callbackQueryId = callbackQuery.id;
   }
   return {
     tenantId: input.tenantId,
@@ -83,13 +120,13 @@ export function normalizeTelegramUpdate(input: {
     channel: {
       principalType: "channel",
       principalId: channel.principalId,
-      messageId: `telegram:${chatId}:${message.message_id}`
+      messageId: `telegram:${chatId}:${isCallback ? callbackMessage?.message_id : message?.message_id}`
     },
     session: {
       conversationId: `telegram-chat:${chatId}`,
       turnId: `telegram-update:${parsed.data.update_id}`
     },
-    text: message.text.trim(),
+    text: normalizedText,
     metadata: {
       transport: "telegram",
       telegram: telegramMetadata
@@ -108,7 +145,7 @@ export function normalizeTelegramUpdate(input: {
       }
     },
     rateLimitKey: `telegram:${chatId}:${fromId}`,
-    spamKey: buildSpamKey(["telegram", chatId, fromId, message.text.trim()]),
+    spamKey: buildSpamKey(["telegram", chatId, fromId, normalizedText]),
     replyTarget: {
       transport: "telegram",
       chatId

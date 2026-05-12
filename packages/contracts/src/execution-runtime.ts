@@ -84,6 +84,7 @@ export const executorApiRequestSchema = z.object({
   runId: z.string().min(1),
   intentId: z.string().min(1),
   artifactId: z.string().min(1),
+  approvalState: z.enum(["approved", "not_required"]).optional(),
   toolRef: z.string().min(1),
   operation: z.string().min(1),
   parameters: z.record(z.unknown()).default({}),

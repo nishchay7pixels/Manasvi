@@ -142,6 +142,7 @@ async function main(): Promise<void> {
   async function sendTelegramMessage(input: {
     chatId: string;
     text: string;
+    approvalOptions?: boolean;
   }): Promise<void> {
     if (!config.telegramBotToken) {
       return;
@@ -154,7 +155,19 @@ async function main(): Promise<void> {
         },
         body: JSON.stringify({
           chat_id: input.chatId,
-          text: input.text
+          text: input.text,
+          ...(input.approvalOptions
+            ? {
+                reply_markup: {
+                  inline_keyboard: [
+                    [
+                      { text: "Approve", callback_data: "approve" },
+                      { text: "Deny", callback_data: "deny" }
+                    ]
+                  ]
+                }
+              }
+            : {})
         })
       });
       if (!response.ok) {
@@ -172,6 +185,56 @@ async function main(): Promise<void> {
         }`
       );
     }
+  }
+
+  async function answerTelegramCallbackQuery(input: { callbackQueryId: string }): Promise<void> {
+    if (!config.telegramBotToken) {
+      return;
+    }
+    try {
+      const response = await fetch(
+        `${config.telegramApiBaseUrl.replace(/\/$/, "")}/bot${config.telegramBotToken}/answerCallbackQuery`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json"
+          },
+          body: JSON.stringify({
+            callback_query_id: input.callbackQueryId
+          })
+        }
+      );
+      if (!response.ok) {
+        const body = await response.text().catch(() => "(unreadable)");
+        throw new Error(`Telegram answerCallbackQuery failed with status ${response.status}: ${body}`);
+      }
+    } catch (error) {
+      logger.warn("Failed to acknowledge Telegram callback query", {
+        callbackQueryId: input.callbackQueryId,
+        error: error instanceof Error ? error.message : "unknown"
+      });
+    }
+  }
+
+  function extractTelegramCallbackQueryId(normalized: IngressNormalizedMessage): string | null {
+    const meta = normalized.metadata as { telegram?: { callbackQueryId?: unknown } } | undefined;
+    const value = meta?.telegram?.callbackQueryId;
+    if (typeof value !== "string" || value.trim().length === 0) {
+      return null;
+    }
+    return value;
+  }
+
+  function isAwaitingApprovalResult(input: unknown): boolean {
+    const parsed = z
+      .object({
+        status: z.string().optional(),
+        outcome: z.object({ status: z.string().optional() }).optional()
+      })
+      .safeParse(input);
+    if (!parsed.success) return false;
+    const status = parsed.data.status ?? parsed.data.outcome?.status;
+    return status === "awaiting_approval";
   }
 
   async function sendSlackMessage(input: {
@@ -350,6 +413,10 @@ async function main(): Promise<void> {
               correlationId: pollingTrace.correlationId
             }
           });
+          const callbackQueryId = extractTelegramCallbackQueryId(normalized);
+          if (callbackQueryId) {
+            await answerTelegramCallbackQuery({ callbackQueryId });
+          }
           console.log(
             JSON.stringify({
               timestamp: new Date().toISOString(),
@@ -389,9 +456,10 @@ async function main(): Promise<void> {
           const replyText = orchestratorResult
             ? extractResponseTextFromOrchestratorResult(orchestratorResult)
             : "I received your message, but I could not produce a response in time.";
+          const approvalOptions = Boolean(orchestratorResult && isAwaitingApprovalResult(orchestratorResult));
 
           if (normalized.replyTarget?.chatId) {
-            await sendTelegramMessage({ chatId: normalized.replyTarget.chatId, text: replyText });
+            await sendTelegramMessage({ chatId: normalized.replyTarget.chatId, text: replyText, approvalOptions });
             console.log(
               JSON.stringify({
                 timestamp: new Date().toISOString(),
@@ -703,6 +771,10 @@ async function main(): Promise<void> {
           normalized: parsed.normalized,
           trace
         });
+        const callbackQueryId = extractTelegramCallbackQueryId(parsed.normalized);
+        if (callbackQueryId) {
+          await answerTelegramCallbackQuery({ callbackQueryId });
+        }
         ackManager.startRequest({
           requestId: event.eventId,
           sessionId: parsed.normalized.session?.conversationId ?? parsed.normalized.channel.principalId,
@@ -723,10 +795,12 @@ async function main(): Promise<void> {
         const replyText = orchestratorResult
           ? extractResponseTextFromOrchestratorResult(orchestratorResult)
           : "I received your message, but I could not produce a response in time.";
+        const approvalOptions = Boolean(orchestratorResult && isAwaitingApprovalResult(orchestratorResult));
         if (parsed.normalized.replyTarget?.chatId) {
           await sendTelegramMessage({
             chatId: parsed.normalized.replyTarget.chatId,
-            text: replyText
+            text: replyText,
+            approvalOptions
           });
         }
         logger.info("Processed telegram webhook update", {

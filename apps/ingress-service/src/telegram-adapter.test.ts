@@ -53,6 +53,35 @@ test("normalizeTelegramUpdate ignores non-text updates", () => {
   assert.equal(normalized, null);
 });
 
+test("normalizeTelegramUpdate maps callback query approval action to canonical text", () => {
+  const normalized = normalizeTelegramUpdate({
+    update: {
+      update_id: 3001,
+      callback_query: {
+        id: "cbq-1",
+        data: "approve",
+        from: {
+          id: 777,
+          is_bot: false,
+          first_name: "Alice"
+        },
+        message: {
+          message_id: 56,
+          chat: {
+            id: 222,
+            type: "private"
+          }
+        }
+      }
+    },
+    tenantId: "tenant-local",
+    workspaceId: "workspace-local"
+  });
+  assert.ok(normalized);
+  assert.equal(normalized?.text, "approve");
+  assert.equal(normalized?.channel.messageId, "telegram:222:56");
+});
+
 test("extractResponseTextFromOrchestratorResult handles harness and agent-runtime shapes", () => {
   const harnessText = extractResponseTextFromOrchestratorResult({
     responseText: "harness response"

@@ -240,9 +240,12 @@ async function main(): Promise<void> {
       event.channel.principalId
     ].join("|");
     const isApprovalReply = /^(yes|y|approve|approved|ok|okay|confirm)$/i.test(payload.text.trim());
+    const isApprovalReject = /^(no|n|deny|denied|reject|rejected|cancel)$/i.test(payload.text.trim());
     const pendingApproval = pendingApprovalByConversation.get(conversationKey);
-    const resolvedMessageText = isApprovalReply && pendingApproval ? pendingApproval.messageText : payload.text;
-    const approvalSimulation = isApprovalReply && pendingApproval ? "approved" : "pending";
+    const resolvedMessageText =
+      (isApprovalReply || isApprovalReject) && pendingApproval ? pendingApproval.messageText : payload.text;
+    const approvalSimulation =
+      isApprovalReply && pendingApproval ? "approved" : isApprovalReject && pendingApproval ? "rejected" : "pending";
     let run;
     try {
       run = await agentRuntime.runTurn({
@@ -382,6 +385,35 @@ async function main(): Promise<void> {
         trustClassifications: Array.from(new Set(run.observations.map((observation) => observation.trustClassification)))
       }
     });
+
+    if (run.outcome.responseText && run.outcome.responseText.trim().length > 0) {
+      await contextAssembler.assembleForMessage({
+        message: {
+          messageId: `agent-message:${randomUUID()}`,
+          text: run.outcome.responseText,
+          sender: servicePrincipal,
+          trustClassification: "MODEL_INTERMEDIATE",
+          sourceRef: "orchestrator:assistant-response",
+          createdAt: new Date().toISOString()
+        },
+        sessionResolve: {
+          tenantId: event.tenantId,
+          workspaceId: event.workspaceId,
+          isolationMode: "per_user_isolated",
+          sessionType: "user_interaction",
+          owner: principalContext.actor,
+          createdBy: servicePrincipal,
+          participants: [principalContext.caller],
+          explicitSessionId: run.session.sessionId,
+          resolutionHint: principalContext.actor.principalId
+        },
+        trace: {
+          traceId: event.trace.traceId,
+          correlationId: event.trace.correlationId,
+          ...(event.trace.parentTraceId ? { parentTraceId: event.trace.parentTraceId } : {})
+        }
+      });
+    }
 
     console.log(
       JSON.stringify({

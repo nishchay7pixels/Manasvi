@@ -115,6 +115,7 @@ const gmailWriteBaseSchema = z.object({
   ).default("human_user"),
   tenantId: z.string().min(1).default("tenant-local"),
   workspaceId: z.string().min(1).default("workspace-local"),
+  approvalState: z.enum(["approved", "not_required"]).optional(),
   pluginId: z.string().min(1).optional()
 });
 
@@ -1009,7 +1010,7 @@ async function main(): Promise<void> {
       // ── Gmail write helpers ──────────────────────────────────────────────────
 
       const runGmailWritePermission = async (
-        input: { actorPrincipalId: string; actorPrincipalType: "human_user" | "agent" | "plugin"; tenantId: string; workspaceId: string; pluginId?: string | undefined },
+        input: { actorPrincipalId: string; actorPrincipalType: "human_user" | "agent" | "plugin"; tenantId: string; workspaceId: string; approvalState?: "approved" | "not_required" | undefined; pluginId?: string | undefined },
         actionId: "gmail.draft.create" | "gmail.draft.reply" | "gmail.message.send" | "gmail.message.archive" | "gmail.message.label"
       ) => {
         let account = await accountStore.getByProvider("google");
@@ -1026,6 +1027,7 @@ async function main(): Promise<void> {
         const permissionInput: Parameters<typeof checkGoogleActionPermission>[0] = {
           account, actionId, principalContext, actor, caller,
           tenantId: input.tenantId, workspaceId: input.workspaceId,
+          approvalPresent: input.approvalState === "approved",
           trace: { traceId: trace.traceId, correlationId: trace.correlationId },
           policyClient
         };
@@ -1045,7 +1047,7 @@ async function main(): Promise<void> {
           respondJson(res, 403, { schemaVersion: CONTRACT_SCHEMA_VERSION, providerId: "google", connector: "gmail-write", permission });
           return { allowed: false as const, account: null };
         }
-        if (permission.decision === "require_approval") {
+        if (permission.decision === "require_approval" && input.approvalState !== "approved") {
           respondJson(res, 202, {
             schemaVersion: CONTRACT_SCHEMA_VERSION,
             providerId: "google",
@@ -1187,6 +1189,8 @@ async function main(): Promise<void> {
         // gmail.message.send always returns require_approval — gate enforces it
         const gate = await runGmailWritePermission(input, "gmail.message.send");
         if (!gate.allowed) return true;
+        let accessToken = gate.accessToken;
+        let account = gate.account;
         audit.emit({
           producingService: "api-gateway", eventType: "tool.invoked", severity: "info",
           traceId: trace.traceId, correlationId: trace.correlationId,
@@ -1200,24 +1204,53 @@ async function main(): Promise<void> {
         });
         let result;
         try {
-          result = await gmailWrite.sendMessage(gate.accessToken, {
+          result = await gmailWrite.sendMessage(accessToken, {
             to: toGmailRecipients(input.to), subject: input.subject, body: input.body,
             ...(input.cc ? { cc: toGmailRecipients(input.cc) } : {}),
             ...(input.bcc ? { bcc: toGmailRecipients(input.bcc) } : {}),
             ...(input.contentType ? { contentType: input.contentType } : {}),
             ...(input.threadId ? { threadId: input.threadId } : {}),
             ...(input.inReplyToMessageIdHeader ? { inReplyToMessageIdHeader: input.inReplyToMessageIdHeader } : {})
-          }, gate.account);
+          }, account);
         } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : "unknown";
+          const isAuthnFailure = /Gmail API write failed \(401\)/.test(errorMessage);
+          if (isAuthnFailure && account.refreshTokenReference) {
+            try {
+              account = await oauth.refreshGoogle(account);
+              if (!account.tokenReference) {
+                throw error;
+              }
+              const refreshed = await tokenVault.get(account.tokenReference);
+              if (refreshed?.accessToken) {
+                accessToken = refreshed.accessToken;
+                result = await gmailWrite.sendMessage(accessToken, {
+                  to: toGmailRecipients(input.to), subject: input.subject, body: input.body,
+                  ...(input.cc ? { cc: toGmailRecipients(input.cc) } : {}),
+                  ...(input.bcc ? { bcc: toGmailRecipients(input.bcc) } : {}),
+                  ...(input.contentType ? { contentType: input.contentType } : {}),
+                  ...(input.threadId ? { threadId: input.threadId } : {}),
+                  ...(input.inReplyToMessageIdHeader ? { inReplyToMessageIdHeader: input.inReplyToMessageIdHeader } : {})
+                }, account);
+              } else {
+                throw error;
+              }
+            } catch {
+              audit.emit({ producingService: "api-gateway", eventType: "tool.failed", severity: "high", traceId: trace.traceId, correlationId: trace.correlationId, reasonCodes: ["gmail_send_failed"], payload: { providerId: "google", error: errorMessage.slice(0, 200) } });
+              if (handleGmailWriteUpstreamError(error)) return true;
+              throw error;
+            }
+          } else {
           audit.emit({ producingService: "api-gateway", eventType: "tool.failed", severity: "high", traceId: trace.traceId, correlationId: trace.correlationId, reasonCodes: ["gmail_send_failed"], payload: { providerId: "google", error: error instanceof Error ? error.message.slice(0, 200) : "unknown" } });
           if (handleGmailWriteUpstreamError(error)) return true;
           throw error;
+          }
         }
         audit.emit({
           producingService: "api-gateway", eventType: "tool.completed", severity: "info",
           traceId: trace.traceId, correlationId: trace.correlationId,
           reasonCodes: ["gmail_send_completed"],
-          resource: { resourceClass: "integration-account", resourceId: gate.account.accountId },
+          resource: { resourceClass: "integration-account", resourceId: account.accountId },
           payload: { providerId: "google", actionId: "gmail.message.send", messageId: result.messageId, threadId: result.threadId }
         });
         respondJson(res, 200, { schemaVersion: CONTRACT_SCHEMA_VERSION, providerId: "google", connector: "gmail-write", result });

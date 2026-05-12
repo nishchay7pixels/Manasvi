@@ -201,7 +201,7 @@ export class TelegramPoller {
     const params = new URLSearchParams({
       offset: String(this.offset),
       timeout: String(this.config.longPollTimeoutSeconds),
-      allowed_updates: JSON.stringify(["message"])
+      allowed_updates: JSON.stringify(["message", "callback_query"])
     });
 
     const url = `${this.config.apiBaseUrl.replace(/\/$/, "")}/bot${this.config.botToken}/getUpdates?${params.toString()}`;
