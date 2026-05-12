@@ -42,11 +42,12 @@ const wildcardMatch = (pattern, value) => {
 };
 const isEgressAllowed = (host, port, protocol) => {
   const isGmailTool = typeof payload.toolRef === "string" && payload.toolRef.startsWith("tool:gmail-");
+  const isCalendarTool = typeof payload.toolRef === "string" && payload.toolRef.startsWith("tool:calendar-");
   const isLoopbackGateway =
     (protocol === "http" || protocol === "tcp") &&
     Number(port) === 4100 &&
     (host === "127.0.0.1" || host === "localhost");
-  if (isGmailTool && isLoopbackGateway) return true;
+  if ((isGmailTool || isCalendarTool) && isLoopbackGateway) return true;
 
   const mode = payload.runtimePolicy.network.mode;
   if (mode === "none") return false;
@@ -1230,6 +1231,102 @@ const handlers = {
     if (!response.ok) {
       const err = new Error("GMAIL_LABEL_FAILED:" + response.status);
       err.code = response.status === 202 ? "GMAIL_APPROVAL_REQUIRED" : "TOOL_UPSTREAM_ERROR";
+      err.details = body;
+      throw err;
+    }
+    return body?.result ?? body;
+  },
+  "tool:calendar-list-calendars": async (parameters) => {
+    const baseUrl = String(process.env.MANASVI_GATEWAY_URL || process.env.GATEWAY_URL || "http://127.0.0.1:4100");
+    const params = new URLSearchParams();
+    if (parameters?.actorPrincipalId) params.set("actorPrincipalId", String(parameters.actorPrincipalId));
+    const actorType = parameters?.actorPrincipalType === "user" ? "human_user" : String(parameters?.actorPrincipalType || "human_user");
+    params.set("actorPrincipalType", actorType);
+    if (parameters?.tenantId) params.set("tenantId", String(parameters.tenantId));
+    if (parameters?.workspaceId) params.set("workspaceId", String(parameters.workspaceId));
+    if (parameters?.pageToken) params.set("pageToken", String(parameters.pageToken));
+    const response = await fetch(baseUrl + "/integrations/google/calendar/calendars?" + params.toString());
+    const body = await response.json();
+    if (!response.ok) {
+      const err = new Error("CALENDAR_LIST_FAILED:" + response.status);
+      err.code = "TOOL_UPSTREAM_ERROR";
+      err.details = body;
+      throw err;
+    }
+    return body?.result ?? body;
+  },
+  "tool:calendar-list-events": async (parameters) => {
+    const baseUrl = String(process.env.MANASVI_GATEWAY_URL || process.env.GATEWAY_URL || "http://127.0.0.1:4100");
+    const payload = { ...(parameters || {}) };
+    if (payload.actorPrincipalType === "user") payload.actorPrincipalType = "human_user";
+    const response = await fetch(baseUrl + "/integrations/google/calendar/events/list", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    const body = await response.json();
+    if (!response.ok) {
+      const err = new Error("CALENDAR_LIST_EVENTS_FAILED:" + response.status);
+      err.code = "TOOL_UPSTREAM_ERROR";
+      err.details = body;
+      throw err;
+    }
+    return body?.result ?? body;
+  },
+  "tool:calendar-get-today-events": async (parameters) => {
+    const baseUrl = String(process.env.MANASVI_GATEWAY_URL || process.env.GATEWAY_URL || "http://127.0.0.1:4100");
+    const payload = { ...(parameters || {}) };
+    if (payload.actorPrincipalType === "user") payload.actorPrincipalType = "human_user";
+    const response = await fetch(baseUrl + "/integrations/google/calendar/events/today", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    const body = await response.json();
+    if (!response.ok) {
+      const err = new Error("CALENDAR_TODAY_EVENTS_FAILED:" + response.status);
+      err.code = "TOOL_UPSTREAM_ERROR";
+      err.details = body;
+      throw err;
+    }
+    return body?.result ?? body;
+  },
+  "tool:calendar-get-upcoming-events": async (parameters) => {
+    const baseUrl = String(process.env.MANASVI_GATEWAY_URL || process.env.GATEWAY_URL || "http://127.0.0.1:4100");
+    const payload = { ...(parameters || {}) };
+    if (payload.actorPrincipalType === "user") payload.actorPrincipalType = "human_user";
+    const response = await fetch(baseUrl + "/integrations/google/calendar/events/upcoming", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    const body = await response.json();
+    if (!response.ok) {
+      const err = new Error("CALENDAR_UPCOMING_EVENTS_FAILED:" + response.status);
+      err.code = "TOOL_UPSTREAM_ERROR";
+      err.details = body;
+      throw err;
+    }
+    return body?.result ?? body;
+  },
+  "tool:calendar-check-availability": async (parameters) => {
+    const baseUrl = String(process.env.MANASVI_GATEWAY_URL || process.env.GATEWAY_URL || "http://127.0.0.1:4100");
+    const payload = { ...(parameters || {}) };
+    if (payload.actorPrincipalType === "user") payload.actorPrincipalType = "human_user";
+    if (!payload.timeMin || !payload.timeMax) {
+      const err = new Error("timeMin and timeMax are required");
+      err.code = "INVALID_INPUT";
+      throw err;
+    }
+    const response = await fetch(baseUrl + "/integrations/google/calendar/availability", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    const body = await response.json();
+    if (!response.ok) {
+      const err = new Error("CALENDAR_AVAILABILITY_FAILED:" + response.status);
+      err.code = "TOOL_UPSTREAM_ERROR";
       err.details = body;
       throw err;
     }

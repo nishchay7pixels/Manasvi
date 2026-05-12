@@ -21,6 +21,8 @@ import type {
   IntegrationAccount,
   GoogleAuthorizationSnapshot,
   GmailHealthStatus,
+  CalendarHealthStatus,
+  CalendarUpcomingResult,
 } from "./types.js";
 
 // ── Fetch helper ──────────────────────────────────────────────────────────
@@ -87,15 +89,35 @@ export async function fetchIntegrationAccounts(): Promise<IntegrationAccount[]> 
   return data?.accounts ?? [];
 }
 
-export async function startGoogleConnectFlow(mode?: "read" | "write"): Promise<{ authorizeUrl: string } | null> {
+export async function startGoogleConnectFlow(mode?: "read" | "write" | "calendar" | "full"): Promise<{ authorizeUrl: string } | null> {
   const baseScopes = ["openid", "email", "profile", "https://www.googleapis.com/auth/gmail.readonly"];
   const writeScopes = [
     "https://www.googleapis.com/auth/gmail.compose",
     "https://www.googleapis.com/auth/gmail.send",
     "https://www.googleapis.com/auth/gmail.modify",
   ];
-  const scopes = mode === "write" ? [...baseScopes, ...writeScopes] : baseScopes;
+  const calendarScopes = ["https://www.googleapis.com/auth/calendar.readonly"];
+  const isWrite = mode === "write" || mode === "full";
+  const isCalendar = mode === "calendar" || mode === "full";
+  const scopes = [
+    ...baseScopes,
+    ...(isWrite ? writeScopes : []),
+    ...(isCalendar ? calendarScopes : []),
+  ];
   return post<{ authorizeUrl: string }>("/api/gateway/integrations/google/connect/start", { scopes });
+}
+
+export async function fetchCalendarHealth(): Promise<CalendarHealthStatus | null> {
+  const data = await get<{ health?: CalendarHealthStatus }>("/api/gateway/integrations/google/calendar/health");
+  return data?.health ?? null;
+}
+
+export async function fetchCalendarUpcoming(maxResults = 5): Promise<CalendarUpcomingResult | null> {
+  const data = await post<{ result?: CalendarUpcomingResult }>(
+    "/api/gateway/integrations/google/calendar/events/upcoming",
+    { maxResults }
+  );
+  return data?.result ?? null;
 }
 
 export async function disconnectGoogleIntegration(): Promise<boolean> {

@@ -428,6 +428,7 @@ export class GovernedAgentRuntime {
       try {
         validatedInput = validateToolInput(toolEntry.toolId, normalizedProposalInput);
       } catch (error) {
+        const message = error instanceof Error ? error.message : "validation failed";
         observations.push(
           this.createObservation({
             type: "runtime_failure",
@@ -435,15 +436,19 @@ export class GovernedAgentRuntime {
             trustClassification: "CONTROL_TRUSTED",
             data: {
               toolId: toolEntry.toolId,
-              message: error instanceof Error ? error.message : "validation failed"
+              message
             },
             trace: input.trace
           })
         );
-        transition("recovering_from_failure", "tool_input_invalid", {
+        transition("completed", "tool_input_invalid", {
           toolId: toolEntry.toolId
         });
-        continue;
+        finalOutcome = {
+          status: "completed",
+          responseText: `I could not execute ${toolEntry.toolId} because the generated tool input was invalid (${message}). Please try rephrasing your request.`
+        };
+        break;
       }
 
       const proposalKey = `${toolEntry.toolId}:${JSON.stringify(validatedInput)}`;

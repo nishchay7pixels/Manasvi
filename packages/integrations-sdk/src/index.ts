@@ -3,6 +3,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 export * from "./permissions.js";
 export * from "./gmail.js";
+export * from "./calendar.js";
 
 export type IntegrationProviderId = "google";
 

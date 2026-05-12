@@ -191,6 +191,148 @@ export async function runIntegrationsGmailAttention(): Promise<void> {
   }
 }
 
+export async function runIntegrationsCalendarHealth(): Promise<void> {
+  banner("integrations calendar health");
+  const port = await getGatewayPort();
+  try {
+    const res = await fetch(`http://127.0.0.1:${port}/integrations/google/calendar/health`);
+    if (!res.ok) {
+      warn("Failed to fetch Calendar health");
+      return;
+    }
+    const body = (await res.json()) as {
+      health: {
+        status: string;
+        connected: boolean;
+        calendarReadAuthorized: boolean;
+        availableCapabilities: string[];
+        missingCapabilities: string[];
+        tokenPresent: boolean;
+        lastSuccessfulReadAt: string | null;
+        lastError: string | null;
+      };
+    };
+    const h = body.health;
+    table([
+      { label: "status", value: h.status },
+      { label: "connected", value: h.connected ? "yes" : "no" },
+      { label: "calendar read authorized", value: h.calendarReadAuthorized ? "yes" : "no" },
+      { label: "token present", value: h.tokenPresent ? "yes" : "no" },
+      { label: "available capabilities", value: h.availableCapabilities.join(", ") || "-" },
+      { label: "missing capabilities", value: h.missingCapabilities.join(", ") || "-" },
+      { label: "last successful read", value: h.lastSuccessfulReadAt ?? "-" },
+      { label: "last error", value: h.lastError ?? "-" }
+    ]);
+    if (!h.calendarReadAuthorized) {
+      hint("To enable Calendar read, reconnect Google with the calendar.readonly scope:");
+      hint("  pnpm manasvi integrations add google calendar");
+    }
+  } catch {
+    warn("Failed to reach API gateway. Start services first: pnpm manasvi start");
+  }
+}
+
+export async function runIntegrationsCalendarToday(timezone?: string): Promise<void> {
+  banner("integrations calendar today");
+  const port = await getGatewayPort();
+  try {
+    const res = await fetch(`http://127.0.0.1:${port}/integrations/google/calendar/events/today`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ ...(timezone ? { timezone } : {}) })
+    });
+    if (!res.ok) {
+      warn("Failed to fetch today's calendar events");
+      return;
+    }
+    const body = (await res.json()) as {
+      result: {
+        events: Array<{
+          title: string;
+          startIso: string;
+          endIso: string;
+          allDay: boolean;
+          location: string | null;
+          hasAttendees: boolean;
+          attendeeCount: number;
+          hasMeetingLink: boolean;
+        }>;
+        timeZone: string | null;
+        calendarId: string;
+      };
+    };
+    const r = body.result;
+    section(`Today's calendar (${r.calendarId}) — ${r.timeZone ?? "UTC"}`);
+    if (r.events.length === 0) {
+      info("No events scheduled today.");
+      return;
+    }
+    for (const ev of r.events) {
+      const time = ev.allDay
+        ? "all-day"
+        : `${new Date(ev.startIso).toLocaleTimeString()} – ${new Date(ev.endIso).toLocaleTimeString()}`;
+      console.log(`- ${ev.title} | ${time}`);
+      if (ev.location) console.log(`  location: ${ev.location}`);
+      if (ev.hasAttendees) console.log(`  attendees: ${ev.attendeeCount}`);
+      if (ev.hasMeetingLink) console.log(`  [meeting link available]`);
+    }
+  } catch {
+    warn("Failed to reach API gateway.");
+  }
+}
+
+export async function runIntegrationsCalendarUpcoming(maxResults?: string): Promise<void> {
+  banner("integrations calendar upcoming");
+  const port = await getGatewayPort();
+  const n = Math.min(20, Math.max(1, parseInt(maxResults ?? "10", 10) || 10));
+  try {
+    const res = await fetch(`http://127.0.0.1:${port}/integrations/google/calendar/events/upcoming`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ maxResults: n })
+    });
+    if (!res.ok) {
+      warn("Failed to fetch upcoming calendar events");
+      return;
+    }
+    const body = (await res.json()) as {
+      result: {
+        events: Array<{
+          title: string;
+          startIso: string;
+          endIso: string;
+          allDay: boolean;
+          location: string | null;
+          hasAttendees: boolean;
+          attendeeCount: number;
+          hasMeetingLink: boolean;
+          isRecurring: boolean;
+        }>;
+        totalCount: number;
+        hasMore: boolean;
+        timezone: string | null;
+      };
+    };
+    const r = body.result;
+    section(`Upcoming events (next ${n})`);
+    if (r.events.length === 0) {
+      info("No upcoming events found.");
+      return;
+    }
+    for (const ev of r.events) {
+      const start = ev.allDay ? ev.startIso.slice(0, 10) : new Date(ev.startIso).toLocaleString();
+      console.log(`- ${ev.title}`);
+      console.log(`  when: ${start}${ev.isRecurring ? " (recurring)" : ""}`);
+      if (ev.location) console.log(`  location: ${ev.location}`);
+      if (ev.hasAttendees) console.log(`  attendees: ${ev.attendeeCount}`);
+      if (ev.hasMeetingLink) console.log(`  [meeting link]`);
+    }
+    if (r.hasMore) hint(`Showing ${r.totalCount} of more events. Use maxResults to fetch more.`);
+  } catch {
+    warn("Failed to reach API gateway.");
+  }
+}
+
 export async function runIntegrationsAdd(provider?: string, mode?: string): Promise<void> {
   banner("integrations add");
   if (provider !== "google") {
@@ -199,24 +341,33 @@ export async function runIntegrationsAdd(provider?: string, mode?: string): Prom
   }
   const port = await getGatewayPort();
 
-  // Mode: "read-only" (G3 compatible) vs "write" (G4 — full write capability)
+  // mode: "read-only" | "write" (G4) | "calendar" (G5) | "full" (all)
   const isWrite = mode === "write" || mode === "full";
-  const scopes = isWrite
-    ? [
-        "openid",
-        "email",
-        "profile",
-        "https://www.googleapis.com/auth/gmail.readonly",
-        "https://www.googleapis.com/auth/gmail.compose",
-        "https://www.googleapis.com/auth/gmail.send",
-        "https://www.googleapis.com/auth/gmail.modify"
-      ]
-    : ["openid", "email", "profile", "https://www.googleapis.com/auth/gmail.readonly"];
+  const isCalendar = mode === "calendar" || mode === "full";
+
+  const baseScopes = ["openid", "email", "profile", "https://www.googleapis.com/auth/gmail.readonly"];
+  const writeScopes = [
+    "https://www.googleapis.com/auth/gmail.compose",
+    "https://www.googleapis.com/auth/gmail.send",
+    "https://www.googleapis.com/auth/gmail.modify"
+  ];
+  const calendarScopes = ["https://www.googleapis.com/auth/calendar.readonly"];
+
+  const scopes = [
+    ...baseScopes,
+    ...(isWrite ? writeScopes : []),
+    ...(isCalendar ? calendarScopes : [])
+  ];
 
   if (isWrite) {
     info("Requesting Gmail write scopes (compose, send, modify).");
     hint("This allows Manasvi to draft, send, archive, and label Gmail messages.");
     hint("Send actions always require explicit approval before execution.");
+  }
+  if (isCalendar) {
+    info("Requesting Calendar read scope (calendar.readonly).");
+    hint("This allows Manasvi to read calendar events, check availability, and summarize meetings.");
+    hint("Calendar read is a safe read-only scope — no events will be created or modified.");
   }
 
   try {

@@ -593,6 +593,302 @@ const gmailLabelMessageSpec: BuiltInToolSpec = {
   examples: []
 };
 
+// ── calendar read tools ───────────────────────────────────────────────────────
+
+const calendarReadCapabilities = [
+  {
+    capabilityId: "integration.google.capability.calendar.read_events",
+    required: true,
+    scope: { tenantScoped: true, workspaceScoped: true, resourceClass: "service-endpoint" },
+    constraints: {}
+  }
+];
+
+const calendarReadBaseManifest = {
+  schemaVersion: "1.0",
+  contractVersion: "1.0.0",
+  version: "1.0.0",
+  owner: "manasvi-platform",
+  provider: "manasvi-core",
+  type: "adapter",
+  actionClass: "read",
+  sideEffectClass: "read_only",
+  mutability: "read_only",
+  capabilities: calendarReadCapabilities,
+  resourceClassesTouched: ["service-endpoint"],
+  runtimeHints: {
+    defaultTimeoutMs: 15000,
+    defaultSandboxMode: "restricted_remote",
+    egressProfiles: ["default-allowlist"],
+    filesystemProfile: "none",
+    declaredSecretRefs: [],
+    requireExecutorPath: true,
+    approvalSensitive: false
+  },
+  policyBinding: {
+    policyActionClass: "read",
+    resource: { resourceClass: "service-endpoint", resourceId: "integration:google:calendar" },
+    requiresExplicitPolicy: true,
+    approvalHint: "may_require"
+  },
+  trustNotes: [
+    "Calendar event content is EXTERNAL_UNTRUSTED. Events may contain user-controlled text.",
+    "Read-only operation. This tool never creates, modifies, or deletes calendar events."
+  ],
+  tags: ["calendar", "google", "read-only", "integration"],
+  status: "enabled",
+  createdAt: now(),
+  updatedAt: now()
+} as const;
+
+// tool.calendar-list-calendars
+
+const calendarListCalendarsInputSchema = z.object({
+  pageToken: z.string().optional()
+});
+
+const calendarListCalendarsOutputSchema = z.object({
+  calendars: z.array(
+    z.object({
+      calendarId: z.string(),
+      displayName: z.string(),
+      isPrimary: z.boolean(),
+      accessRole: z.string().nullable(),
+      timezone: z.string().nullable(),
+      selected: z.boolean(),
+      hidden: z.boolean()
+    })
+  ),
+  nextPageToken: z.string().nullable()
+});
+
+const calendarListCalendarsSpec: BuiltInToolSpec = {
+  manifest: parseManifest({
+    ...calendarReadBaseManifest,
+    toolId: "tool.calendar-list-calendars",
+    name: "Calendar List Calendars",
+    description:
+      "Lists all Google Calendars accessible to the connected Google account. " +
+      "Returns normalized calendar metadata including ID, display name, timezone, and access role. " +
+      "Use this to discover which calendars are available before querying events.",
+    inputSchema: jsonSchemaObject([], {
+      pageToken: prop("Pagination token from a previous response.", "string")
+    }),
+    outputSchema: jsonSchemaObject(["calendars", "nextPageToken"], {
+      calendars: prop("Normalized calendar summaries.", "array"),
+      nextPageToken: prop("Pagination token for next page.", "string")
+    }),
+    runtimeBinding: { toolRef: "tool:calendar-list-calendars", operation: "calendar_list_calendars" }
+  }),
+  inputSchema: calendarListCalendarsInputSchema,
+  outputSchema: calendarListCalendarsOutputSchema,
+  examples: []
+};
+
+// tool.calendar-list-events
+
+const calendarListEventsInputSchema = z.object({
+  calendarId: z.string().default("primary"),
+  timeMin: z.string().optional(),
+  timeMax: z.string().optional(),
+  maxResults: z.number().int().positive().max(100).default(25),
+  pageToken: z.string().optional(),
+  query: z.string().optional(),
+  singleEvents: z.boolean().default(true),
+  orderBy: z.enum(["startTime", "updated"]).default("startTime")
+});
+
+const calendarEventSummarySchema = z.object({
+  eventId: z.string(),
+  calendarId: z.string(),
+  title: z.string(),
+  description: z.string().nullable(),
+  location: z.string().nullable(),
+  startIso: z.string(),
+  endIso: z.string(),
+  allDay: z.boolean(),
+  timezone: z.string().nullable(),
+  status: z.string().nullable(),
+  attendeeCount: z.number().int().nonnegative(),
+  hasAttendees: z.boolean(),
+  organizerEmail: z.string().nullable(),
+  hasMeetingLink: z.boolean(),
+  isRecurring: z.boolean()
+});
+
+const calendarListEventsOutputSchema = z.object({
+  events: z.array(calendarEventSummarySchema),
+  nextPageToken: z.string().nullable(),
+  timeZone: z.string().nullable(),
+  calendarId: z.string()
+});
+
+const calendarListEventsSpec: BuiltInToolSpec = {
+  manifest: parseManifest({
+    ...calendarReadBaseManifest,
+    toolId: "tool.calendar-list-events",
+    name: "Calendar List Events",
+    description:
+      "Lists events from a Google Calendar within an optional time window. " +
+      "Supports time-bounded queries (timeMin/timeMax), full-text search, and pagination. " +
+      "Events are normalized with timezone-correct start/end ISO timestamps. " +
+      "Content is EXTERNAL_UNTRUSTED and provenance-linked.",
+    inputSchema: jsonSchemaObject([], {
+      calendarId: prop("Calendar ID to query. Defaults to 'primary'.", "string"),
+      timeMin: prop("ISO-8601 lower bound for event start (inclusive).", "string"),
+      timeMax: prop("ISO-8601 upper bound for event start (exclusive).", "string"),
+      maxResults: prop("Max events to return (<=100). Default 25.", "number"),
+      pageToken: prop("Pagination token from previous response.", "string"),
+      query: prop("Free-text search query over event fields.", "string"),
+      singleEvents: prop("Expand recurring events into instances. Default true.", "boolean"),
+      orderBy: prop("Sort order: startTime (default) or updated.", "string")
+    }),
+    outputSchema: jsonSchemaObject(["events", "nextPageToken", "timeZone", "calendarId"], {
+      events: prop("Normalized calendar event summaries.", "array"),
+      nextPageToken: prop("Pagination token for next page.", "string"),
+      timeZone: prop("Calendar timezone.", "string"),
+      calendarId: prop("The calendar that was queried.", "string")
+    }),
+    runtimeBinding: { toolRef: "tool:calendar-list-events", operation: "calendar_list_events" }
+  }),
+  inputSchema: calendarListEventsInputSchema,
+  outputSchema: calendarListEventsOutputSchema,
+  examples: []
+};
+
+// tool.calendar-get-today-events
+
+const calendarTodayEventsInputSchema = z.object({
+  calendarId: z.string().default("primary"),
+  timezone: z.string().optional()
+});
+
+const calendarTodayEventsSpec: BuiltInToolSpec = {
+  manifest: parseManifest({
+    ...calendarReadBaseManifest,
+    toolId: "tool.calendar-get-today-events",
+    name: "Calendar Get Today Events",
+    description:
+      "Returns all events on the primary (or specified) Google Calendar for today. " +
+      "Timezone-aware: the 'today' window is computed in the given timezone (defaults to UTC). " +
+      "Use this to answer 'What's on my calendar today?' or 'What meetings do I have today?'",
+    inputSchema: jsonSchemaObject([], {
+      calendarId: prop("Calendar ID to query. Defaults to 'primary'.", "string"),
+      timezone: prop("IANA timezone name for today's window (e.g. 'America/New_York'). Defaults to UTC.", "string")
+    }),
+    outputSchema: jsonSchemaObject(["events", "nextPageToken", "timeZone", "calendarId"], {
+      events: prop("Events scheduled for today.", "array"),
+      nextPageToken: prop("Pagination token if truncated.", "string"),
+      timeZone: prop("Calendar timezone.", "string"),
+      calendarId: prop("Calendar ID queried.", "string")
+    }),
+    runtimeBinding: { toolRef: "tool:calendar-get-today-events", operation: "calendar_get_today_events" }
+  }),
+  inputSchema: calendarTodayEventsInputSchema,
+  outputSchema: calendarListEventsOutputSchema,
+  examples: []
+};
+
+// tool.calendar-get-upcoming-events
+
+const calendarUpcomingEventsInputSchema = z.object({
+  calendarId: z.string().default("primary"),
+  maxResults: z.number().int().positive().max(50).default(10)
+});
+
+const calendarUpcomingOutputSchema = z.object({
+  calendarId: z.string(),
+  fetchedAt: z.string(),
+  timezone: z.string().nullable(),
+  events: z.array(calendarEventSummarySchema),
+  totalCount: z.number().int().nonnegative(),
+  hasMore: z.boolean()
+});
+
+const calendarUpcomingEventsSpec: BuiltInToolSpec = {
+  manifest: parseManifest({
+    ...calendarReadBaseManifest,
+    toolId: "tool.calendar-get-upcoming-events",
+    name: "Calendar Get Upcoming Events",
+    description:
+      "Returns the next N upcoming events from a Google Calendar starting from now. " +
+      "Use this to answer 'What's next on my schedule?', 'What are my upcoming meetings?', " +
+      "or 'Summarize my upcoming calendar.'",
+    inputSchema: jsonSchemaObject([], {
+      calendarId: prop("Calendar ID to query. Defaults to 'primary'.", "string"),
+      maxResults: prop("Max upcoming events to return (<=50). Default 10.", "number")
+    }),
+    outputSchema: jsonSchemaObject(["calendarId", "fetchedAt", "timezone", "events", "totalCount", "hasMore"], {
+      calendarId: prop("Calendar ID queried.", "string"),
+      fetchedAt: prop("ISO timestamp when query was executed.", "string"),
+      timezone: prop("Calendar timezone.", "string"),
+      events: prop("Upcoming event summaries in start-time order.", "array"),
+      totalCount: prop("Number of events returned.", "number"),
+      hasMore: prop("True if more events exist beyond this page.", "boolean")
+    }),
+    runtimeBinding: { toolRef: "tool:calendar-get-upcoming-events", operation: "calendar_get_upcoming_events" }
+  }),
+  inputSchema: calendarUpcomingEventsInputSchema,
+  outputSchema: calendarUpcomingOutputSchema,
+  examples: []
+};
+
+// tool.calendar-check-availability
+
+const calendarCheckAvailabilityInputSchema = z.object({
+  calendarId: z.string().default("primary"),
+  timeMin: z.string().min(1),
+  timeMax: z.string().min(1),
+  checkTimeIso: z.string().optional()
+});
+
+const calendarAvailabilityOutputSchema = z.object({
+  calendarId: z.string(),
+  timeMin: z.string(),
+  timeMax: z.string(),
+  timezone: z.string().nullable(),
+  busyBlocks: z.array(z.object({ start: z.string(), end: z.string() })),
+  freeSlots: z.array(z.object({ start: z.string(), end: z.string(), durationMinutes: z.number().int().nonnegative() })),
+  isFreeAt: z.boolean().nullable(),
+  totalBusyMinutes: z.number().int().nonnegative(),
+  totalFreeMinutes: z.number().int().nonnegative()
+});
+
+const calendarCheckAvailabilitySpec: BuiltInToolSpec = {
+  manifest: parseManifest({
+    ...calendarReadBaseManifest,
+    toolId: "tool.calendar-check-availability",
+    name: "Calendar Check Availability",
+    description:
+      "Checks free/busy status for a Google Calendar within a given time window. " +
+      "Returns busy blocks, free slots (>=15 min), and total free/busy minutes. " +
+      "Optionally checks whether a specific time is free. " +
+      "Use to answer 'Am I free tomorrow from 2-4pm?' or 'Find open slots this morning.' " +
+      "This is a read-only analysis — no events are created.",
+    inputSchema: jsonSchemaObject(["timeMin", "timeMax"], {
+      calendarId: prop("Calendar ID to check. Defaults to 'primary'.", "string"),
+      timeMin: prop("ISO-8601 start of the availability window.", "string"),
+      timeMax: prop("ISO-8601 end of the availability window.", "string"),
+      checkTimeIso: prop("Optional ISO-8601 datetime to check if specifically free at that moment.", "string")
+    }),
+    outputSchema: jsonSchemaObject(["calendarId", "timeMin", "timeMax", "busyBlocks", "freeSlots", "isFreeAt", "totalBusyMinutes", "totalFreeMinutes"], {
+      calendarId: prop("Calendar ID checked.", "string"),
+      timeMin: prop("Window start.", "string"),
+      timeMax: prop("Window end.", "string"),
+      timezone: prop("Calendar timezone.", "string"),
+      busyBlocks: prop("Time blocks with confirmed events.", "array"),
+      freeSlots: prop("Open time slots of at least 15 minutes.", "array"),
+      isFreeAt: prop("Whether checkTimeIso is free (null if not provided).", "boolean"),
+      totalBusyMinutes: prop("Total busy minutes in window.", "number"),
+      totalFreeMinutes: prop("Total free minutes in window.", "number")
+    }),
+    runtimeBinding: { toolRef: "tool:calendar-check-availability", operation: "calendar_check_availability" }
+  }),
+  inputSchema: calendarCheckAvailabilityInputSchema,
+  outputSchema: calendarAvailabilityOutputSchema,
+  examples: []
+};
+
 // ── exports ────────────────────────────────────────────────────────────────────
 
 export const WEB_TOOL_SPECS = {
@@ -605,7 +901,12 @@ export const WEB_TOOL_SPECS = {
   "tool.gmail-create-reply-draft": gmailCreateReplyDraftSpec,
   "tool.gmail-send-message": gmailSendMessageSpec,
   "tool.gmail-archive-message": gmailArchiveMessageSpec,
-  "tool.gmail-label-message": gmailLabelMessageSpec
+  "tool.gmail-label-message": gmailLabelMessageSpec,
+  "tool.calendar-list-calendars": calendarListCalendarsSpec,
+  "tool.calendar-list-events": calendarListEventsSpec,
+  "tool.calendar-get-today-events": calendarTodayEventsSpec,
+  "tool.calendar-get-upcoming-events": calendarUpcomingEventsSpec,
+  "tool.calendar-check-availability": calendarCheckAvailabilitySpec
 } as const;
 
 export type WebToolId = keyof typeof WEB_TOOL_SPECS;

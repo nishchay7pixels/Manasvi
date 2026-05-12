@@ -288,3 +288,41 @@ export interface GmailHealthStatus {
   lastSuccessfulReadAt: string | null;
   lastError: string | null;
 }
+
+export interface CalendarHealthStatus {
+  status: string;
+  connected: boolean;
+  calendarReadAuthorized: boolean;
+  availableCapabilities: string[];
+  missingCapabilities: string[];
+  tokenPresent: boolean;
+  lastSuccessfulReadAt: string | null;
+  lastError: string | null;
+}
+
+export interface CalendarEventSummary {
+  eventId: string;
+  calendarId: string;
+  title: string;
+  description: string | null;
+  location: string | null;
+  startIso: string;
+  endIso: string;
+  allDay: boolean;
+  timezone: string | null;
+  status: string | null;
+  attendeeCount: number;
+  hasAttendees: boolean;
+  organizerEmail: string | null;
+  hasMeetingLink: boolean;
+  isRecurring: boolean;
+}
+
+export interface CalendarUpcomingResult {
+  calendarId: string;
+  fetchedAt: string;
+  timezone: string | null;
+  events: CalendarEventSummary[];
+  totalCount: number;
+  hasMore: boolean;
+}

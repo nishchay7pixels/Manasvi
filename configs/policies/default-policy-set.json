@@ -536,6 +536,87 @@
           }
         },
         {
+          "ruleId": "allow-orchestrator-read-google-calendar-integration",
+          "description": "Allow orchestrator to perform policy-scoped Calendar read integration checks and reads.",
+          "priority": 685,
+          "effect": "allow",
+          "enabled": true,
+          "selectors": {
+            "callerTypes": ["service"],
+            "actorTypes": ["human_user", "agent", "service"],
+            "callerIds": ["service:orchestrator-service"],
+            "actorIds": []
+          },
+          "actionClasses": ["read"],
+          "resourceClasses": ["service-endpoint"],
+          "resourceIdPatterns": ["integration:google:calendar"],
+          "requiredCapabilities": [],
+          "conditions": {
+            "requireTenantMatch": true,
+            "requireWorkspaceMatch": true,
+            "allowSkipApproval": false,
+            "maxRiskLevel": "high"
+          },
+          "metadata": {
+            "highRiskCoverage": true,
+            "tags": ["integrations", "google", "calendar", "read-only"]
+          }
+        },
+        {
+          "ruleId": "allow-execution-phase-calendar-read-via-orchestrator",
+          "description": "Allow execution-phase Calendar read checks when orchestrator is both caller and actor during delegated execution.",
+          "priority": 686,
+          "effect": "allow",
+          "enabled": true,
+          "selectors": {
+            "callerTypes": ["service"],
+            "actorTypes": ["service"],
+            "callerIds": ["service:orchestrator-service"],
+            "actorIds": ["service:orchestrator-service"]
+          },
+          "actionClasses": ["read"],
+          "resourceClasses": ["service-endpoint"],
+          "resourceIdPatterns": ["integration:google:calendar"],
+          "requiredCapabilities": [],
+          "conditions": {
+            "requireTenantMatch": false,
+            "requireWorkspaceMatch": false,
+            "allowSkipApproval": false,
+            "maxRiskLevel": "high"
+          },
+          "metadata": {
+            "highRiskCoverage": true,
+            "tags": ["integrations", "google", "calendar", "execution-phase"]
+          }
+        },
+        {
+          "ruleId": "allow-api-gateway-read-google-calendar-integration-account",
+          "description": "Allow api-gateway to evaluate and execute Calendar read access against connected Google integration account resources.",
+          "priority": 687,
+          "effect": "allow",
+          "enabled": true,
+          "selectors": {
+            "callerTypes": ["service"],
+            "actorTypes": ["human_user", "agent", "service"],
+            "callerIds": ["service:api-gateway"],
+            "actorIds": []
+          },
+          "actionClasses": ["read"],
+          "resourceClasses": ["service-endpoint"],
+          "resourceIdPatterns": ["integration:google:*"],
+          "requiredCapabilities": [],
+          "conditions": {
+            "requireTenantMatch": true,
+            "requireWorkspaceMatch": true,
+            "allowSkipApproval": false,
+            "maxRiskLevel": "high"
+          },
+          "metadata": {
+            "highRiskCoverage": true,
+            "tags": ["integrations", "google", "calendar", "api-gateway"]
+          }
+        },
+        {
           "ruleId": "allow-orchestrator-fs1-read-tools",
           "description": "Allow orchestrator to invoke FS1 safe read-only filesystem tools (fs-read-file, fs-list-directory, fs-stat, fs-search-files). All paths are workspace-sandboxed at the runtime layer.",
           "priority": 679,

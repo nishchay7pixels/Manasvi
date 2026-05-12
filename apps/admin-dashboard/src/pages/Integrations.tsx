@@ -3,6 +3,8 @@ import { useApi } from "../hooks/useApi.js";
 import {
   checkGoogleActionPermission,
   disconnectGoogleIntegration,
+  fetchCalendarHealth,
+  fetchCalendarUpcoming,
   fetchGmailAttention,
   fetchGmailHealth,
   fetchGoogleAuthorizationSnapshot,
@@ -21,6 +23,8 @@ export function Integrations() {
   const { data, loading, refresh } = useApi(fetchIntegrationAccounts, []);
   const { data: authz, refresh: refreshAuthz } = useApi(fetchGoogleAuthorizationSnapshot, []);
   const { data: gmailHealth, refresh: refreshGmailHealth } = useApi(fetchGmailHealth, []);
+  const { data: calendarHealth, refresh: refreshCalendarHealth } = useApi(fetchCalendarHealth, []);
+  const { data: calendarUpcoming, refresh: refreshCalendarUpcoming } = useApi(fetchCalendarUpcoming, []);
   const [busy, setBusy] = useState(false);
   const [checkResult, setCheckResult] = useState<string>("");
   const [attentionResult, setAttentionResult] = useState<string>("");
@@ -43,7 +47,7 @@ export function Integrations() {
 
   const hasAllWriteCapabilities = writeCapabilities.every((c) => c.available);
 
-  const onConnect = async (mode?: "read" | "write") => {
+  const onConnect = async (mode?: "read" | "write" | "calendar" | "full") => {
     setBusy(true);
     const started = await startGoogleConnectFlow(mode);
     setBusy(false);
@@ -108,8 +112,10 @@ export function Integrations() {
             </div>
 
             <div style={{ display: "flex", gap: 8, marginTop: 16, flexWrap: "wrap" }}>
-              <button className="btn" disabled={busy} onClick={() => onConnect("read")}>Connect (read-only)</button>
-              <button className="btn" disabled={busy} onClick={() => onConnect("write")}>Connect with write scopes</button>
+              <button className="btn" disabled={busy} onClick={() => onConnect("read")}>Connect (Gmail read)</button>
+              <button className="btn" disabled={busy} onClick={() => onConnect("calendar")}>Connect with Calendar read</button>
+              <button className="btn" disabled={busy} onClick={() => onConnect("write")}>Connect with Gmail write</button>
+              <button className="btn" disabled={busy} onClick={() => onConnect("full")}>Connect (full scopes)</button>
               <button className="btn btn-danger" disabled={busy || !google} onClick={onDisconnect}>Disconnect</button>
               <button className="btn btn-ghost" disabled={busy} onClick={async () => { await refresh(); await refreshAuthz(); }}>Refresh</button>
             </div>
@@ -176,6 +182,70 @@ export function Integrations() {
           </>
         )}
       </div>
+
+      <div className="card" style={{ marginTop: 16 }}>
+        <h3>Calendar Read Health</h3>
+        {!calendarHealth ? (
+          <p className="muted">No Calendar health data available. Connect Google with calendar.readonly scope first.</p>
+        ) : (
+          <div className="kv-grid" style={{ marginTop: 12 }}>
+            <div className="kv"><span>Status</span><span>{calendarHealth.status}</span></div>
+            <div className="kv"><span>Read authorized</span><span>{calendarHealth.calendarReadAuthorized ? "yes" : "no"}</span></div>
+            <div className="kv"><span>Available capabilities</span><span>{calendarHealth.availableCapabilities.join(", ") || "-"}</span></div>
+            <div className="kv"><span>Missing capabilities</span><span>{calendarHealth.missingCapabilities.join(", ") || "-"}</span></div>
+            <div className="kv"><span>Last successful read</span><span>{calendarHealth.lastSuccessfulReadAt ?? "-"}</span></div>
+            <div className="kv"><span>Last error</span><span>{calendarHealth.lastError ?? "-"}</span></div>
+          </div>
+        )}
+        {calendarHealth && !calendarHealth.calendarReadAuthorized && (
+          <p className="muted" style={{ marginTop: 8 }}>
+            Calendar read scope missing. Reconnect Google with "Connect with Calendar read" to enable.
+          </p>
+        )}
+        <div style={{ marginTop: 12 }}>
+          <button className="btn btn-ghost" onClick={refreshCalendarHealth}>Refresh Calendar health</button>
+        </div>
+      </div>
+
+      {calendarHealth?.calendarReadAuthorized && (
+        <div className="card" style={{ marginTop: 16 }}>
+          <div className="row between center">
+            <h3>Upcoming Events</h3>
+            <button className="btn btn-ghost" onClick={refreshCalendarUpcoming}>Refresh</button>
+          </div>
+          {!calendarUpcoming ? (
+            <p className="muted" style={{ marginTop: 8 }}>No upcoming event data. Click refresh to fetch.</p>
+          ) : calendarUpcoming.events.length === 0 ? (
+            <p className="muted" style={{ marginTop: 8 }}>No upcoming events found.</p>
+          ) : (
+            <table className="table" style={{ marginTop: 12 }}>
+              <thead>
+                <tr>
+                  <th>Title</th>
+                  <th>Start</th>
+                  <th>Attendees</th>
+                  <th>Meeting Link</th>
+                  <th>Recurring</th>
+                </tr>
+              </thead>
+              <tbody>
+                {calendarUpcoming.events.map((ev) => (
+                  <tr key={ev.eventId}>
+                    <td>{ev.title}</td>
+                    <td>{ev.allDay ? ev.startIso.slice(0, 10) + " (all-day)" : new Date(ev.startIso).toLocaleString()}</td>
+                    <td>{ev.hasAttendees ? ev.attendeeCount : "-"}</td>
+                    <td>{ev.hasMeetingLink ? "yes" : "-"}</td>
+                    <td>{ev.isRecurring ? "yes" : "-"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+          {calendarUpcoming?.hasMore && (
+            <p className="muted" style={{ marginTop: 8 }}>Showing first {calendarUpcoming.totalCount} events. More available.</p>
+          )}
+        </div>
+      )}
 
       <div className="card" style={{ marginTop: 16 }}>
         <h3>Authorization Snapshot</h3>

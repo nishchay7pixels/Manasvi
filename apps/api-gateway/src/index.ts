@@ -11,9 +11,11 @@ import {
   EncryptedTokenVault,
   FetchOAuthClient,
   FetchGmailApiClient,
+  FetchCalendarApiClient,
   GOOGLE_PROVIDER_PROFILE,
   GmailReadConnector,
   GmailWriteConnector,
+  CalendarReadConnector,
   IntegrationAccountStore,
   OAuthFlowService,
   OAuthStateStore,
@@ -157,6 +159,50 @@ const gmailLabelSchema = gmailWriteBaseSchema.extend({
   { message: "At least one of addLabelIds or removeLabelIds must be non-empty" }
 );
 
+const calendarReadBaseSchema = z.object({
+  actorPrincipalId: z.string().min(1).default("user:local-operator"),
+  actorPrincipalType: z.preprocess(
+    (value) => (value === "user" ? "human_user" : value),
+    z.enum(["human_user", "agent", "plugin"])
+  ).default("human_user"),
+  tenantId: z.string().min(1).default("tenant-local"),
+  workspaceId: z.string().min(1).default("workspace-local"),
+  pluginId: z.string().min(1).optional()
+});
+
+const calendarListEventsSchema = calendarReadBaseSchema.extend({
+  calendarId: z.string().min(1).default("primary"),
+  timeMin: z.string().optional(),
+  timeMax: z.string().optional(),
+  maxResults: z.number().int().positive().max(100).default(25),
+  pageToken: z.string().optional(),
+  singleEvents: z.boolean().default(true),
+  orderBy: z.enum(["startTime", "updated"]).default("startTime"),
+  query: z.string().optional(),
+  showDeleted: z.boolean().optional()
+});
+
+const calendarGetEventSchema = calendarReadBaseSchema.extend({
+  calendarId: z.string().min(1).default("primary")
+});
+
+const calendarTodaySchema = calendarReadBaseSchema.extend({
+  calendarId: z.string().min(1).default("primary"),
+  timezone: z.string().optional()
+});
+
+const calendarUpcomingSchema = calendarReadBaseSchema.extend({
+  calendarId: z.string().min(1).default("primary"),
+  maxResults: z.number().int().positive().max(50).default(10)
+});
+
+const calendarAvailabilitySchema = calendarReadBaseSchema.extend({
+  calendarId: z.string().min(1).default("primary"),
+  timeMin: z.string().min(1),
+  timeMax: z.string().min(1),
+  checkTimeIso: z.string().optional()
+});
+
 async function main(): Promise<void> {
   const config = await loadApiGatewayConfig();
   const servicePrincipal = buildServicePrincipalReference(config.serviceName);
@@ -205,6 +251,7 @@ async function main(): Promise<void> {
   });
   const gmail = new GmailReadConnector(new FetchGmailApiClient());
   const gmailWrite = new GmailWriteConnector(new FetchGmailApiClient());
+  const calendar = new CalendarReadConnector(new FetchCalendarApiClient());
 
   // Maps Zod-parsed recipients (name?: string | undefined) to GmailRecipient (exactOptionalPropertyTypes)
   const toGmailRecipients = (list: Array<{ email: string; name?: string | undefined }>): GmailRecipient[] =>
@@ -1246,6 +1293,324 @@ async function main(): Promise<void> {
           payload: { providerId: "google", actionId: "gmail.message.label", messageId: result.messageId, addedLabels: result.addedLabels, removedLabels: result.removedLabels }
         });
         respondJson(res, 200, { schemaVersion: CONTRACT_SCHEMA_VERSION, providerId: "google", connector: "gmail-write", result });
+        return true;
+      }
+
+      // ── Google Calendar read endpoints ────────────────────────────────────────
+
+      if (req.method === "GET" && reqUrl.pathname === "/integrations/google/calendar/health") {
+        const account = await accountStore.getByProvider("google");
+        let tokenPresent = false;
+        if (account?.tokenReference) {
+          const token = await tokenVault.get(account.tokenReference);
+          tokenPresent = Boolean(token?.accessToken);
+        }
+        audit.emit({
+          producingService: "api-gateway",
+          eventType: "tool.invoked",
+          severity: "info",
+          traceId: trace.traceId,
+          correlationId: trace.correlationId,
+          reasonCodes: ["calendar_health_requested"],
+          payload: { providerId: "google", connector: "calendar-read" }
+        });
+        respondJson(res, 200, {
+          schemaVersion: CONTRACT_SCHEMA_VERSION,
+          providerId: "google",
+          connector: "calendar-read",
+          health: calendar.computeHealth(account, tokenPresent)
+        });
+        return true;
+      }
+
+      const runCalendarReadPermission = async (
+        input: { actorPrincipalId: string; actorPrincipalType: "human_user" | "agent" | "plugin"; tenantId: string; workspaceId: string; pluginId?: string | undefined }
+      ) => {
+        let account = await accountStore.getByProvider("google");
+        const actor = {
+          principalId: input.actorPrincipalId,
+          principalType: input.actorPrincipalType,
+          tenantId: input.tenantId,
+          workspaceId: input.workspaceId
+        } as const;
+        const caller = input.pluginId
+          ? ({ principalId: input.pluginId, principalType: "plugin", tenantId: input.tenantId, workspaceId: input.workspaceId } as const)
+          : ({ principalId: "service:api-gateway", principalType: "service", tenantId: input.tenantId, workspaceId: input.workspaceId } as const);
+        const principalContext = {
+          caller, actor,
+          tenantId: input.tenantId, workspaceId: input.workspaceId,
+          scopes: [] as string[], authnStrength: "strong" as const, authenticated: true
+        };
+        const permissionInput: Parameters<typeof checkGoogleActionPermission>[0] = {
+          account,
+          actionId: "calendar.events.read",
+          principalContext, actor, caller,
+          tenantId: input.tenantId, workspaceId: input.workspaceId,
+          trace: { traceId: trace.traceId, correlationId: trace.correlationId },
+          policyClient
+        };
+        if (input.pluginId) permissionInput.pluginId = input.pluginId;
+
+        const permission = await checkGoogleActionPermission(permissionInput);
+        audit.emit(buildGooglePermissionAuditEvent({
+          traceId: trace.traceId, correlationId: trace.correlationId,
+          actor, caller,
+          tenantId: input.tenantId, workspaceId: input.workspaceId,
+          ...(account?.accountId ? { accountId: account.accountId } : {}),
+          ...(input.pluginId ? { pluginId: input.pluginId } : {}),
+          result: permission
+        }));
+
+        if (permission.decision === "deny") {
+          respondJson(res, 403, { schemaVersion: CONTRACT_SCHEMA_VERSION, providerId: "google", connector: "calendar-read", permission });
+          return { allowed: false as const, account: null };
+        }
+        if (permission.decision === "require_approval") {
+          respondJson(res, 202, { schemaVersion: CONTRACT_SCHEMA_VERSION, providerId: "google", connector: "calendar-read", permission });
+          return { allowed: false as const, account: null };
+        }
+        if (!account?.tokenReference) {
+          respondJson(res, 400, { schemaVersion: CONTRACT_SCHEMA_VERSION, error: "Google integration token reference missing" });
+          return { allowed: false as const, account: null };
+        }
+        const tokenExpired =
+          typeof account.tokenExpiresAt === "string" &&
+          Number.isFinite(Date.parse(account.tokenExpiresAt)) &&
+          Date.parse(account.tokenExpiresAt) <= Date.now();
+        if (tokenExpired && account.refreshTokenReference) {
+          try { account = await oauth.refreshGoogle(account); }
+          catch (error) { await accountStore.setStatus(account.accountId, "refresh_failed", error instanceof Error ? error.message : "unknown"); }
+        }
+        if (!account.tokenReference) {
+          respondJson(res, 400, { schemaVersion: CONTRACT_SCHEMA_VERSION, error: "Google integration token reference missing" });
+          return { allowed: false as const, account: null };
+        }
+        const token = await tokenVault.get(account.tokenReference);
+        if (!token?.accessToken) {
+          respondJson(res, 400, { schemaVersion: CONTRACT_SCHEMA_VERSION, error: "Google access token not available" });
+          return { allowed: false as const, account: null };
+        }
+        return { allowed: true as const, account, accessToken: token.accessToken };
+      };
+
+      const handleCalendarUpstreamError = (error: unknown): boolean => {
+        const message = error instanceof Error ? error.message : "unknown";
+        const refreshMatched = message.match(/OAuth token refresh failed \((\d+)\)/);
+        if (refreshMatched) {
+          respondJson(res, 401, {
+            schemaVersion: CONTRACT_SCHEMA_VERSION, providerId: "google", connector: "calendar-read",
+            error: { code: "GOOGLE_REAUTH_REQUIRED", message, upstreamStatus: Number(refreshMatched[1]), remediation: "Reconnect Google integration to refresh tokens." }
+          });
+          return true;
+        }
+        const matched = message.match(/Calendar API (?:read|request) failed \((\d+)\)/);
+        if (!matched) return false;
+        const upstreamStatus = Number(matched[1]);
+        const isAuthz = upstreamStatus === 401 || upstreamStatus === 403;
+        respondJson(res, isAuthz ? 403 : 502, {
+          schemaVersion: CONTRACT_SCHEMA_VERSION, providerId: "google", connector: "calendar-read",
+          error: { code: isAuthz ? "CALENDAR_AUTHORIZATION_FAILED" : "CALENDAR_UPSTREAM_ERROR", message, upstreamStatus }
+        });
+        return true;
+      };
+
+      // GET /integrations/google/calendar/calendars
+      if (req.method === "GET" && reqUrl.pathname === "/integrations/google/calendar/calendars") {
+        const parsed = calendarReadBaseSchema.parse({
+          actorPrincipalId: reqUrl.searchParams.get("actorPrincipalId") ?? undefined,
+          actorPrincipalType: reqUrl.searchParams.get("actorPrincipalType") ?? undefined,
+          tenantId: reqUrl.searchParams.get("tenantId") ?? undefined,
+          workspaceId: reqUrl.searchParams.get("workspaceId") ?? undefined,
+          pluginId: reqUrl.searchParams.get("pluginId") ?? undefined
+        });
+        const gate = await runCalendarReadPermission(parsed);
+        if (!gate.allowed) return true;
+        const pageToken = reqUrl.searchParams.get("pageToken") ?? undefined;
+        audit.emit({
+          producingService: "api-gateway", eventType: "tool.invoked", severity: "info",
+          traceId: trace.traceId, correlationId: trace.correlationId,
+          reasonCodes: ["calendar_list_requested"],
+          payload: { providerId: "google", connector: "calendar-read", action: "list_calendars" }
+        });
+        let result;
+        try {
+          result = await calendar.listCalendars(gate.accessToken, gate.account, pageToken);
+        } catch (error) {
+          if (handleCalendarUpstreamError(error)) return true;
+          throw error;
+        }
+        audit.emit({
+          producingService: "api-gateway", eventType: "tool.completed", severity: "info",
+          traceId: trace.traceId, correlationId: trace.correlationId,
+          reasonCodes: ["calendar_list_completed"],
+          payload: { providerId: "google", count: result.calendars.length }
+        });
+        respondJson(res, 200, { schemaVersion: CONTRACT_SCHEMA_VERSION, providerId: "google", connector: "calendar-read", result });
+        return true;
+      }
+
+      // POST /integrations/google/calendar/events/list
+      if (req.method === "POST" && reqUrl.pathname === "/integrations/google/calendar/events/list") {
+        const input = calendarListEventsSchema.parse(await readJsonBody(req));
+        const gate = await runCalendarReadPermission(input);
+        if (!gate.allowed) return true;
+        audit.emit({
+          producingService: "api-gateway", eventType: "tool.invoked", severity: "info",
+          traceId: trace.traceId, correlationId: trace.correlationId,
+          reasonCodes: ["calendar_events_list_requested"],
+          payload: { providerId: "google", calendarId: input.calendarId, timeMin: input.timeMin ?? null, timeMax: input.timeMax ?? null }
+        });
+        let result;
+        try {
+          result = await calendar.listEvents(gate.accessToken, gate.account, {
+            calendarId: input.calendarId,
+            ...(input.timeMin ? { timeMin: input.timeMin } : {}),
+            ...(input.timeMax ? { timeMax: input.timeMax } : {}),
+            maxResults: input.maxResults,
+            ...(input.pageToken ? { pageToken: input.pageToken } : {}),
+            singleEvents: input.singleEvents,
+            orderBy: input.orderBy,
+            ...(input.query ? { query: input.query } : {}),
+            ...(input.showDeleted ? { showDeleted: input.showDeleted } : {})
+          });
+        } catch (error) {
+          if (handleCalendarUpstreamError(error)) return true;
+          throw error;
+        }
+        audit.emit({
+          producingService: "api-gateway", eventType: "tool.completed", severity: "info",
+          traceId: trace.traceId, correlationId: trace.correlationId,
+          reasonCodes: ["calendar_events_list_completed"],
+          payload: { providerId: "google", calendarId: input.calendarId, count: result.events.length }
+        });
+        respondJson(res, 200, { schemaVersion: CONTRACT_SCHEMA_VERSION, providerId: "google", connector: "calendar-read", result });
+        return true;
+      }
+
+      // POST /integrations/google/calendar/events/today
+      if (req.method === "POST" && reqUrl.pathname === "/integrations/google/calendar/events/today") {
+        const input = calendarTodaySchema.parse(await readJsonBody(req));
+        const gate = await runCalendarReadPermission(input);
+        if (!gate.allowed) return true;
+        audit.emit({
+          producingService: "api-gateway", eventType: "tool.invoked", severity: "info",
+          traceId: trace.traceId, correlationId: trace.correlationId,
+          reasonCodes: ["calendar_today_requested"],
+          payload: { providerId: "google", calendarId: input.calendarId, timezone: input.timezone ?? "UTC" }
+        });
+        let result;
+        try {
+          result = await calendar.getTodayEvents(gate.accessToken, gate.account, input.calendarId, input.timezone);
+        } catch (error) {
+          if (handleCalendarUpstreamError(error)) return true;
+          throw error;
+        }
+        audit.emit({
+          producingService: "api-gateway", eventType: "tool.completed", severity: "info",
+          traceId: trace.traceId, correlationId: trace.correlationId,
+          reasonCodes: ["calendar_today_completed"],
+          payload: { providerId: "google", calendarId: input.calendarId, count: result.events.length }
+        });
+        respondJson(res, 200, { schemaVersion: CONTRACT_SCHEMA_VERSION, providerId: "google", connector: "calendar-read", result });
+        return true;
+      }
+
+      // POST /integrations/google/calendar/events/upcoming
+      if (req.method === "POST" && reqUrl.pathname === "/integrations/google/calendar/events/upcoming") {
+        const input = calendarUpcomingSchema.parse(await readJsonBody(req));
+        const gate = await runCalendarReadPermission(input);
+        if (!gate.allowed) return true;
+        audit.emit({
+          producingService: "api-gateway", eventType: "tool.invoked", severity: "info",
+          traceId: trace.traceId, correlationId: trace.correlationId,
+          reasonCodes: ["calendar_upcoming_requested"],
+          payload: { providerId: "google", calendarId: input.calendarId, maxResults: input.maxResults }
+        });
+        let result;
+        try {
+          result = await calendar.getUpcomingEvents(gate.accessToken, gate.account, input.calendarId, input.maxResults);
+        } catch (error) {
+          if (handleCalendarUpstreamError(error)) return true;
+          throw error;
+        }
+        audit.emit({
+          producingService: "api-gateway", eventType: "tool.completed", severity: "info",
+          traceId: trace.traceId, correlationId: trace.correlationId,
+          reasonCodes: ["calendar_upcoming_completed"],
+          payload: { providerId: "google", calendarId: input.calendarId, count: result.events.length }
+        });
+        respondJson(res, 200, { schemaVersion: CONTRACT_SCHEMA_VERSION, providerId: "google", connector: "calendar-read", result });
+        return true;
+      }
+
+      // POST /integrations/google/calendar/availability
+      if (req.method === "POST" && reqUrl.pathname === "/integrations/google/calendar/availability") {
+        const input = calendarAvailabilitySchema.parse(await readJsonBody(req));
+        const gate = await runCalendarReadPermission(input);
+        if (!gate.allowed) return true;
+        audit.emit({
+          producingService: "api-gateway", eventType: "tool.invoked", severity: "info",
+          traceId: trace.traceId, correlationId: trace.correlationId,
+          reasonCodes: ["calendar_availability_requested"],
+          payload: { providerId: "google", calendarId: input.calendarId, timeMin: input.timeMin, timeMax: input.timeMax }
+        });
+        let result;
+        try {
+          result = await calendar.checkAvailability(
+            gate.accessToken, gate.account,
+            input.calendarId, input.timeMin, input.timeMax,
+            input.checkTimeIso
+          );
+        } catch (error) {
+          if (handleCalendarUpstreamError(error)) return true;
+          throw error;
+        }
+        audit.emit({
+          producingService: "api-gateway", eventType: "tool.completed", severity: "info",
+          traceId: trace.traceId, correlationId: trace.correlationId,
+          reasonCodes: ["calendar_availability_completed"],
+          payload: {
+            providerId: "google", calendarId: input.calendarId,
+            busyBlockCount: result.busyBlocks.length,
+            freeSlotCount: result.freeSlots.length,
+            totalBusyMinutes: result.totalBusyMinutes
+          }
+        });
+        respondJson(res, 200, { schemaVersion: CONTRACT_SCHEMA_VERSION, providerId: "google", connector: "calendar-read", result });
+        return true;
+      }
+
+      // GET /integrations/google/calendar/events/:calendarId/:eventId
+      const calendarEventGetMatch = req.method === "GET" &&
+        /^\/integrations\/google\/calendar\/events\/[^/]+\/[^/]+$/.test(reqUrl.pathname);
+      if (calendarEventGetMatch) {
+        const parts = reqUrl.pathname.split("/");
+        const eventId = decodeURIComponent(parts[parts.length - 1] ?? "");
+        const calendarIdRaw = decodeURIComponent(parts[parts.length - 2] ?? "primary");
+        const input = calendarGetEventSchema.parse({
+          calendarId: calendarIdRaw,
+          actorPrincipalId: reqUrl.searchParams.get("actorPrincipalId") ?? undefined,
+          actorPrincipalType: reqUrl.searchParams.get("actorPrincipalType") ?? undefined,
+          tenantId: reqUrl.searchParams.get("tenantId") ?? undefined,
+          workspaceId: reqUrl.searchParams.get("workspaceId") ?? undefined,
+          pluginId: reqUrl.searchParams.get("pluginId") ?? undefined
+        });
+        const gate = await runCalendarReadPermission(input);
+        if (!gate.allowed) return true;
+        let event;
+        try {
+          event = await calendar.getEvent(gate.accessToken, gate.account, input.calendarId, eventId);
+        } catch (error) {
+          if (handleCalendarUpstreamError(error)) return true;
+          throw error;
+        }
+        respondJson(res, 200, {
+          schemaVersion: CONTRACT_SCHEMA_VERSION,
+          providerId: "google",
+          connector: "calendar-read",
+          event,
+          ingestionRecord: calendar.toIngressRecord(event)
+        });
         return true;
       }
 
