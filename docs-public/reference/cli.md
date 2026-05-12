@@ -259,6 +259,67 @@ List all configured model providers and show which one is active.
 pnpm manasvi models list
 ```
 
+---
+
+## Integration commands
+
+### `integrations list`
+
+List all integration accounts and status.
+
+```bash
+pnpm manasvi integrations list
+```
+
+### `integrations add google`
+
+Start the Google OAuth connection flow and print/open the authorization URL.
+
+```bash
+pnpm manasvi integrations add google
+```
+
+### `integrations status`
+
+Show current Google integration status, scopes, and refresh/auth metadata.
+
+```bash
+pnpm manasvi integrations status
+```
+
+### `integrations check <google-action-id>`
+
+Run scope/capability/policy permission evaluation for a specific Google action.
+
+```bash
+pnpm manasvi integrations check gmail.threads.read
+pnpm manasvi integrations check gmail.message.send
+```
+
+### `integrations gmail-health`
+
+Show Gmail read connector health/read readiness.
+
+```bash
+pnpm manasvi integrations gmail-health
+```
+
+### `integrations gmail-attention`
+
+Summarize recent inbox items likely needing attention (unread/important focus).
+
+```bash
+pnpm manasvi integrations gmail-attention
+```
+
+### `integrations remove google`
+
+Disconnect and revoke the Google integration.
+
+```bash
+pnpm manasvi integrations remove google
+```
+
 ### `models add`
 
 Configure a model provider interactively.

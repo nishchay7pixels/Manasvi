@@ -37,3 +37,13 @@ pnpm-debug.log*
 # Existing project-specific ignores
 docs-internal
 pnpm-lock.yaml
+
+workspace
+
+# Manasvi runtime data
+.manasvi/
+
+# Docker production files
+docker-compose.prod.yml
+docker/Caddyfile
+docker/Dockerfile.prod

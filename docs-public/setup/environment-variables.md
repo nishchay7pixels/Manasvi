@@ -102,6 +102,20 @@ Override the default port for any service.
 
 ---
 
+## Google integration foundation
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `GOOGLE_OAUTH_CLIENT_ID` | Google OAuth client ID | — |
+| `GOOGLE_OAUTH_CLIENT_SECRET` | Google OAuth client secret | — |
+| `GOOGLE_OAUTH_REDIRECT_URI` | OAuth callback URL handled by api-gateway | `http://127.0.0.1:4100/integrations/oauth/google/callback` |
+| `INTEGRATIONS_STATE_FILE` | File path for OAuth state records | `.manasvi/integrations/oauth-states.json` |
+| `INTEGRATIONS_ACCOUNTS_FILE` | File path for integration account metadata | `.manasvi/integrations/accounts.json` |
+| `INTEGRATIONS_TOKENS_FILE` | File path for encrypted token vault | `.manasvi/integrations/tokens.enc.json` |
+| `INTEGRATIONS_TOKEN_ENCRYPTION_SECRET` | 32+ char secret used to encrypt token vault records | falls back to `MEMORY_ENCRYPTION_KEY` |
+
+---
+
 ## Execution and sandbox
 
 | Variable | Description | Default |

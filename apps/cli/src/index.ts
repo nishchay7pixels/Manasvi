@@ -67,6 +67,15 @@ import { runChannelsList, runChannelsAdd, runChannelsStatus, runChannelsRemove, 
 import { runToolsList, runToolsInspect, runToolsSets } from "./commands/tools.js";
 import { runPluginsList, runPluginsInspect } from "./commands/plugins.js";
 import { runNodesList, runNodesStatus, runNodesPair } from "./commands/nodes.js";
+import {
+  runIntegrationsAdd,
+  runIntegrationsCheck,
+  runIntegrationsGmailAttention,
+  runIntegrationsGmailHealth,
+  runIntegrationsList,
+  runIntegrationsRemove,
+  runIntegrationsStatus
+} from "./commands/integrations.js";
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -119,6 +128,15 @@ ${style.bold("Channels:")}
   ${style.cyan("channels status")}    Show channel health
   ${style.cyan("channels remove")}    Remove a channel
   ${style.cyan("channels logs")}      Tail channel service logs
+
+${style.bold("Integrations:")}
+  ${style.cyan("integrations list")}   List connected integrations
+  ${style.cyan("integrations add")}    Start provider connection flow
+  ${style.cyan("integrations status")} Show integration status
+  ${style.cyan("integrations check")}  Evaluate policy/scopes for an action
+  ${style.cyan("integrations gmail-health")} Gmail connector health/readiness
+  ${style.cyan("integrations gmail-attention")} Summarize inbox items needing attention
+  ${style.cyan("integrations remove")} Disconnect integration
 
 ${style.bold("Tools:")}
   ${style.cyan("tools list")}         List built-in tools with risk and governance status
@@ -257,6 +275,19 @@ async function main(): Promise<void> {
           case "inspect": await runToolsInspect(rest[0], rest.slice(1)); break;
           case "sets": await runToolsSets(); break;
           default: printError(`Unknown subcommand: tools ${sub}`); process.exit(1);
+        }
+        break;
+
+      case "integrations":
+        switch (sub) {
+          case "list": case undefined: await runIntegrationsList(); break;
+          case "add": await runIntegrationsAdd(rest[0]); break;
+          case "status": await runIntegrationsStatus(); break;
+          case "check": await runIntegrationsCheck(rest[0]); break;
+          case "gmail-health": await runIntegrationsGmailHealth(); break;
+          case "gmail-attention": await runIntegrationsGmailAttention(); break;
+          case "remove": await runIntegrationsRemove(rest[0]); break;
+          default: printError(`Unknown subcommand: integrations ${sub}`); process.exit(1);
         }
         break;
 

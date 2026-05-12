@@ -12,6 +12,15 @@
       "path": "../../packages/contracts"
     },
     {
+      "path": "../../packages/audit-sdk"
+    },
+    {
+      "path": "../../packages/integrations-sdk"
+    },
+    {
+      "path": "../../packages/policy-sdk"
+    },
+    {
       "path": "../../packages/service-runtime"
     }
   ],

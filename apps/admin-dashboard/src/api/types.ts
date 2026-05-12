@@ -246,3 +246,45 @@ export interface SystemOverview {
   pluginCount: number;
   telegramStatus: TelegramAdapterStatus | null;
 }
+
+export interface IntegrationAccount {
+  accountId: string;
+  providerId: string;
+  status: string;
+  scopesGranted: string[];
+  tokenExpiresAt: string | null;
+  lastAuthAt: string | null;
+  lastRefreshAt: string | null;
+  lastError: string | null;
+}
+
+export interface GoogleAuthorizationSnapshot {
+  connected: boolean;
+  status: string;
+  normalizedScopes: string[];
+  availableCapabilities: Array<{
+    capabilityId: string;
+    serviceFamily: string;
+    class: string;
+    approvalSensitivity: string;
+  }>;
+  actions: Array<{
+    actionId: string;
+    serviceFamily: string;
+    class: string;
+    approvalSensitivity: string;
+    canAttempt: boolean;
+    missingCapabilities: string[];
+  }>;
+}
+
+export interface GmailHealthStatus {
+  status: string;
+  connected: boolean;
+  gmailReadAuthorized: boolean;
+  availableCapabilities: string[];
+  missingCapabilities: string[];
+  tokenPresent: boolean;
+  lastSuccessfulReadAt: string | null;
+  lastError: string | null;
+}

@@ -18,6 +18,9 @@ import type {
   SystemOverview,
   TelegramAdapterStatus,
   ToolEntry,
+  IntegrationAccount,
+  GoogleAuthorizationSnapshot,
+  GmailHealthStatus,
 } from "./types.js";
 
 // ── Fetch helper ──────────────────────────────────────────────────────────
@@ -77,6 +80,47 @@ export async function fetchServiceHealth(): Promise<ServiceHealth[]> {
       };
     })
   );
+}
+
+export async function fetchIntegrationAccounts(): Promise<IntegrationAccount[]> {
+  const data = await get<{ accounts?: IntegrationAccount[] }>("/api/gateway/integrations/accounts");
+  return data?.accounts ?? [];
+}
+
+export async function startGoogleConnectFlow(): Promise<{ authorizeUrl: string } | null> {
+  return post<{ authorizeUrl: string }>("/api/gateway/integrations/google/connect/start", {
+    scopes: ["openid", "email", "profile"]
+  });
+}
+
+export async function disconnectGoogleIntegration(): Promise<boolean> {
+  const result = await post("/api/gateway/integrations/google/disconnect", {});
+  return result !== null;
+}
+
+export async function fetchGoogleAuthorizationSnapshot(): Promise<GoogleAuthorizationSnapshot | null> {
+  const data = await get<{ authorization?: GoogleAuthorizationSnapshot }>("/api/gateway/integrations/google/authorization");
+  return data?.authorization ?? null;
+}
+
+export async function checkGoogleActionPermission(actionId: string): Promise<{ decision: string; reasonCodes: string[] } | null> {
+  const data = await post<{ permission?: { decision: string; reasonCodes: string[] } }>(
+    "/api/gateway/integrations/google/permissions/check",
+    { actionId }
+  );
+  return data?.permission ?? null;
+}
+
+export async function fetchGmailHealth(): Promise<GmailHealthStatus | null> {
+  const data = await get<{ health?: GmailHealthStatus }>("/api/gateway/integrations/google/gmail/health");
+  return data?.health ?? null;
+}
+
+export async function fetchGmailAttention(): Promise<{
+  summary: { total: number; unreadCount: number; importantCount: number };
+  items: Array<{ messageId: string; threadId: string; subject: string; from: string; snippet: string; unread: boolean; important: boolean }>;
+} | null> {
+  return post("/api/gateway/integrations/google/gmail/attention", { maxResults: 10 });
 }
 
 // ── Approvals ──────────────────────────────────────────────────────────────

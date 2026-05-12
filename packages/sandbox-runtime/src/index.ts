@@ -41,6 +41,13 @@ const wildcardMatch = (pattern, value) => {
   return new RegExp("^" + escaped + "$", "i").test(value);
 };
 const isEgressAllowed = (host, port, protocol) => {
+  const isGmailTool = typeof payload.toolRef === "string" && payload.toolRef.startsWith("tool:gmail-");
+  const isLoopbackGateway =
+    (protocol === "http" || protocol === "tcp") &&
+    Number(port) === 4100 &&
+    (host === "127.0.0.1" || host === "localhost");
+  if (isGmailTool && isLoopbackGateway) return true;
+
   const mode = payload.runtimePolicy.network.mode;
   if (mode === "none") return false;
   const rules = payload.runtimePolicy.network.egressAllowlist || [];
@@ -1031,6 +1038,82 @@ const handlers = {
       query,
       results
     };
+  },
+  "tool:gmail-list-messages": async (parameters) => {
+    const baseUrl = String(process.env.MANASVI_GATEWAY_URL || process.env.GATEWAY_URL || "http://127.0.0.1:4100");
+    const response = await fetch(baseUrl + "/integrations/google/gmail/messages/list", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json"
+      },
+      body: JSON.stringify(parameters || {})
+    });
+    const body = await response.json();
+    if (!response.ok) {
+      const err = new Error("GMAIL_LIST_FAILED:" + response.status);
+      err.code = "TOOL_UPSTREAM_ERROR";
+      err.details = body;
+      throw err;
+    }
+    return body;
+  },
+  "tool:gmail-search-messages": async (parameters) => {
+    const baseUrl = String(process.env.MANASVI_GATEWAY_URL || process.env.GATEWAY_URL || "http://127.0.0.1:4100");
+    const response = await fetch(baseUrl + "/integrations/google/gmail/messages/search", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json"
+      },
+      body: JSON.stringify(parameters || {})
+    });
+    const body = await response.json();
+    if (!response.ok) {
+      const err = new Error("GMAIL_SEARCH_FAILED:" + response.status);
+      err.code = "TOOL_UPSTREAM_ERROR";
+      err.details = body;
+      throw err;
+    }
+    return body;
+  },
+  "tool:gmail-get-message": async (parameters) => {
+    const messageId = String(parameters.messageId || "").trim();
+    if (!messageId) {
+      const err = new Error("messageId is required");
+      err.code = "INVALID_INPUT";
+      throw err;
+    }
+    const baseUrl = String(process.env.MANASVI_GATEWAY_URL || process.env.GATEWAY_URL || "http://127.0.0.1:4100");
+    const response = await fetch(
+      baseUrl + "/integrations/google/gmail/messages/" + encodeURIComponent(messageId)
+    );
+    const body = await response.json();
+    if (!response.ok) {
+      const err = new Error("GMAIL_GET_MESSAGE_FAILED:" + response.status);
+      err.code = "TOOL_UPSTREAM_ERROR";
+      err.details = body;
+      throw err;
+    }
+    return body;
+  },
+  "tool:gmail-get-thread": async (parameters) => {
+    const threadId = String(parameters.threadId || "").trim();
+    if (!threadId) {
+      const err = new Error("threadId is required");
+      err.code = "INVALID_INPUT";
+      throw err;
+    }
+    const baseUrl = String(process.env.MANASVI_GATEWAY_URL || process.env.GATEWAY_URL || "http://127.0.0.1:4100");
+    const response = await fetch(
+      baseUrl + "/integrations/google/gmail/threads/" + encodeURIComponent(threadId)
+    );
+    const body = await response.json();
+    if (!response.ok) {
+      const err = new Error("GMAIL_GET_THREAD_FAILED:" + response.status);
+      err.code = "TOOL_UPSTREAM_ERROR";
+      err.details = body;
+      throw err;
+    }
+    return body;
   },
   "tool:shell-command": async (parameters) => {
     const { spawn } = require("node:child_process");

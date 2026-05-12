@@ -35,6 +35,7 @@ Having trouble? Run `pnpm manasvi doctor` to diagnose issues.
 | `manasvi ui` | Open the documentation UI |
 | `manasvi models list` | View/configure model providers |
 | `manasvi channels list` | View/configure channels |
+| `manasvi integrations status` | View Google integration foundation status |
 | `manasvi tools list` | View available tools |
 | `manasvi config show` | Show full configuration |
 
@@ -84,6 +85,18 @@ export DEEPSEEK_BASE_URL=\"https://api.deepseek.com\"
 - **HTTP API** — `http://localhost:4100/test-harness/chat`
 
 Configure via `pnpm manasvi channels add`.
+
+## Google integration foundation (G1)
+
+Manasvi includes a reusable Google integration substrate (OAuth connect/callback, secure token reference storage, refresh, disconnect, and status surfaces) for future Gmail/Calendar/Drive/Docs connectors.
+
+Use:
+
+```bash
+pnpm manasvi integrations add google
+pnpm manasvi integrations status
+pnpm manasvi integrations remove google
+```
 
 ## Architecture overview
 

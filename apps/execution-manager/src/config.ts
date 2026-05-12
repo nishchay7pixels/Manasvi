@@ -93,8 +93,27 @@ export async function loadExecutionManagerConfig(): Promise<ExecutionManagerConf
             }`
           );
         }
+        const parsedPolicy = egressWhitelistPolicySchema.parse(parsed);
+        if (profile !== "local") {
+          return {
+            egressWhitelistPolicy: parsedPolicy
+          };
+        }
+
+        const localLoopbackRules = [
+          { hostPattern: "127.0.0.1", port: 4100, protocol: "http" as const },
+          { hostPattern: "localhost", port: 4100, protocol: "http" as const }
+        ];
+        const existing = new Set(
+          parsedPolicy.rules.map((rule) => `${rule.protocol}:${rule.hostPattern}:${rule.port ?? "*"}`)
+        );
+        for (const rule of localLoopbackRules) {
+          const key = `${rule.protocol}:${rule.hostPattern}:${rule.port}`;
+          if (!existing.has(key)) parsedPolicy.rules.push(rule);
+        }
+
         return {
-          egressWhitelistPolicy: egressWhitelistPolicySchema.parse(parsed)
+          egressWhitelistPolicy: egressWhitelistPolicySchema.parse(parsedPolicy)
         };
       })(),
       serviceName: "execution-manager",

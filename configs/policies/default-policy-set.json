@@ -294,6 +294,87 @@
           }
         },
         {
+          "ruleId": "allow-orchestrator-read-google-gmail-integration",
+          "description": "Allow orchestrator to perform policy-scoped Gmail read integration checks and reads.",
+          "priority": 676,
+          "effect": "allow",
+          "enabled": true,
+          "selectors": {
+            "callerTypes": ["service"],
+            "actorTypes": ["human_user", "agent", "service"],
+            "callerIds": ["service:orchestrator-service"],
+            "actorIds": []
+          },
+          "actionClasses": ["read"],
+          "resourceClasses": ["service-endpoint"],
+          "resourceIdPatterns": ["integration:google:gmail"],
+          "requiredCapabilities": [],
+          "conditions": {
+            "requireTenantMatch": true,
+            "requireWorkspaceMatch": true,
+            "allowSkipApproval": false,
+            "maxRiskLevel": "high"
+          },
+          "metadata": {
+            "highRiskCoverage": true,
+            "tags": ["integrations", "google", "gmail", "read-only"]
+          }
+        },
+        {
+          "ruleId": "allow-execution-phase-gmail-read-via-orchestrator",
+          "description": "Allow execution-phase Gmail read checks when orchestrator is both caller and actor during delegated execution.",
+          "priority": 677,
+          "effect": "allow",
+          "enabled": true,
+          "selectors": {
+            "callerTypes": ["service"],
+            "actorTypes": ["service"],
+            "callerIds": ["service:orchestrator-service"],
+            "actorIds": ["service:orchestrator-service"]
+          },
+          "actionClasses": ["read"],
+          "resourceClasses": ["service-endpoint"],
+          "resourceIdPatterns": ["integration:google:gmail"],
+          "requiredCapabilities": [],
+          "conditions": {
+            "requireTenantMatch": false,
+            "requireWorkspaceMatch": false,
+            "allowSkipApproval": false,
+            "maxRiskLevel": "high"
+          },
+          "metadata": {
+            "highRiskCoverage": true,
+            "tags": ["integrations", "google", "gmail", "execution-phase"]
+          }
+        },
+        {
+          "ruleId": "allow-api-gateway-read-google-gmail-integration-account",
+          "description": "Allow api-gateway to evaluate and execute Gmail read access against connected Google integration account resources.",
+          "priority": 678,
+          "effect": "allow",
+          "enabled": true,
+          "selectors": {
+            "callerTypes": ["service"],
+            "actorTypes": ["human_user", "agent", "service"],
+            "callerIds": ["service:api-gateway"],
+            "actorIds": []
+          },
+          "actionClasses": ["read"],
+          "resourceClasses": ["service-endpoint"],
+          "resourceIdPatterns": ["integration:google:*"],
+          "requiredCapabilities": [],
+          "conditions": {
+            "requireTenantMatch": true,
+            "requireWorkspaceMatch": true,
+            "allowSkipApproval": false,
+            "maxRiskLevel": "high"
+          },
+          "metadata": {
+            "highRiskCoverage": true,
+            "tags": ["integrations", "google", "gmail", "api-gateway"]
+          }
+        },
+        {
           "ruleId": "allow-orchestrator-fs1-read-tools",
           "description": "Allow orchestrator to invoke FS1 safe read-only filesystem tools (fs-read-file, fs-list-directory, fs-stat, fs-search-files). All paths are workspace-sandboxed at the runtime layer.",
           "priority": 679,

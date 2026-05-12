@@ -18,6 +18,7 @@ import { Nodes } from "./pages/Nodes.js";
 import { Settings } from "./pages/Settings.js";
 import { Secrets } from "./pages/Secrets.js";
 import { Tenants } from "./pages/Tenants.js";
+import { Integrations } from "./pages/Integrations.js";
 
 export default function App() {
   return (
@@ -29,6 +30,7 @@ export default function App() {
         <Route path="sessions" element={<Sessions />} />
         <Route path="executions" element={<Executions />} />
         <Route path="channels" element={<Channels />} />
+        <Route path="integrations" element={<Integrations />} />
         <Route path="models" element={<Models />} />
         <Route path="tools" element={<Tools />} />
         <Route path="policy" element={<Policy />} />

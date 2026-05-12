@@ -132,10 +132,169 @@ const xSearchSpec: BuiltInToolSpec = {
   ]
 };
 
+// ── gmail read tools ──────────────────────────────────────────────────────────
+
+const gmailListInputSchema = z.object({
+  query: z.string().optional(),
+  labelIds: z.array(z.string()).optional(),
+  maxResults: z.number().int().positive().max(50).default(20),
+  pageToken: z.string().optional()
+});
+
+const gmailListOutputSchema = z.object({
+  messages: z.array(
+    z.object({
+      messageId: z.string(),
+      threadId: z.string(),
+      subject: z.string(),
+      from: z.string(),
+      timestamp: z.string(),
+      unread: z.boolean(),
+      important: z.boolean(),
+      snippet: z.string(),
+      hasAttachments: z.boolean(),
+      attachmentCount: z.number().int().nonnegative()
+    })
+  ),
+  nextPageToken: z.string().nullable(),
+  resultSizeEstimate: z.number().int().nonnegative()
+});
+
+const gmailGetMessageInputSchema = z.object({
+  messageId: z.string().min(1)
+});
+
+const gmailGetMessageOutputSchema = z.object({
+  message: z.object({
+    messageId: z.string(),
+    threadId: z.string(),
+    subject: z.string(),
+    from: z.string(),
+    to: z.array(z.string()),
+    timestamp: z.string(),
+    labels: z.array(z.string()),
+    snippet: z.string(),
+    bodyText: z.string(),
+    attachments: z.array(
+      z.object({
+        attachmentId: z.string(),
+        filename: z.string(),
+        mimeType: z.string(),
+        sizeBytes: z.number().int().nonnegative()
+      })
+    )
+  })
+});
+
+const gmailGetThreadInputSchema = z.object({
+  threadId: z.string().min(1)
+});
+
+const gmailGetThreadOutputSchema = z.object({
+  thread: z.object({
+    threadId: z.string(),
+    messageCount: z.number().int().nonnegative(),
+    latestMessageId: z.string().nullable(),
+    participants: z.array(z.string())
+  })
+});
+
+const gmailListSpec: BuiltInToolSpec = {
+  manifest: parseManifest({
+    schemaVersion: "1.0",
+    contractVersion: "1.0.0",
+    toolId: "tool.gmail-list-messages",
+    name: "Gmail List Messages",
+    version: "1.0.0",
+    description:
+      "Lists Gmail messages in read-only mode through the Google integration connector. " +
+      "This tool never mutates mailbox state. Content is EXTERNAL_UNTRUSTED and provenance-linked.",
+    owner: "manasvi-platform",
+    provider: "manasvi-core",
+    type: "adapter",
+    actionClass: "read",
+    sideEffectClass: "read_only",
+    mutability: "read_only",
+    capabilities: [
+      { capabilityId: "integration.google.capability.gmail.read_threads", required: true, scope: { tenantScoped: true, workspaceScoped: true, resourceClass: "service-endpoint" }, constraints: {} }
+    ],
+    resourceClassesTouched: ["service-endpoint"],
+    inputSchema: jsonSchemaObject(["maxResults"], {
+      query: prop("Optional Gmail search query.", "string"),
+      labelIds: prop("Optional Gmail label filters.", "array"),
+      maxResults: prop("Max messages to return (<=50).", "number"),
+      pageToken: prop("Pagination token from previous response.", "string")
+    }),
+    outputSchema: jsonSchemaObject(["messages", "nextPageToken", "resultSizeEstimate"], {
+      messages: prop("Normalized Gmail message summaries.", "array"),
+      nextPageToken: prop("Pagination token for next page.", "string"),
+      resultSizeEstimate: prop("Provider-reported result estimate.", "number")
+    }),
+    runtimeHints: { defaultTimeoutMs: 15000, defaultSandboxMode: "restricted_remote", egressProfiles: ["default-allowlist"], filesystemProfile: "none", declaredSecretRefs: [], requireExecutorPath: true, approvalSensitive: false },
+    runtimeBinding: { toolRef: "tool:gmail-list-messages", operation: "gmail_list_messages" },
+    policyBinding: {
+      policyActionClass: "read",
+      resource: { resourceClass: "service-endpoint", resourceId: "integration:google:gmail" },
+      requiresExplicitPolicy: true,
+      approvalHint: "may_require"
+    },
+    trustNotes: ["Gmail message content is EXTERNAL_UNTRUSTED.", "Read-only operation only."],
+    tags: ["gmail", "google", "read-only", "integration"],
+    status: "enabled",
+    createdAt: now(),
+    updatedAt: now()
+  }),
+  inputSchema: gmailListInputSchema,
+  outputSchema: gmailListOutputSchema,
+  examples: []
+};
+
+const gmailSearchSpec: BuiltInToolSpec = {
+  ...gmailListSpec,
+  manifest: parseManifest({
+    ...gmailListSpec.manifest,
+    toolId: "tool.gmail-search-messages",
+    name: "Gmail Search Messages",
+    runtimeBinding: { toolRef: "tool:gmail-search-messages", operation: "gmail_search_messages" }
+  })
+};
+
+const gmailGetMessageSpec: BuiltInToolSpec = {
+  manifest: parseManifest({
+    ...gmailListSpec.manifest,
+    toolId: "tool.gmail-get-message",
+    name: "Gmail Get Message",
+    inputSchema: jsonSchemaObject(["messageId"], { messageId: prop("Gmail message id.", "string") }),
+    outputSchema: jsonSchemaObject(["message"], { message: prop("Normalized Gmail message detail.", "object") }),
+    runtimeBinding: { toolRef: "tool:gmail-get-message", operation: "gmail_get_message" }
+  }),
+  inputSchema: gmailGetMessageInputSchema,
+  outputSchema: gmailGetMessageOutputSchema,
+  examples: []
+};
+
+const gmailGetThreadSpec: BuiltInToolSpec = {
+  manifest: parseManifest({
+    ...gmailListSpec.manifest,
+    toolId: "tool.gmail-get-thread",
+    name: "Gmail Get Thread",
+    inputSchema: jsonSchemaObject(["threadId"], { threadId: prop("Gmail thread id.", "string") }),
+    outputSchema: jsonSchemaObject(["thread"], { thread: prop("Normalized Gmail thread detail.", "object") }),
+    runtimeBinding: { toolRef: "tool:gmail-get-thread", operation: "gmail_get_thread" }
+  }),
+  inputSchema: gmailGetThreadInputSchema,
+  outputSchema: gmailGetThreadOutputSchema,
+  examples: []
+};
+
 // ── exports ────────────────────────────────────────────────────────────────────
 
 export const WEB_TOOL_SPECS = {
-  "tool.x-search": xSearchSpec
+  "tool.x-search": xSearchSpec,
+  "tool.gmail-list-messages": gmailListSpec,
+  "tool.gmail-search-messages": gmailSearchSpec,
+  "tool.gmail-get-message": gmailGetMessageSpec,
+  "tool.gmail-get-thread": gmailGetThreadSpec
 } as const;
 
 export type WebToolId = keyof typeof WEB_TOOL_SPECS;

@@ -27,6 +27,7 @@ const NAV: NavSection[] = [
     label: "Connect",
     items: [
       { path: "/channels", label: "Channels", icon: "◈" },
+      { path: "/integrations", label: "Integrations", icon: "◎" },
       { path: "/models", label: "Models", icon: "◉" },
       { path: "/tools", label: "Tools", icon: "⌖" },
     ],

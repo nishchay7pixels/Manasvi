@@ -41,6 +41,12 @@ export interface ManasviConfig {
     };
     slack?: { enabled: boolean };
   };
+  integrations: {
+    google?: {
+      enabled: boolean;
+      scopes: string[];
+    };
+  };
   ui: {
     docsEnabled: boolean;
     docsPort: number;
@@ -81,6 +87,7 @@ export function defaultConfig(projectPath: string): ManasviConfig {
       claudeModel: "claude-3-5-sonnet-latest"
     },
     channels: {},
+    integrations: {},
     ui: {
       docsEnabled: true,
       docsPort: 3002
@@ -137,6 +144,10 @@ export async function loadConfig(): Promise<ManasviConfig | null> {
       channels: {
         ...defaults.channels,
         ...(parsed.channels ?? {})
+      },
+      integrations: {
+        ...defaults.integrations,
+        ...(parsed.integrations ?? {})
       },
       ui: {
         ...defaults.ui,
