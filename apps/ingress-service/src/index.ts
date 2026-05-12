@@ -116,8 +116,13 @@ async function main(): Promise<void> {
         continue;
       }
       const body = (await response.json()) as { result?: unknown };
+      // Event result endpoint may return non-2xx for failed runs but still include
+      // a structured result payload. Prefer that payload over generic timeout fallback.
+      if (body.result) {
+        return body.result;
+      }
       if (response.ok) {
-        return body.result ?? null;
+        return null;
       }
       return null;
     }
@@ -387,13 +392,6 @@ async function main(): Promise<void> {
       }
     });
   }
-
-  // Stop the poller on graceful shutdown signals
-  const stopPoller = (): void => {
-    void telegramPoller?.stop();
-  };
-  process.once("SIGTERM", stopPoller);
-  process.once("SIGINT", stopPoller);
 
   await startHttpService({
     config,
