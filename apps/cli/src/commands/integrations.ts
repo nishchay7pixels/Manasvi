@@ -191,14 +191,34 @@ export async function runIntegrationsGmailAttention(): Promise<void> {
   }
 }
 
-export async function runIntegrationsAdd(provider?: string): Promise<void> {
+export async function runIntegrationsAdd(provider?: string, mode?: string): Promise<void> {
   banner("integrations add");
   if (provider !== "google") {
-    warn("Currently supported provider in G1: google");
+    warn("Currently supported provider: google");
     return;
   }
   const port = await getGatewayPort();
-  const scopes = ["openid", "email", "profile", "https://www.googleapis.com/auth/gmail.readonly"];
+
+  // Mode: "read-only" (G3 compatible) vs "write" (G4 — full write capability)
+  const isWrite = mode === "write" || mode === "full";
+  const scopes = isWrite
+    ? [
+        "openid",
+        "email",
+        "profile",
+        "https://www.googleapis.com/auth/gmail.readonly",
+        "https://www.googleapis.com/auth/gmail.compose",
+        "https://www.googleapis.com/auth/gmail.send",
+        "https://www.googleapis.com/auth/gmail.modify"
+      ]
+    : ["openid", "email", "profile", "https://www.googleapis.com/auth/gmail.readonly"];
+
+  if (isWrite) {
+    info("Requesting Gmail write scopes (compose, send, modify).");
+    hint("This allows Manasvi to draft, send, archive, and label Gmail messages.");
+    hint("Send actions always require explicit approval before execution.");
+  }
+
   try {
     const res = await fetch(`http://127.0.0.1:${port}/integrations/google/connect/start`, {
       method: "POST",
@@ -221,6 +241,53 @@ export async function runIntegrationsAdd(provider?: string): Promise<void> {
     }
   } catch {
     warn("Failed to reach API gateway. Start services first: pnpm manasvi start");
+  }
+}
+
+export async function runIntegrationsGmailWriteStatus(): Promise<void> {
+  banner("integrations gmail write status");
+  const port = await getGatewayPort();
+  try {
+    const res = await fetch(`http://127.0.0.1:${port}/integrations/google/authorization`);
+    if (!res.ok) {
+      warn("Could not fetch Google integration authorization");
+      return;
+    }
+    const body = (await res.json()) as {
+      authorization: {
+        connected: boolean;
+        availableCapabilities: Array<{ capabilityId: string; class: string; approvalSensitivity: string }>;
+        actions: Array<{ actionId: string; canAttempt: boolean; approvalSensitivity: string; missingCapabilities: string[] }>;
+      };
+    };
+    if (!body.authorization.connected) {
+      info("Google not connected.");
+      hint("Connect with write scopes: pnpm manasvi integrations add google write");
+      return;
+    }
+    const auth = body.authorization;
+    const writeActions = auth.actions.filter((action) =>
+      ["gmail.draft.create", "gmail.draft.reply", "gmail.message.send", "gmail.message.archive", "gmail.message.label"].includes(action.actionId)
+    );
+    section("Gmail Write Capability Status");
+    for (const action of writeActions) {
+      const status = action.canAttempt ? "AVAILABLE" : "MISSING SCOPE";
+      const approval = action.approvalSensitivity === "required" ? " [APPROVAL REQUIRED]" : action.approvalSensitivity === "policy" ? " [APPROVAL MAY BE REQUIRED]" : "";
+      console.log(`  ${action.actionId}: ${status}${approval}`);
+      if (!action.canAttempt && action.missingCapabilities.length > 0) {
+        console.log(`    missing: ${action.missingCapabilities.join(", ")}`);
+      }
+    }
+    console.log();
+    const hasCompose = auth.availableCapabilities.some((c) => c.capabilityId === "gmail.compose");
+    const hasSend = auth.availableCapabilities.some((c) => c.capabilityId === "gmail.send");
+    const hasModify = auth.availableCapabilities.some((c) => c.capabilityId === "gmail.modify");
+    if (!hasCompose || !hasSend || !hasModify) {
+      hint("To enable full Gmail write access, reconnect with write scopes:");
+      hint("  pnpm manasvi integrations add google write");
+    }
+  } catch {
+    warn("Failed to reach API gateway.");
   }
 }
 

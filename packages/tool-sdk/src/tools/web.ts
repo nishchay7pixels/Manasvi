@@ -287,6 +287,312 @@ const gmailGetThreadSpec: BuiltInToolSpec = {
   examples: []
 };
 
+// ── gmail write tools ─────────────────────────────────────────────────────────
+
+const gmailRecipientPropSchema = z.object({
+  email: z.string().email(),
+  name: z.string().optional()
+});
+
+const gmailCreateDraftInputSchema = z.object({
+  to: z.array(gmailRecipientPropSchema).min(1),
+  subject: z.string().min(1).max(998),
+  body: z.string(),
+  cc: z.array(gmailRecipientPropSchema).optional(),
+  bcc: z.array(gmailRecipientPropSchema).optional(),
+  contentType: z.enum(["text/plain", "text/html"]).optional(),
+  actorPrincipalId: z.string().optional(),
+  actorPrincipalType: z.string().optional(),
+  tenantId: z.string().optional(),
+  workspaceId: z.string().optional()
+});
+
+const gmailDraftOutputSchema = z.object({
+  draftId: z.string(),
+  messageId: z.string(),
+  threadId: z.string(),
+  createdAt: z.string(),
+  action: z.enum(["draft_created", "reply_draft_created"])
+});
+
+const gmailReplyDraftInputSchema = z.object({
+  threadId: z.string().min(1),
+  inReplyToMessageId: z.string().min(1),
+  inReplyToMessageIdHeader: z.string().min(1),
+  to: z.array(gmailRecipientPropSchema).min(1),
+  subject: z.string().min(1).max(998),
+  body: z.string(),
+  cc: z.array(gmailRecipientPropSchema).optional(),
+  contentType: z.enum(["text/plain", "text/html"]).optional(),
+  actorPrincipalId: z.string().optional(),
+  actorPrincipalType: z.string().optional(),
+  tenantId: z.string().optional(),
+  workspaceId: z.string().optional()
+});
+
+const gmailSendInputSchema = z.object({
+  to: z.array(gmailRecipientPropSchema).min(1),
+  subject: z.string().min(1).max(998),
+  body: z.string(),
+  cc: z.array(gmailRecipientPropSchema).optional(),
+  bcc: z.array(gmailRecipientPropSchema).optional(),
+  contentType: z.enum(["text/plain", "text/html"]).optional(),
+  threadId: z.string().optional(),
+  inReplyToMessageIdHeader: z.string().optional(),
+  actorPrincipalId: z.string().optional(),
+  actorPrincipalType: z.string().optional(),
+  tenantId: z.string().optional(),
+  workspaceId: z.string().optional()
+});
+
+const gmailSendOutputSchema = z.object({
+  messageId: z.string(),
+  threadId: z.string(),
+  sentAt: z.string(),
+  action: z.literal("message_sent"),
+  labelIds: z.array(z.string())
+});
+
+const gmailArchiveInputSchema = z.object({
+  messageId: z.string().min(1),
+  actorPrincipalId: z.string().optional(),
+  actorPrincipalType: z.string().optional(),
+  tenantId: z.string().optional(),
+  workspaceId: z.string().optional()
+});
+
+const gmailModifyOutputSchema = z.object({
+  messageId: z.string(),
+  labelIds: z.array(z.string()),
+  addedLabels: z.array(z.string()),
+  removedLabels: z.array(z.string()),
+  action: z.enum(["labels_modified", "message_archived"]),
+  modifiedAt: z.string()
+});
+
+const gmailLabelInputSchema = z.object({
+  messageId: z.string().min(1),
+  addLabelIds: z.array(z.string()).optional(),
+  removeLabelIds: z.array(z.string()).optional(),
+  actorPrincipalId: z.string().optional(),
+  actorPrincipalType: z.string().optional(),
+  tenantId: z.string().optional(),
+  workspaceId: z.string().optional()
+});
+
+const gmailWriteCapabilities = [
+  { capabilityId: "integration.google.capability.gmail.compose", required: true, scope: { tenantScoped: true, workspaceScoped: true, resourceClass: "service-endpoint" }, constraints: {} }
+];
+const gmailSendCapabilities = [
+  { capabilityId: "integration.google.capability.gmail.send", required: true, scope: { tenantScoped: true, workspaceScoped: true, resourceClass: "service-endpoint" }, constraints: {} }
+];
+const gmailModifyCapabilities = [
+  { capabilityId: "integration.google.capability.gmail.modify", required: true, scope: { tenantScoped: true, workspaceScoped: true, resourceClass: "service-endpoint" }, constraints: {} }
+];
+
+const gmailCreateDraftSpec: BuiltInToolSpec = {
+  manifest: parseManifest({
+    schemaVersion: "1.0",
+    contractVersion: "1.0.0",
+    toolId: "tool.gmail-create-draft",
+    name: "Gmail Create Draft",
+    version: "1.0.0",
+    description:
+      "Creates a new Gmail draft message. This is a write operation that creates a draft in the mailbox " +
+      "but does NOT send email. Drafts may be reviewed and sent separately. Requires gmail.compose scope.",
+    owner: "manasvi-platform",
+    provider: "manasvi-core",
+    type: "adapter",
+    actionClass: "write",
+    sideEffectClass: "internal_side_effect",
+    mutability: "write",
+    capabilities: gmailWriteCapabilities,
+    resourceClassesTouched: ["service-endpoint"],
+    inputSchema: jsonSchemaObject(["to", "subject", "body"], {
+      to: prop("Array of recipients (email, optional name).", "array"),
+      subject: prop("Email subject line.", "string"),
+      body: prop("Email body text or HTML.", "string"),
+      cc: prop("Optional CC recipients.", "array"),
+      bcc: prop("Optional BCC recipients.", "array"),
+      contentType: prop("Body content type: text/plain (default) or text/html.", "string")
+    }),
+    outputSchema: jsonSchemaObject(["draftId", "messageId", "threadId", "createdAt", "action"], {
+      draftId: prop("Gmail draft ID.", "string"),
+      messageId: prop("Gmail message ID of the draft.", "string"),
+      threadId: prop("Gmail thread ID.", "string"),
+      createdAt: prop("ISO timestamp of draft creation.", "string"),
+      action: prop("Action performed: draft_created.", "string")
+    }),
+    runtimeHints: { defaultTimeoutMs: 20000, defaultSandboxMode: "restricted_remote", egressProfiles: ["default-allowlist"], filesystemProfile: "none", declaredSecretRefs: [], requireExecutorPath: true, approvalSensitive: false },
+    runtimeBinding: { toolRef: "tool:gmail-create-draft", operation: "gmail_create_draft" },
+    policyBinding: {
+      policyActionClass: "write",
+      resource: { resourceClass: "service-endpoint", resourceId: "integration:google:gmail" },
+      requiresExplicitPolicy: true,
+      approvalHint: "may_require"
+    },
+    trustNotes: ["Drafting does not send email. Drafts are stored in the mailbox draft folder.", "Requires gmail.compose scope."],
+    tags: ["gmail", "google", "write", "draft", "integration"],
+    status: "enabled",
+    createdAt: now(),
+    updatedAt: now()
+  }),
+  inputSchema: gmailCreateDraftInputSchema,
+  outputSchema: gmailDraftOutputSchema,
+  examples: []
+};
+
+const gmailCreateReplyDraftSpec: BuiltInToolSpec = {
+  manifest: parseManifest({
+    ...gmailCreateDraftSpec.manifest,
+    toolId: "tool.gmail-create-reply-draft",
+    name: "Gmail Create Reply Draft",
+    description:
+      "Creates a reply draft in Gmail tied to an existing thread. The draft is NOT sent. " +
+      "Preserves thread context via In-Reply-To and References headers. " +
+      "Use this to implement 'summarize and draft reply' workflows. Requires gmail.compose scope.",
+    inputSchema: jsonSchemaObject(["threadId", "inReplyToMessageId", "inReplyToMessageIdHeader", "to", "subject", "body"], {
+      threadId: prop("Gmail thread ID to reply within.", "string"),
+      inReplyToMessageId: prop("Gmail message ID being replied to.", "string"),
+      inReplyToMessageIdHeader: prop("RFC 2822 Message-ID header value of the message being replied to.", "string"),
+      to: prop("Reply recipients.", "array"),
+      subject: prop("Reply subject (Re: prefix added automatically if missing).", "string"),
+      body: prop("Reply body.", "string"),
+      cc: prop("Optional CC recipients.", "array"),
+      contentType: prop("Body content type: text/plain (default) or text/html.", "string")
+    }),
+    runtimeBinding: { toolRef: "tool:gmail-create-reply-draft", operation: "gmail_create_reply_draft" }
+  }),
+  inputSchema: gmailReplyDraftInputSchema,
+  outputSchema: gmailDraftOutputSchema,
+  examples: []
+};
+
+const gmailSendMessageSpec: BuiltInToolSpec = {
+  manifest: parseManifest({
+    schemaVersion: "1.0",
+    contractVersion: "1.0.0",
+    toolId: "tool.gmail-send-message",
+    name: "Gmail Send Message",
+    version: "1.0.0",
+    description:
+      "Sends an email via Gmail. THIS IS A HIGH-RISK EXTERNAL SIDE EFFECT. " +
+      "Sending email cannot be undone and reaches real recipients. " +
+      "This action requires approval before execution. Requires gmail.send scope.",
+    owner: "manasvi-platform",
+    provider: "manasvi-core",
+    type: "adapter",
+    actionClass: "execute",
+    sideEffectClass: "external_side_effect",
+    mutability: "write",
+    capabilities: gmailSendCapabilities,
+    resourceClassesTouched: ["service-endpoint"],
+    inputSchema: jsonSchemaObject(["to", "subject", "body"], {
+      to: prop("Recipients.", "array"),
+      subject: prop("Subject line.", "string"),
+      body: prop("Email body.", "string"),
+      cc: prop("CC recipients.", "array"),
+      bcc: prop("BCC recipients.", "array"),
+      contentType: prop("Content type: text/plain or text/html.", "string"),
+      threadId: prop("Optional thread ID if sending as part of a thread.", "string"),
+      inReplyToMessageIdHeader: prop("Optional In-Reply-To header value for threading.", "string")
+    }),
+    outputSchema: jsonSchemaObject(["messageId", "threadId", "sentAt", "action", "labelIds"], {
+      messageId: prop("Sent message ID.", "string"),
+      threadId: prop("Thread ID.", "string"),
+      sentAt: prop("ISO timestamp of send.", "string"),
+      action: prop("Action performed: message_sent.", "string"),
+      labelIds: prop("Labels applied to sent message.", "array")
+    }),
+    runtimeHints: { defaultTimeoutMs: 20000, defaultSandboxMode: "restricted_remote", egressProfiles: ["default-allowlist"], filesystemProfile: "none", declaredSecretRefs: [], requireExecutorPath: true, approvalSensitive: true },
+    runtimeBinding: { toolRef: "tool:gmail-send-message", operation: "gmail_send_message" },
+    policyBinding: {
+      policyActionClass: "external-side-effect",
+      resource: { resourceClass: "service-endpoint", resourceId: "integration:google:gmail" },
+      requiresExplicitPolicy: true,
+      approvalHint: "always_require"
+    },
+    trustNotes: ["Sending email is irreversible and reaches real people.", "Always requires approval. Never auto-send.", "Requires gmail.send scope."],
+    tags: ["gmail", "google", "write", "send", "integration", "approval-required"],
+    status: "enabled",
+    createdAt: now(),
+    updatedAt: now()
+  }),
+  inputSchema: gmailSendInputSchema,
+  outputSchema: gmailSendOutputSchema,
+  examples: []
+};
+
+const gmailArchiveMessageSpec: BuiltInToolSpec = {
+  manifest: parseManifest({
+    schemaVersion: "1.0",
+    contractVersion: "1.0.0",
+    toolId: "tool.gmail-archive-message",
+    name: "Gmail Archive Message",
+    version: "1.0.0",
+    description:
+      "Archives a Gmail message by removing it from the INBOX label. " +
+      "The message is NOT deleted — it remains accessible via All Mail. " +
+      "This is a mailbox mutation action. Requires gmail.modify scope.",
+    owner: "manasvi-platform",
+    provider: "manasvi-core",
+    type: "adapter",
+    actionClass: "write",
+    sideEffectClass: "internal_side_effect",
+    mutability: "write",
+    capabilities: gmailModifyCapabilities,
+    resourceClassesTouched: ["service-endpoint"],
+    inputSchema: jsonSchemaObject(["messageId"], {
+      messageId: prop("Gmail message ID to archive.", "string")
+    }),
+    outputSchema: jsonSchemaObject(["messageId", "labelIds", "addedLabels", "removedLabels", "action", "modifiedAt"], {
+      messageId: prop("Message ID.", "string"),
+      labelIds: prop("Remaining label IDs after modification.", "array"),
+      addedLabels: prop("Labels added.", "array"),
+      removedLabels: prop("Labels removed (INBOX).", "array"),
+      action: prop("Action performed: message_archived.", "string"),
+      modifiedAt: prop("ISO timestamp.", "string")
+    }),
+    runtimeHints: { defaultTimeoutMs: 15000, defaultSandboxMode: "restricted_remote", egressProfiles: ["default-allowlist"], filesystemProfile: "none", declaredSecretRefs: [], requireExecutorPath: true, approvalSensitive: false },
+    runtimeBinding: { toolRef: "tool:gmail-archive-message", operation: "gmail_archive_message" },
+    policyBinding: {
+      policyActionClass: "write",
+      resource: { resourceClass: "service-endpoint", resourceId: "integration:google:gmail" },
+      requiresExplicitPolicy: true,
+      approvalHint: "may_require"
+    },
+    trustNotes: ["Archive removes INBOX label only. Message is not deleted.", "Requires gmail.modify scope."],
+    tags: ["gmail", "google", "write", "archive", "integration"],
+    status: "enabled",
+    createdAt: now(),
+    updatedAt: now()
+  }),
+  inputSchema: gmailArchiveInputSchema,
+  outputSchema: gmailModifyOutputSchema,
+  examples: []
+};
+
+const gmailLabelMessageSpec: BuiltInToolSpec = {
+  manifest: parseManifest({
+    ...gmailArchiveMessageSpec.manifest,
+    toolId: "tool.gmail-label-message",
+    name: "Gmail Label Message",
+    description:
+      "Applies or removes labels on a Gmail message. " +
+      "Labels are Gmail's organizational mechanism. This is a mailbox mutation action. " +
+      "Requires gmail.modify scope.",
+    inputSchema: jsonSchemaObject(["messageId"], {
+      messageId: prop("Gmail message ID.", "string"),
+      addLabelIds: prop("Label IDs to add.", "array"),
+      removeLabelIds: prop("Label IDs to remove.", "array")
+    }),
+    runtimeBinding: { toolRef: "tool:gmail-label-message", operation: "gmail_label_message" }
+  }),
+  inputSchema: gmailLabelInputSchema,
+  outputSchema: gmailModifyOutputSchema,
+  examples: []
+};
+
 // ── exports ────────────────────────────────────────────────────────────────────
 
 export const WEB_TOOL_SPECS = {
@@ -294,7 +600,12 @@ export const WEB_TOOL_SPECS = {
   "tool.gmail-list-messages": gmailListSpec,
   "tool.gmail-search-messages": gmailSearchSpec,
   "tool.gmail-get-message": gmailGetMessageSpec,
-  "tool.gmail-get-thread": gmailGetThreadSpec
+  "tool.gmail-get-thread": gmailGetThreadSpec,
+  "tool.gmail-create-draft": gmailCreateDraftSpec,
+  "tool.gmail-create-reply-draft": gmailCreateReplyDraftSpec,
+  "tool.gmail-send-message": gmailSendMessageSpec,
+  "tool.gmail-archive-message": gmailArchiveMessageSpec,
+  "tool.gmail-label-message": gmailLabelMessageSpec
 } as const;
 
 export type WebToolId = keyof typeof WEB_TOOL_SPECS;

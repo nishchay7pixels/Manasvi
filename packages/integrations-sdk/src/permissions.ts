@@ -32,6 +32,7 @@ export type GoogleCapabilityId =
   | "gmail.read_metadata"
   | "gmail.compose"
   | "gmail.send"
+  | "gmail.modify"
   | "calendar.read_events"
   | "calendar.write_events"
   | "drive.read_files"
@@ -51,7 +52,10 @@ export interface GoogleCapabilityDescriptor {
 export type GoogleActionId =
   | "gmail.threads.read"
   | "gmail.draft.create"
+  | "gmail.draft.reply"
   | "gmail.message.send"
+  | "gmail.message.archive"
+  | "gmail.message.label"
   | "calendar.events.read"
   | "calendar.events.write"
   | "drive.files.read"
@@ -100,6 +104,14 @@ export const GOOGLE_SCOPE_CATALOG: GoogleScopeDescriptor[] = [
     class: "communication_write",
     sensitivity: "high",
     impliedCapabilities: ["gmail.send"]
+  },
+  {
+    providerScope: "https://www.googleapis.com/auth/gmail.modify",
+    normalizedScope: "google.gmail.modify",
+    serviceFamily: "gmail",
+    class: "write",
+    sensitivity: "medium",
+    impliedCapabilities: ["gmail.read_threads", "gmail.read_metadata", "gmail.compose", "gmail.modify"]
   },
   {
     providerScope: "https://www.googleapis.com/auth/calendar.readonly",
@@ -156,6 +168,7 @@ export const GOOGLE_CAPABILITY_CATALOG: GoogleCapabilityDescriptor[] = [
   { capabilityId: "gmail.read_metadata", serviceFamily: "gmail", class: "read", displayName: "Read Gmail metadata", description: "Read Gmail headers and metadata.", approvalSensitivity: "none" },
   { capabilityId: "gmail.compose", serviceFamily: "gmail", class: "write", displayName: "Compose Gmail drafts", description: "Create and update draft messages.", approvalSensitivity: "policy" },
   { capabilityId: "gmail.send", serviceFamily: "gmail", class: "communication_write", displayName: "Send Gmail messages", description: "Send outbound email messages.", approvalSensitivity: "required" },
+  { capabilityId: "gmail.modify", serviceFamily: "gmail", class: "write", displayName: "Modify Gmail mailbox", description: "Archive messages, apply/remove labels, and mutate mailbox state.", approvalSensitivity: "policy" },
   { capabilityId: "calendar.read_events", serviceFamily: "calendar", class: "read", displayName: "Read Calendar events", description: "Read calendar events and metadata.", approvalSensitivity: "none" },
   { capabilityId: "calendar.write_events", serviceFamily: "calendar", class: "write", displayName: "Write Calendar events", description: "Create and modify calendar events.", approvalSensitivity: "policy" },
   { capabilityId: "drive.read_files", serviceFamily: "drive", class: "read", displayName: "Read Drive files", description: "Read Drive file metadata/content where permitted.", approvalSensitivity: "none" },
@@ -167,7 +180,10 @@ export const GOOGLE_CAPABILITY_CATALOG: GoogleCapabilityDescriptor[] = [
 export const GOOGLE_ACTION_CATALOG: GoogleActionDescriptor[] = [
   { actionId: "gmail.threads.read", serviceFamily: "gmail", class: "read", requiredCapabilities: ["gmail.read_threads"], approvalSensitivity: "none", policyActionClass: "read" },
   { actionId: "gmail.draft.create", serviceFamily: "gmail", class: "write", requiredCapabilities: ["gmail.compose"], approvalSensitivity: "policy", policyActionClass: "write" },
+  { actionId: "gmail.draft.reply", serviceFamily: "gmail", class: "write", requiredCapabilities: ["gmail.compose"], approvalSensitivity: "policy", policyActionClass: "write" },
   { actionId: "gmail.message.send", serviceFamily: "gmail", class: "communication_write", requiredCapabilities: ["gmail.send"], approvalSensitivity: "required", policyActionClass: "external-side-effect" },
+  { actionId: "gmail.message.archive", serviceFamily: "gmail", class: "write", requiredCapabilities: ["gmail.modify"], approvalSensitivity: "policy", policyActionClass: "write" },
+  { actionId: "gmail.message.label", serviceFamily: "gmail", class: "write", requiredCapabilities: ["gmail.modify"], approvalSensitivity: "policy", policyActionClass: "write" },
   { actionId: "calendar.events.read", serviceFamily: "calendar", class: "read", requiredCapabilities: ["calendar.read_events"], approvalSensitivity: "none", policyActionClass: "read" },
   { actionId: "calendar.events.write", serviceFamily: "calendar", class: "write", requiredCapabilities: ["calendar.write_events"], approvalSensitivity: "policy", policyActionClass: "write" },
   { actionId: "drive.files.read", serviceFamily: "drive", class: "read", requiredCapabilities: ["drive.read_files"], approvalSensitivity: "none", policyActionClass: "read" },

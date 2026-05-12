@@ -11,6 +11,12 @@ import {
 } from "../api/client.js";
 import "./settings.css";
 
+const WRITE_CAPABILITY_LABELS: Record<string, string> = {
+  "gmail.compose": "Compose / Draft",
+  "gmail.send": "Send messages",
+  "gmail.modify": "Modify mailbox (archive, label)",
+};
+
 export function Integrations() {
   const { data, loading, refresh } = useApi(fetchIntegrationAccounts, []);
   const { data: authz, refresh: refreshAuthz } = useApi(fetchGoogleAuthorizationSnapshot, []);
@@ -21,9 +27,25 @@ export function Integrations() {
 
   const google = useMemo(() => data?.find((item) => item.providerId === "google") ?? null, [data]);
 
-  const onConnect = async () => {
+  const availableCapabilityIds = useMemo(
+    () => new Set(authz?.availableCapabilities.map((c) => c.capabilityId) ?? []),
+    [authz]
+  );
+
+  const writeCapabilities = useMemo(() =>
+    Object.entries(WRITE_CAPABILITY_LABELS).map(([id, label]) => ({
+      id,
+      label,
+      available: availableCapabilityIds.has(id),
+    })),
+    [availableCapabilityIds]
+  );
+
+  const hasAllWriteCapabilities = writeCapabilities.every((c) => c.available);
+
+  const onConnect = async (mode?: "read" | "write") => {
     setBusy(true);
-    const started = await startGoogleConnectFlow();
+    const started = await startGoogleConnectFlow(mode);
     setBusy(false);
     if (started?.authorizeUrl) {
       window.open(started.authorizeUrl, "_blank", "noopener,noreferrer");
@@ -85,8 +107,9 @@ export function Integrations() {
               <div className="kv"><span>Last error</span><span>{google?.lastError ?? "-"}</span></div>
             </div>
 
-            <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
-              <button className="btn" disabled={busy} onClick={onConnect}>Connect / Reconnect</button>
+            <div style={{ display: "flex", gap: 8, marginTop: 16, flexWrap: "wrap" }}>
+              <button className="btn" disabled={busy} onClick={() => onConnect("read")}>Connect (read-only)</button>
+              <button className="btn" disabled={busy} onClick={() => onConnect("write")}>Connect with write scopes</button>
               <button className="btn btn-danger" disabled={busy || !google} onClick={onDisconnect}>Disconnect</button>
               <button className="btn btn-ghost" disabled={busy} onClick={async () => { await refresh(); await refreshAuthz(); }}>Refresh</button>
             </div>
@@ -111,6 +134,47 @@ export function Integrations() {
         <div style={{ marginTop: 12 }}>
           <button className="btn btn-ghost" onClick={refreshGmailHealth}>Refresh Gmail health</button>
         </div>
+      </div>
+
+      <div className="card" style={{ marginTop: 16 }}>
+        <h3>Gmail Write Capabilities</h3>
+        {!authz ? (
+          <p className="muted">No authorization data available. Connect Google first.</p>
+        ) : (
+          <>
+            <table className="table" style={{ marginTop: 12 }}>
+              <thead>
+                <tr>
+                  <th>Capability</th>
+                  <th>Function</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {writeCapabilities.map((cap) => (
+                  <tr key={cap.id}>
+                    <td><code>{cap.id}</code></td>
+                    <td>{cap.label}</td>
+                    <td>
+                      {cap.available
+                        ? <span style={{ color: "var(--color-success, #22c55e)", fontWeight: 600 }}>AVAILABLE</span>
+                        : <span style={{ color: "var(--color-danger, #ef4444)", fontWeight: 600 }}>MISSING SCOPE</span>
+                      }
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {!hasAllWriteCapabilities && (
+              <div style={{ marginTop: 12 }}>
+                <p className="muted">Some write capabilities are missing. Reconnect with write scopes to enable drafting, sending, archiving, and labelling.</p>
+                <button className="btn" style={{ marginTop: 8 }} disabled={busy} onClick={() => onConnect("write")}>
+                  Upgrade to write scopes
+                </button>
+              </div>
+            )}
+          </>
+        )}
       </div>
 
       <div className="card" style={{ marginTop: 16 }}>
@@ -139,9 +203,34 @@ export function Integrations() {
               <tbody>
                 {authz.actions.map((action) => (
                   <tr key={action.actionId}>
-                    <td>{action.actionId}</td>
+                    <td>
+                      {action.actionId}
+                      {action.approvalSensitivity === "required" && (
+                        <span style={{
+                          marginLeft: 8,
+                          fontSize: "0.7rem",
+                          fontWeight: 700,
+                          color: "var(--color-danger, #ef4444)",
+                          textTransform: "uppercase",
+                          letterSpacing: "0.05em",
+                        }}>
+                          [approval required]
+                        </span>
+                      )}
+                    </td>
                     <td>{action.class}</td>
-                    <td>{action.approvalSensitivity}</td>
+                    <td>
+                      <span style={{
+                        fontWeight: action.approvalSensitivity === "required" ? 700 : undefined,
+                        color: action.approvalSensitivity === "required"
+                          ? "var(--color-danger, #ef4444)"
+                          : action.approvalSensitivity === "policy"
+                          ? "var(--color-warning, #f59e0b)"
+                          : undefined,
+                      }}>
+                        {action.approvalSensitivity}
+                      </span>
+                    </td>
                     <td>{action.canAttempt ? "yes" : "no"}</td>
                     <td>{action.missingCapabilities.join(", ") || "-"}</td>
                     <td><button className="btn btn-ghost" onClick={() => runCheck(action.actionId)}>Run check</button></td>

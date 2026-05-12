@@ -1,6 +1,91 @@
 import type { IntegrationAccountRecord } from "./index.js";
 import { deriveGoogleCapabilities, type GoogleCapabilityId } from "./permissions.js";
 
+// ── Gmail write types ─────────────────────────────────────────────────────────
+
+export interface GmailRecipient {
+  email: string;
+  name?: string;
+}
+
+export interface GmailDraftRequest {
+  to: GmailRecipient[];
+  subject: string;
+  body: string;
+  cc?: GmailRecipient[];
+  bcc?: GmailRecipient[];
+  contentType?: "text/plain" | "text/html";
+}
+
+export interface GmailReplyDraftRequest {
+  threadId: string;
+  inReplyToMessageId: string;
+  inReplyToMessageIdHeader: string;
+  to: GmailRecipient[];
+  subject: string;
+  body: string;
+  cc?: GmailRecipient[];
+  contentType?: "text/plain" | "text/html";
+}
+
+export interface GmailSendRequest {
+  to: GmailRecipient[];
+  subject: string;
+  body: string;
+  cc?: GmailRecipient[];
+  bcc?: GmailRecipient[];
+  contentType?: "text/plain" | "text/html";
+  threadId?: string;
+  inReplyToMessageIdHeader?: string;
+}
+
+export interface GmailDraftResult {
+  draftId: string;
+  messageId: string;
+  threadId: string;
+  createdAt: string;
+  action: "draft_created" | "reply_draft_created";
+  provenance: {
+    source: "gmail";
+    trustClassification: "SYSTEM_GENERATED";
+    provider: "google";
+    connectorId: string;
+    accountId: string;
+    draftId: string;
+  };
+}
+
+export interface GmailSendResult {
+  messageId: string;
+  threadId: string;
+  sentAt: string;
+  action: "message_sent";
+  labelIds: string[];
+  provenance: {
+    source: "gmail";
+    trustClassification: "SYSTEM_GENERATED";
+    provider: "google";
+    connectorId: string;
+    accountId: string;
+    messageId: string;
+    threadId: string;
+  };
+}
+
+export interface GmailModifyRequest {
+  addLabelIds?: string[];
+  removeLabelIds?: string[];
+}
+
+export interface GmailModifyResult {
+  messageId: string;
+  labelIds: string[];
+  addedLabels: string[];
+  removedLabels: string[];
+  action: "labels_modified" | "message_archived";
+  modifiedAt: string;
+}
+
 export type GmailIntegrationHealthStatus =
   | "connected"
   | "authorized_read"
@@ -127,6 +212,7 @@ export interface GmailReadIngressRecord {
 
 export interface GmailApiClient {
   get<T>(url: string, accessToken: string): Promise<T>;
+  post<T>(url: string, body: Record<string, unknown>, accessToken: string): Promise<T>;
 }
 
 export class FetchGmailApiClient implements GmailApiClient {
@@ -143,6 +229,25 @@ export class FetchGmailApiClient implements GmailApiClient {
       const detail = upstreamBody.trim().slice(0, 600);
       throw new Error(
         `Gmail API read failed (${response.status})${detail ? `: ${detail}` : ""}`
+      );
+    }
+    return (await response.json()) as T;
+  }
+
+  async post<T>(url: string, body: Record<string, unknown>, accessToken: string): Promise<T> {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${accessToken}`,
+        "content-type": "application/json"
+      },
+      body: JSON.stringify(body)
+    });
+    if (!response.ok) {
+      const upstreamBody = await response.text().catch(() => "");
+      const detail = upstreamBody.trim().slice(0, 600);
+      throw new Error(
+        `Gmail API write failed (${response.status})${detail ? `: ${detail}` : ""}`
       );
     }
     return (await response.json()) as T;
@@ -487,6 +592,277 @@ export class GmailReadConnector {
   private async getThreadRaw(accessToken: string, threadId: string): Promise<GmailApiThread> {
     try {
       return await this.apiClient.get<GmailApiThread>(`${this.baseUrl}/threads/${encodeURIComponent(threadId)}?format=full`, accessToken);
+    } catch (error) {
+      this.lastError = error instanceof Error ? error.message : "unknown";
+      throw error;
+    }
+  }
+}
+
+// ── MIME / RFC 2822 builder ───────────────────────────────────────────────────
+
+function formatAddress(recipient: GmailRecipient): string {
+  if (recipient.name) {
+    const escaped = recipient.name.replace(/"/g, '\\"');
+    return `"${escaped}" <${recipient.email}>`;
+  }
+  return recipient.email;
+}
+
+function formatAddressList(recipients: GmailRecipient[]): string {
+  return recipients.map(formatAddress).join(", ");
+}
+
+export function buildMimeMessage(options: {
+  to: GmailRecipient[];
+  subject: string;
+  body: string;
+  cc?: GmailRecipient[];
+  bcc?: GmailRecipient[];
+  contentType?: "text/plain" | "text/html";
+  inReplyTo?: string;
+  references?: string;
+  threadId?: string;
+}): string {
+  const contentType = options.contentType ?? "text/plain";
+  const lines: string[] = [
+    `To: ${formatAddressList(options.to)}`,
+    `Subject: ${options.subject.replace(/\r?\n/g, " ")}`,
+    `Content-Type: ${contentType}; charset=utf-8`,
+    `MIME-Version: 1.0`
+  ];
+  if (options.cc && options.cc.length > 0) {
+    lines.push(`Cc: ${formatAddressList(options.cc)}`);
+  }
+  if (options.bcc && options.bcc.length > 0) {
+    lines.push(`Bcc: ${formatAddressList(options.bcc)}`);
+  }
+  if (options.inReplyTo) {
+    lines.push(`In-Reply-To: ${options.inReplyTo}`);
+  }
+  if (options.references) {
+    lines.push(`References: ${options.references}`);
+  }
+  lines.push("", options.body);
+  return lines.join("\r\n");
+}
+
+export function buildMimeMessageBase64Url(options: Parameters<typeof buildMimeMessage>[0]): string {
+  const raw = buildMimeMessage(options);
+  const base64 = Buffer.from(raw, "utf8").toString("base64");
+  return base64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+// ── GmailWriteConnector ───────────────────────────────────────────────────────
+
+interface GmailDraftApiResponse {
+  id: string;
+  message: {
+    id: string;
+    threadId: string;
+    labelIds?: string[];
+  };
+}
+
+interface GmailMessageApiResponse {
+  id: string;
+  threadId: string;
+  labelIds?: string[];
+}
+
+interface GmailModifyApiResponse {
+  id: string;
+  labelIds?: string[];
+}
+
+export class GmailWriteConnector {
+  private lastWriteAt: string | null = null;
+  private lastError: string | null = null;
+
+  constructor(
+    private readonly apiClient: GmailApiClient,
+    private readonly baseUrl = "https://gmail.googleapis.com/gmail/v1/users/me"
+  ) {}
+
+  async createDraft(
+    accessToken: string,
+    request: GmailDraftRequest,
+    account: IntegrationAccountRecord
+  ): Promise<GmailDraftResult> {
+    const raw = buildMimeMessageBase64Url({
+      to: request.to,
+      subject: request.subject,
+      body: request.body,
+      ...(request.cc ? { cc: request.cc } : {}),
+      ...(request.bcc ? { bcc: request.bcc } : {}),
+      ...(request.contentType ? { contentType: request.contentType } : {})
+    });
+
+    const response = await this.postWithErrorCapture<GmailDraftApiResponse>(
+      `${this.baseUrl}/drafts`,
+      { message: { raw } },
+      accessToken
+    );
+
+    this.lastWriteAt = new Date().toISOString();
+    return {
+      draftId: response.id,
+      messageId: response.message.id,
+      threadId: response.message.threadId,
+      createdAt: this.lastWriteAt,
+      action: "draft_created",
+      provenance: {
+        source: "gmail",
+        trustClassification: "SYSTEM_GENERATED",
+        provider: "google",
+        connectorId: account.connectorId,
+        accountId: account.accountId,
+        draftId: response.id
+      }
+    };
+  }
+
+  async createReplyDraft(
+    accessToken: string,
+    request: GmailReplyDraftRequest,
+    account: IntegrationAccountRecord
+  ): Promise<GmailDraftResult> {
+    const subject = request.subject.startsWith("Re:") ? request.subject : `Re: ${request.subject}`;
+    const raw = buildMimeMessageBase64Url({
+      to: request.to,
+      subject,
+      body: request.body,
+      ...(request.cc ? { cc: request.cc } : {}),
+      ...(request.contentType ? { contentType: request.contentType } : {}),
+      inReplyTo: request.inReplyToMessageIdHeader,
+      references: request.inReplyToMessageIdHeader
+    });
+
+    const response = await this.postWithErrorCapture<GmailDraftApiResponse>(
+      `${this.baseUrl}/drafts`,
+      { message: { raw, threadId: request.threadId } },
+      accessToken
+    );
+
+    this.lastWriteAt = new Date().toISOString();
+    return {
+      draftId: response.id,
+      messageId: response.message.id,
+      threadId: response.message.threadId,
+      createdAt: this.lastWriteAt,
+      action: "reply_draft_created",
+      provenance: {
+        source: "gmail",
+        trustClassification: "SYSTEM_GENERATED",
+        provider: "google",
+        connectorId: account.connectorId,
+        accountId: account.accountId,
+        draftId: response.id
+      }
+    };
+  }
+
+  async sendMessage(
+    accessToken: string,
+    request: GmailSendRequest,
+    account: IntegrationAccountRecord
+  ): Promise<GmailSendResult> {
+    const raw = buildMimeMessageBase64Url({
+      to: request.to,
+      subject: request.subject,
+      body: request.body,
+      ...(request.cc ? { cc: request.cc } : {}),
+      ...(request.bcc ? { bcc: request.bcc } : {}),
+      ...(request.contentType ? { contentType: request.contentType } : {}),
+      ...(request.inReplyToMessageIdHeader ? { inReplyTo: request.inReplyToMessageIdHeader, references: request.inReplyToMessageIdHeader } : {})
+    });
+
+    const body: Record<string, unknown> = { raw };
+    if (request.threadId) body.threadId = request.threadId;
+
+    const response = await this.postWithErrorCapture<GmailMessageApiResponse>(
+      `${this.baseUrl}/messages/send`,
+      body,
+      accessToken
+    );
+
+    this.lastWriteAt = new Date().toISOString();
+    return {
+      messageId: response.id,
+      threadId: response.threadId,
+      sentAt: this.lastWriteAt,
+      action: "message_sent",
+      labelIds: response.labelIds ?? [],
+      provenance: {
+        source: "gmail",
+        trustClassification: "SYSTEM_GENERATED",
+        provider: "google",
+        connectorId: account.connectorId,
+        accountId: account.accountId,
+        messageId: response.id,
+        threadId: response.threadId
+      }
+    };
+  }
+
+  async archiveMessage(accessToken: string, messageId: string): Promise<GmailModifyResult> {
+    const response = await this.postWithErrorCapture<GmailModifyApiResponse>(
+      `${this.baseUrl}/messages/${encodeURIComponent(messageId)}/modify`,
+      { removeLabelIds: ["INBOX"] },
+      accessToken
+    );
+
+    this.lastWriteAt = new Date().toISOString();
+    return {
+      messageId: response.id,
+      labelIds: response.labelIds ?? [],
+      addedLabels: [],
+      removedLabels: ["INBOX"],
+      action: "message_archived",
+      modifiedAt: this.lastWriteAt
+    };
+  }
+
+  async modifyLabels(
+    accessToken: string,
+    messageId: string,
+    request: GmailModifyRequest
+  ): Promise<GmailModifyResult> {
+    const addLabelIds = request.addLabelIds ?? [];
+    const removeLabelIds = request.removeLabelIds ?? [];
+
+    const response = await this.postWithErrorCapture<GmailModifyApiResponse>(
+      `${this.baseUrl}/messages/${encodeURIComponent(messageId)}/modify`,
+      { addLabelIds, removeLabelIds },
+      accessToken
+    );
+
+    this.lastWriteAt = new Date().toISOString();
+    return {
+      messageId: response.id,
+      labelIds: response.labelIds ?? [],
+      addedLabels: addLabelIds,
+      removedLabels: removeLabelIds,
+      action: "labels_modified",
+      modifiedAt: this.lastWriteAt
+    };
+  }
+
+  getLastWriteAt(): string | null {
+    return this.lastWriteAt;
+  }
+
+  getLastError(): string | null {
+    return this.lastError;
+  }
+
+  private async postWithErrorCapture<T>(
+    url: string,
+    body: Record<string, unknown>,
+    accessToken: string
+  ): Promise<T> {
+    try {
+      return await this.apiClient.post<T>(url, body, accessToken);
     } catch (error) {
       this.lastError = error instanceof Error ? error.message : "unknown";
       throw error;

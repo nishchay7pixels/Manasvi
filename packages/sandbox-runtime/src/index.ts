@@ -1123,6 +1123,118 @@ const handlers = {
     }
     return body?.result ?? body;
   },
+  "tool:gmail-create-draft": async (parameters) => {
+    const baseUrl = String(process.env.MANASVI_GATEWAY_URL || process.env.GATEWAY_URL || "http://127.0.0.1:4100");
+    const payload = { ...(parameters || {}) };
+    if (payload.actorPrincipalType === "user") payload.actorPrincipalType = "human_user";
+    const response = await fetch(baseUrl + "/integrations/google/gmail/drafts/create", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    const body = await response.json();
+    if (!response.ok) {
+      const err = new Error("GMAIL_CREATE_DRAFT_FAILED:" + response.status);
+      err.code = response.status === 202 ? "GMAIL_APPROVAL_REQUIRED" : "TOOL_UPSTREAM_ERROR";
+      err.details = body;
+      throw err;
+    }
+    return body?.result ?? body;
+  },
+  "tool:gmail-create-reply-draft": async (parameters) => {
+    const baseUrl = String(process.env.MANASVI_GATEWAY_URL || process.env.GATEWAY_URL || "http://127.0.0.1:4100");
+    const payload = { ...(parameters || {}) };
+    if (payload.actorPrincipalType === "user") payload.actorPrincipalType = "human_user";
+    const response = await fetch(baseUrl + "/integrations/google/gmail/drafts/reply", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    const body = await response.json();
+    if (!response.ok) {
+      const err = new Error("GMAIL_CREATE_REPLY_DRAFT_FAILED:" + response.status);
+      err.code = response.status === 202 ? "GMAIL_APPROVAL_REQUIRED" : "TOOL_UPSTREAM_ERROR";
+      err.details = body;
+      throw err;
+    }
+    return body?.result ?? body;
+  },
+  "tool:gmail-send-message": async (parameters) => {
+    const baseUrl = String(process.env.MANASVI_GATEWAY_URL || process.env.GATEWAY_URL || "http://127.0.0.1:4100");
+    const payload = { ...(parameters || {}) };
+    if (payload.actorPrincipalType === "user") payload.actorPrincipalType = "human_user";
+    const response = await fetch(baseUrl + "/integrations/google/gmail/messages/send", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    const body = await response.json();
+    if (!response.ok) {
+      // 202 means approval required — surface this explicitly so the caller knows to request approval
+      const err = new Error("GMAIL_SEND_FAILED:" + response.status);
+      err.code = response.status === 202 ? "GMAIL_SEND_APPROVAL_REQUIRED" : "TOOL_UPSTREAM_ERROR";
+      err.details = body;
+      err.approvalRequired = response.status === 202;
+      throw err;
+    }
+    return body?.result ?? body;
+  },
+  "tool:gmail-archive-message": async (parameters) => {
+    const messageId = String(parameters.messageId || "").trim();
+    if (!messageId) {
+      const err = new Error("messageId is required");
+      err.code = "INVALID_INPUT";
+      throw err;
+    }
+    const baseUrl = String(process.env.MANASVI_GATEWAY_URL || process.env.GATEWAY_URL || "http://127.0.0.1:4100");
+    const payload = { ...(parameters || {}) };
+    delete payload.messageId;
+    if (payload.actorPrincipalType === "user") payload.actorPrincipalType = "human_user";
+    const response = await fetch(
+      baseUrl + "/integrations/google/gmail/messages/" + encodeURIComponent(messageId) + "/archive",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(payload)
+      }
+    );
+    const body = await response.json();
+    if (!response.ok) {
+      const err = new Error("GMAIL_ARCHIVE_FAILED:" + response.status);
+      err.code = response.status === 202 ? "GMAIL_APPROVAL_REQUIRED" : "TOOL_UPSTREAM_ERROR";
+      err.details = body;
+      throw err;
+    }
+    return body?.result ?? body;
+  },
+  "tool:gmail-label-message": async (parameters) => {
+    const messageId = String(parameters.messageId || "").trim();
+    if (!messageId) {
+      const err = new Error("messageId is required");
+      err.code = "INVALID_INPUT";
+      throw err;
+    }
+    const baseUrl = String(process.env.MANASVI_GATEWAY_URL || process.env.GATEWAY_URL || "http://127.0.0.1:4100");
+    const payload = { ...(parameters || {}) };
+    delete payload.messageId;
+    if (payload.actorPrincipalType === "user") payload.actorPrincipalType = "human_user";
+    const response = await fetch(
+      baseUrl + "/integrations/google/gmail/messages/" + encodeURIComponent(messageId) + "/labels",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(payload)
+      }
+    );
+    const body = await response.json();
+    if (!response.ok) {
+      const err = new Error("GMAIL_LABEL_FAILED:" + response.status);
+      err.code = response.status === 202 ? "GMAIL_APPROVAL_REQUIRED" : "TOOL_UPSTREAM_ERROR";
+      err.details = body;
+      throw err;
+    }
+    return body?.result ?? body;
+  },
   "tool:shell-command": async (parameters) => {
     const { spawn } = require("node:child_process");
     let command = String(parameters.command || "");

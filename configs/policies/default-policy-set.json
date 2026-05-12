@@ -375,6 +375,167 @@
           }
         },
         {
+          "ruleId": "allow-orchestrator-write-google-gmail-draft",
+          "description": "Allow orchestrator to perform policy-scoped Gmail draft write actions (compose draft, reply draft). Drafts are not sent — they are internal mailbox mutations.",
+          "priority": 680,
+          "effect": "allow",
+          "enabled": true,
+          "selectors": {
+            "callerTypes": ["service"],
+            "actorTypes": ["human_user", "agent", "service"],
+            "callerIds": ["service:orchestrator-service"],
+            "actorIds": []
+          },
+          "actionClasses": ["write"],
+          "resourceClasses": ["service-endpoint"],
+          "resourceIdPatterns": ["integration:google:gmail"],
+          "requiredCapabilities": [],
+          "conditions": {
+            "requireTenantMatch": true,
+            "requireWorkspaceMatch": true,
+            "allowSkipApproval": false,
+            "maxRiskLevel": "high"
+          },
+          "metadata": {
+            "highRiskCoverage": true,
+            "tags": ["integrations", "google", "gmail", "write", "draft"]
+          }
+        },
+        {
+          "ruleId": "require-approval-orchestrator-send-google-gmail",
+          "description": "Gmail send actions always require approval. Sending email is an external side effect that cannot be undone and reaches real people.",
+          "priority": 750,
+          "effect": "require_approval",
+          "enabled": true,
+          "selectors": {
+            "callerTypes": ["service"],
+            "actorTypes": ["human_user", "agent", "service"],
+            "callerIds": ["service:orchestrator-service"],
+            "actorIds": []
+          },
+          "actionClasses": ["external-side-effect"],
+          "resourceClasses": ["service-endpoint"],
+          "resourceIdPatterns": ["integration:google:gmail"],
+          "requiredCapabilities": [],
+          "conditions": {
+            "requireTenantMatch": true,
+            "requireWorkspaceMatch": true,
+            "allowSkipApproval": false
+          },
+          "metadata": {
+            "highRiskCoverage": true,
+            "tags": ["integrations", "google", "gmail", "send", "approval"]
+          }
+        },
+        {
+          "ruleId": "allow-orchestrator-modify-google-gmail-mailbox",
+          "description": "Allow orchestrator to perform policy-scoped Gmail mailbox mutation actions (archive, label) against connected accounts.",
+          "priority": 681,
+          "effect": "allow",
+          "enabled": true,
+          "selectors": {
+            "callerTypes": ["service"],
+            "actorTypes": ["human_user", "agent", "service"],
+            "callerIds": ["service:orchestrator-service"],
+            "actorIds": []
+          },
+          "actionClasses": ["write"],
+          "resourceClasses": ["service-endpoint"],
+          "resourceIdPatterns": ["integration:google:gmail"],
+          "requiredCapabilities": [],
+          "conditions": {
+            "requireTenantMatch": true,
+            "requireWorkspaceMatch": true,
+            "allowSkipApproval": false,
+            "maxRiskLevel": "high"
+          },
+          "metadata": {
+            "highRiskCoverage": true,
+            "tags": ["integrations", "google", "gmail", "write", "mailbox"]
+          }
+        },
+        {
+          "ruleId": "allow-api-gateway-write-google-gmail-integration-account",
+          "description": "Allow api-gateway to evaluate and execute Gmail write actions (draft, archive, label) against connected Google integration account resources.",
+          "priority": 682,
+          "effect": "allow",
+          "enabled": true,
+          "selectors": {
+            "callerTypes": ["service"],
+            "actorTypes": ["human_user", "agent", "service"],
+            "callerIds": ["service:api-gateway"],
+            "actorIds": []
+          },
+          "actionClasses": ["write"],
+          "resourceClasses": ["service-endpoint"],
+          "resourceIdPatterns": ["integration:google:*"],
+          "requiredCapabilities": [],
+          "conditions": {
+            "requireTenantMatch": true,
+            "requireWorkspaceMatch": true,
+            "allowSkipApproval": false,
+            "maxRiskLevel": "high"
+          },
+          "metadata": {
+            "highRiskCoverage": true,
+            "tags": ["integrations", "google", "gmail", "write", "api-gateway"]
+          }
+        },
+        {
+          "ruleId": "allow-execution-phase-gmail-write-via-orchestrator",
+          "description": "Allow execution-phase Gmail write (draft/archive/label) checks when orchestrator is both caller and actor during delegated execution.",
+          "priority": 683,
+          "effect": "allow",
+          "enabled": true,
+          "selectors": {
+            "callerTypes": ["service"],
+            "actorTypes": ["service"],
+            "callerIds": ["service:orchestrator-service"],
+            "actorIds": ["service:orchestrator-service"]
+          },
+          "actionClasses": ["write"],
+          "resourceClasses": ["service-endpoint"],
+          "resourceIdPatterns": ["integration:google:gmail"],
+          "requiredCapabilities": [],
+          "conditions": {
+            "requireTenantMatch": false,
+            "requireWorkspaceMatch": false,
+            "allowSkipApproval": false,
+            "maxRiskLevel": "high"
+          },
+          "metadata": {
+            "highRiskCoverage": true,
+            "tags": ["integrations", "google", "gmail", "write", "execution-phase"]
+          }
+        },
+        {
+          "ruleId": "allow-execution-phase-gmail-send-via-orchestrator",
+          "description": "Allow execution-phase Gmail send checks when orchestrator is caller+actor and approval has already been granted upstream.",
+          "priority": 684,
+          "effect": "allow",
+          "enabled": true,
+          "selectors": {
+            "callerTypes": ["service"],
+            "actorTypes": ["service"],
+            "callerIds": ["service:orchestrator-service"],
+            "actorIds": ["service:orchestrator-service"]
+          },
+          "actionClasses": ["external-side-effect"],
+          "resourceClasses": ["service-endpoint"],
+          "resourceIdPatterns": ["integration:google:gmail"],
+          "requiredCapabilities": [],
+          "conditions": {
+            "requireTenantMatch": false,
+            "requireWorkspaceMatch": false,
+            "allowSkipApproval": false,
+            "maxRiskLevel": "high"
+          },
+          "metadata": {
+            "highRiskCoverage": true,
+            "tags": ["integrations", "google", "gmail", "send", "execution-phase"]
+          }
+        },
+        {
           "ruleId": "allow-orchestrator-fs1-read-tools",
           "description": "Allow orchestrator to invoke FS1 safe read-only filesystem tools (fs-read-file, fs-list-directory, fs-stat, fs-search-files). All paths are workspace-sandboxed at the runtime layer.",
           "priority": 679,

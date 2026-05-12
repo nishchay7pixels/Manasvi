@@ -13,13 +13,15 @@ import {
   FetchGmailApiClient,
   GOOGLE_PROVIDER_PROFILE,
   GmailReadConnector,
+  GmailWriteConnector,
   IntegrationAccountStore,
   OAuthFlowService,
   OAuthStateStore,
   buildGoogleAuthorizationSnapshot,
   buildGooglePermissionAuditEvent,
   checkGoogleActionPermission,
-  createGoogleConnector
+  createGoogleConnector,
+  type GmailRecipient
 } from "@manasvi/integrations-sdk";
 import { z } from "zod";
 
@@ -50,7 +52,10 @@ const googlePermissionCheckSchema = z.object({
   actionId: z.enum([
     "gmail.threads.read",
     "gmail.draft.create",
+    "gmail.draft.reply",
     "gmail.message.send",
+    "gmail.message.archive",
+    "gmail.message.label",
     "calendar.events.read",
     "calendar.events.write",
     "drive.files.read",
@@ -94,6 +99,63 @@ const gmailGetSchema = z.object({
   workspaceId: z.string().min(1).default("workspace-local"),
   pluginId: z.string().min(1).optional()
 });
+
+const gmailRecipientSchema = z.object({
+  email: z.string().email(),
+  name: z.string().optional()
+});
+
+const gmailWriteBaseSchema = z.object({
+  actorPrincipalId: z.string().min(1).default("user:local-operator"),
+  actorPrincipalType: z.preprocess(
+    (value) => (value === "user" ? "human_user" : value),
+    z.enum(["human_user", "agent", "plugin"])
+  ).default("human_user"),
+  tenantId: z.string().min(1).default("tenant-local"),
+  workspaceId: z.string().min(1).default("workspace-local"),
+  pluginId: z.string().min(1).optional()
+});
+
+const gmailCreateDraftSchema = gmailWriteBaseSchema.extend({
+  to: z.array(gmailRecipientSchema).min(1),
+  subject: z.string().min(1).max(998),
+  body: z.string(),
+  cc: z.array(gmailRecipientSchema).optional(),
+  bcc: z.array(gmailRecipientSchema).optional(),
+  contentType: z.enum(["text/plain", "text/html"]).optional()
+});
+
+const gmailReplyDraftSchema = gmailWriteBaseSchema.extend({
+  threadId: z.string().min(1),
+  inReplyToMessageId: z.string().min(1),
+  inReplyToMessageIdHeader: z.string().min(1),
+  to: z.array(gmailRecipientSchema).min(1),
+  subject: z.string().min(1).max(998),
+  body: z.string(),
+  cc: z.array(gmailRecipientSchema).optional(),
+  contentType: z.enum(["text/plain", "text/html"]).optional()
+});
+
+const gmailSendSchema = gmailWriteBaseSchema.extend({
+  to: z.array(gmailRecipientSchema).min(1),
+  subject: z.string().min(1).max(998),
+  body: z.string(),
+  cc: z.array(gmailRecipientSchema).optional(),
+  bcc: z.array(gmailRecipientSchema).optional(),
+  contentType: z.enum(["text/plain", "text/html"]).optional(),
+  threadId: z.string().optional(),
+  inReplyToMessageIdHeader: z.string().optional()
+});
+
+const gmailArchiveSchema = gmailWriteBaseSchema;
+
+const gmailLabelSchema = gmailWriteBaseSchema.extend({
+  addLabelIds: z.array(z.string().min(1)).optional(),
+  removeLabelIds: z.array(z.string().min(1)).optional()
+}).refine(
+  (data) => (data.addLabelIds?.length ?? 0) + (data.removeLabelIds?.length ?? 0) > 0,
+  { message: "At least one of addLabelIds or removeLabelIds must be non-empty" }
+);
 
 async function main(): Promise<void> {
   const config = await loadApiGatewayConfig();
@@ -142,6 +204,11 @@ async function main(): Promise<void> {
     defaultRedirectUri: config.googleOAuthRedirectUri
   });
   const gmail = new GmailReadConnector(new FetchGmailApiClient());
+  const gmailWrite = new GmailWriteConnector(new FetchGmailApiClient());
+
+  // Maps Zod-parsed recipients (name?: string | undefined) to GmailRecipient (exactOptionalPropertyTypes)
+  const toGmailRecipients = (list: Array<{ email: string; name?: string | undefined }>): GmailRecipient[] =>
+    list.map((r) => r.name !== undefined ? { email: r.email, name: r.name } : { email: r.email });
 
   const clientIdPrefix = config.googleOAuthClientId.slice(0, 18);
   const clientIdSuffix = config.googleOAuthClientId.slice(-12);
@@ -889,6 +956,296 @@ async function main(): Promise<void> {
           },
           items
         });
+        return true;
+      }
+
+      // ── Gmail write helpers ──────────────────────────────────────────────────
+
+      const runGmailWritePermission = async (
+        input: { actorPrincipalId: string; actorPrincipalType: "human_user" | "agent" | "plugin"; tenantId: string; workspaceId: string; pluginId?: string | undefined },
+        actionId: "gmail.draft.create" | "gmail.draft.reply" | "gmail.message.send" | "gmail.message.archive" | "gmail.message.label"
+      ) => {
+        let account = await accountStore.getByProvider("google");
+        const actor = {
+          principalId: input.actorPrincipalId,
+          principalType: input.actorPrincipalType,
+          tenantId: input.tenantId,
+          workspaceId: input.workspaceId
+        } as const;
+        const caller = input.pluginId
+          ? ({ principalId: input.pluginId, principalType: "plugin", tenantId: input.tenantId, workspaceId: input.workspaceId } as const)
+          : ({ principalId: "service:api-gateway", principalType: "service", tenantId: input.tenantId, workspaceId: input.workspaceId } as const);
+        const principalContext = { caller, actor, tenantId: input.tenantId, workspaceId: input.workspaceId, scopes: [] as string[], authnStrength: "strong" as const, authenticated: true };
+        const permissionInput: Parameters<typeof checkGoogleActionPermission>[0] = {
+          account, actionId, principalContext, actor, caller,
+          tenantId: input.tenantId, workspaceId: input.workspaceId,
+          trace: { traceId: trace.traceId, correlationId: trace.correlationId },
+          policyClient
+        };
+        if (input.pluginId) permissionInput.pluginId = input.pluginId;
+
+        const permission = await checkGoogleActionPermission(permissionInput);
+        const auditInput: Parameters<typeof buildGooglePermissionAuditEvent>[0] = {
+          traceId: trace.traceId, correlationId: trace.correlationId,
+          actor, caller, tenantId: input.tenantId, workspaceId: input.workspaceId,
+          ...(account?.accountId ? { accountId: account.accountId } : {}),
+          ...(input.pluginId ? { pluginId: input.pluginId } : {}),
+          result: permission
+        };
+        audit.emit(buildGooglePermissionAuditEvent(auditInput));
+
+        if (permission.decision === "deny") {
+          respondJson(res, 403, { schemaVersion: CONTRACT_SCHEMA_VERSION, providerId: "google", connector: "gmail-write", permission });
+          return { allowed: false as const, account: null };
+        }
+        if (permission.decision === "require_approval") {
+          respondJson(res, 202, {
+            schemaVersion: CONTRACT_SCHEMA_VERSION,
+            providerId: "google",
+            connector: "gmail-write",
+            permission,
+            approvalRequired: true,
+            approvalReason: permission.reasonCodes
+          });
+          return { allowed: false as const, account: null };
+        }
+        if (!account?.tokenReference) {
+          respondJson(res, 400, { schemaVersion: CONTRACT_SCHEMA_VERSION, error: "Google integration token reference missing" });
+          return { allowed: false as const, account: null };
+        }
+        const tokenExpired =
+          typeof account.tokenExpiresAt === "string" &&
+          Number.isFinite(Date.parse(account.tokenExpiresAt)) &&
+          Date.parse(account.tokenExpiresAt) <= Date.now();
+        if (tokenExpired && account.refreshTokenReference) {
+          try { account = await oauth.refreshGoogle(account); }
+          catch (error) { await accountStore.setStatus(account.accountId, "refresh_failed", error instanceof Error ? error.message : "unknown"); }
+        }
+        if (!account.tokenReference) {
+          respondJson(res, 400, { schemaVersion: CONTRACT_SCHEMA_VERSION, error: "Google integration token reference missing" });
+          return { allowed: false as const, account: null };
+        }
+        const token = await tokenVault.get(account.tokenReference);
+        if (!token?.accessToken) {
+          respondJson(res, 400, { schemaVersion: CONTRACT_SCHEMA_VERSION, error: "Google access token not available" });
+          return { allowed: false as const, account: null };
+        }
+        return { allowed: true as const, account, accessToken: token.accessToken };
+      };
+
+      const handleGmailWriteUpstreamError = (error: unknown): boolean => {
+        const message = error instanceof Error ? error.message : "unknown";
+        const refreshMatched = message.match(/OAuth token refresh failed \((\d+)\)/);
+        if (refreshMatched) {
+          respondJson(res, 401, {
+            schemaVersion: CONTRACT_SCHEMA_VERSION, providerId: "google", connector: "gmail-write",
+            error: { code: "GOOGLE_REAUTH_REQUIRED", message, upstreamStatus: Number(refreshMatched[1]), remediation: "Reconnect Google integration with write scopes." }
+          });
+          return true;
+        }
+        const matched = message.match(/Gmail API write failed \((\d+)\)/);
+        if (!matched) return false;
+        const upstreamStatus = Number(matched[1]);
+        const isAuthz = upstreamStatus === 401 || upstreamStatus === 403;
+        respondJson(res, isAuthz ? 403 : 502, {
+          schemaVersion: CONTRACT_SCHEMA_VERSION, providerId: "google", connector: "gmail-write",
+          error: { code: isAuthz ? "GMAIL_WRITE_AUTHORIZATION_FAILED" : "GMAIL_WRITE_UPSTREAM_ERROR", message, upstreamStatus }
+        });
+        return true;
+      };
+
+      // ── POST /integrations/google/gmail/drafts/create ────────────────────────
+      if (req.method === "POST" && reqUrl.pathname === "/integrations/google/gmail/drafts/create") {
+        const input = gmailCreateDraftSchema.parse(await readJsonBody(req));
+        const gate = await runGmailWritePermission(input, "gmail.draft.create");
+        if (!gate.allowed) return true;
+        audit.emit({
+          producingService: "api-gateway", eventType: "tool.invoked", severity: "info",
+          traceId: trace.traceId, correlationId: trace.correlationId,
+          reasonCodes: ["gmail_draft_create_requested"],
+          payload: {
+            providerId: "google", actionId: "gmail.draft.create",
+            recipientCount: input.to.length, subjectLength: input.subject.length,
+            hasCc: (input.cc?.length ?? 0) > 0, hasBcc: (input.bcc?.length ?? 0) > 0
+          }
+        });
+        let result;
+        try {
+          result = await gmailWrite.createDraft(gate.accessToken, {
+            to: toGmailRecipients(input.to), subject: input.subject, body: input.body,
+            ...(input.cc ? { cc: toGmailRecipients(input.cc) } : {}),
+            ...(input.bcc ? { bcc: toGmailRecipients(input.bcc) } : {}),
+            ...(input.contentType ? { contentType: input.contentType } : {})
+          }, gate.account);
+        } catch (error) {
+          audit.emit({ producingService: "api-gateway", eventType: "tool.failed", severity: "warn", traceId: trace.traceId, correlationId: trace.correlationId, reasonCodes: ["gmail_draft_create_failed"], payload: { providerId: "google", error: error instanceof Error ? error.message.slice(0, 200) : "unknown" } });
+          if (handleGmailWriteUpstreamError(error)) return true;
+          throw error;
+        }
+        audit.emit({
+          producingService: "api-gateway", eventType: "tool.completed", severity: "info",
+          traceId: trace.traceId, correlationId: trace.correlationId,
+          reasonCodes: ["gmail_draft_create_completed"],
+          resource: { resourceClass: "integration-account", resourceId: gate.account.accountId },
+          payload: { providerId: "google", actionId: "gmail.draft.create", draftId: result.draftId, threadId: result.threadId }
+        });
+        respondJson(res, 201, { schemaVersion: CONTRACT_SCHEMA_VERSION, providerId: "google", connector: "gmail-write", result });
+        return true;
+      }
+
+      // ── POST /integrations/google/gmail/drafts/reply ─────────────────────────
+      if (req.method === "POST" && reqUrl.pathname === "/integrations/google/gmail/drafts/reply") {
+        const input = gmailReplyDraftSchema.parse(await readJsonBody(req));
+        const gate = await runGmailWritePermission(input, "gmail.draft.reply");
+        if (!gate.allowed) return true;
+        audit.emit({
+          producingService: "api-gateway", eventType: "tool.invoked", severity: "info",
+          traceId: trace.traceId, correlationId: trace.correlationId,
+          reasonCodes: ["gmail_reply_draft_create_requested"],
+          payload: {
+            providerId: "google", actionId: "gmail.draft.reply",
+            threadId: input.threadId, inReplyToMessageId: input.inReplyToMessageId,
+            recipientCount: input.to.length
+          }
+        });
+        let result;
+        try {
+          result = await gmailWrite.createReplyDraft(gate.accessToken, {
+            threadId: input.threadId,
+            inReplyToMessageId: input.inReplyToMessageId,
+            inReplyToMessageIdHeader: input.inReplyToMessageIdHeader,
+            to: toGmailRecipients(input.to), subject: input.subject, body: input.body,
+            ...(input.cc ? { cc: toGmailRecipients(input.cc) } : {}),
+            ...(input.contentType ? { contentType: input.contentType } : {})
+          }, gate.account);
+        } catch (error) {
+          audit.emit({ producingService: "api-gateway", eventType: "tool.failed", severity: "warn", traceId: trace.traceId, correlationId: trace.correlationId, reasonCodes: ["gmail_reply_draft_create_failed"], payload: { providerId: "google", error: error instanceof Error ? error.message.slice(0, 200) : "unknown" } });
+          if (handleGmailWriteUpstreamError(error)) return true;
+          throw error;
+        }
+        audit.emit({
+          producingService: "api-gateway", eventType: "tool.completed", severity: "info",
+          traceId: trace.traceId, correlationId: trace.correlationId,
+          reasonCodes: ["gmail_reply_draft_create_completed"],
+          resource: { resourceClass: "integration-account", resourceId: gate.account.accountId },
+          payload: { providerId: "google", actionId: "gmail.draft.reply", draftId: result.draftId, threadId: result.threadId }
+        });
+        respondJson(res, 201, { schemaVersion: CONTRACT_SCHEMA_VERSION, providerId: "google", connector: "gmail-write", result });
+        return true;
+      }
+
+      // ── POST /integrations/google/gmail/messages/send ────────────────────────
+      if (req.method === "POST" && reqUrl.pathname === "/integrations/google/gmail/messages/send") {
+        const input = gmailSendSchema.parse(await readJsonBody(req));
+        // gmail.message.send always returns require_approval — gate enforces it
+        const gate = await runGmailWritePermission(input, "gmail.message.send");
+        if (!gate.allowed) return true;
+        audit.emit({
+          producingService: "api-gateway", eventType: "tool.invoked", severity: "info",
+          traceId: trace.traceId, correlationId: trace.correlationId,
+          reasonCodes: ["gmail_send_requested"],
+          payload: {
+            providerId: "google", actionId: "gmail.message.send",
+            recipientCount: input.to.length, subjectLength: input.subject.length,
+            hasCc: (input.cc?.length ?? 0) > 0, hasBcc: (input.bcc?.length ?? 0) > 0,
+            hasThreadId: Boolean(input.threadId)
+          }
+        });
+        let result;
+        try {
+          result = await gmailWrite.sendMessage(gate.accessToken, {
+            to: toGmailRecipients(input.to), subject: input.subject, body: input.body,
+            ...(input.cc ? { cc: toGmailRecipients(input.cc) } : {}),
+            ...(input.bcc ? { bcc: toGmailRecipients(input.bcc) } : {}),
+            ...(input.contentType ? { contentType: input.contentType } : {}),
+            ...(input.threadId ? { threadId: input.threadId } : {}),
+            ...(input.inReplyToMessageIdHeader ? { inReplyToMessageIdHeader: input.inReplyToMessageIdHeader } : {})
+          }, gate.account);
+        } catch (error) {
+          audit.emit({ producingService: "api-gateway", eventType: "tool.failed", severity: "high", traceId: trace.traceId, correlationId: trace.correlationId, reasonCodes: ["gmail_send_failed"], payload: { providerId: "google", error: error instanceof Error ? error.message.slice(0, 200) : "unknown" } });
+          if (handleGmailWriteUpstreamError(error)) return true;
+          throw error;
+        }
+        audit.emit({
+          producingService: "api-gateway", eventType: "tool.completed", severity: "info",
+          traceId: trace.traceId, correlationId: trace.correlationId,
+          reasonCodes: ["gmail_send_completed"],
+          resource: { resourceClass: "integration-account", resourceId: gate.account.accountId },
+          payload: { providerId: "google", actionId: "gmail.message.send", messageId: result.messageId, threadId: result.threadId }
+        });
+        respondJson(res, 200, { schemaVersion: CONTRACT_SCHEMA_VERSION, providerId: "google", connector: "gmail-write", result });
+        return true;
+      }
+
+      // ── POST /integrations/google/gmail/messages/:messageId/archive ──────────
+      const isGmailArchive = req.method === "POST" && /^\/integrations\/google\/gmail\/messages\/[^/]+\/archive$/.test(reqUrl.pathname);
+      if (isGmailArchive) {
+        const messageId = decodeURIComponent(reqUrl.pathname.split("/").slice(-2, -1)[0] ?? "");
+        if (!messageId) { respondJson(res, 400, { schemaVersion: CONTRACT_SCHEMA_VERSION, error: "Missing messageId" }); return true; }
+        const input = gmailArchiveSchema.parse(await readJsonBody(req));
+        const gate = await runGmailWritePermission(input, "gmail.message.archive");
+        if (!gate.allowed) return true;
+        audit.emit({
+          producingService: "api-gateway", eventType: "tool.invoked", severity: "info",
+          traceId: trace.traceId, correlationId: trace.correlationId,
+          reasonCodes: ["gmail_archive_requested"],
+          payload: { providerId: "google", actionId: "gmail.message.archive", messageId }
+        });
+        let result;
+        try {
+          result = await gmailWrite.archiveMessage(gate.accessToken, messageId);
+        } catch (error) {
+          audit.emit({ producingService: "api-gateway", eventType: "tool.failed", severity: "warn", traceId: trace.traceId, correlationId: trace.correlationId, reasonCodes: ["gmail_archive_failed"], payload: { providerId: "google", error: error instanceof Error ? error.message.slice(0, 200) : "unknown" } });
+          if (handleGmailWriteUpstreamError(error)) return true;
+          throw error;
+        }
+        audit.emit({
+          producingService: "api-gateway", eventType: "tool.completed", severity: "info",
+          traceId: trace.traceId, correlationId: trace.correlationId,
+          reasonCodes: ["gmail_archive_completed"],
+          resource: { resourceClass: "integration-account", resourceId: gate.account.accountId },
+          payload: { providerId: "google", actionId: "gmail.message.archive", messageId: result.messageId }
+        });
+        respondJson(res, 200, { schemaVersion: CONTRACT_SCHEMA_VERSION, providerId: "google", connector: "gmail-write", result });
+        return true;
+      }
+
+      // ── POST /integrations/google/gmail/messages/:messageId/labels ───────────
+      const isGmailLabel = req.method === "POST" && /^\/integrations\/google\/gmail\/messages\/[^/]+\/labels$/.test(reqUrl.pathname);
+      if (isGmailLabel) {
+        const messageId = decodeURIComponent(reqUrl.pathname.split("/").slice(-2, -1)[0] ?? "");
+        if (!messageId) { respondJson(res, 400, { schemaVersion: CONTRACT_SCHEMA_VERSION, error: "Missing messageId" }); return true; }
+        const input = gmailLabelSchema.parse(await readJsonBody(req));
+        const gate = await runGmailWritePermission(input, "gmail.message.label");
+        if (!gate.allowed) return true;
+        audit.emit({
+          producingService: "api-gateway", eventType: "tool.invoked", severity: "info",
+          traceId: trace.traceId, correlationId: trace.correlationId,
+          reasonCodes: ["gmail_label_requested"],
+          payload: {
+            providerId: "google", actionId: "gmail.message.label", messageId,
+            addLabelIds: input.addLabelIds ?? [], removeLabelIds: input.removeLabelIds ?? []
+          }
+        });
+        let result;
+        try {
+          result = await gmailWrite.modifyLabels(gate.accessToken, messageId, {
+            ...(input.addLabelIds ? { addLabelIds: input.addLabelIds } : {}),
+            ...(input.removeLabelIds ? { removeLabelIds: input.removeLabelIds } : {})
+          });
+        } catch (error) {
+          audit.emit({ producingService: "api-gateway", eventType: "tool.failed", severity: "warn", traceId: trace.traceId, correlationId: trace.correlationId, reasonCodes: ["gmail_label_failed"], payload: { providerId: "google", error: error instanceof Error ? error.message.slice(0, 200) : "unknown" } });
+          if (handleGmailWriteUpstreamError(error)) return true;
+          throw error;
+        }
+        audit.emit({
+          producingService: "api-gateway", eventType: "tool.completed", severity: "info",
+          traceId: trace.traceId, correlationId: trace.correlationId,
+          reasonCodes: ["gmail_label_completed"],
+          resource: { resourceClass: "integration-account", resourceId: gate.account.accountId },
+          payload: { providerId: "google", actionId: "gmail.message.label", messageId: result.messageId, addedLabels: result.addedLabels, removedLabels: result.removedLabels }
+        });
+        respondJson(res, 200, { schemaVersion: CONTRACT_SCHEMA_VERSION, providerId: "google", connector: "gmail-write", result });
         return true;
       }
 

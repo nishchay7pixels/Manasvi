@@ -87,10 +87,15 @@ export async function fetchIntegrationAccounts(): Promise<IntegrationAccount[]> 
   return data?.accounts ?? [];
 }
 
-export async function startGoogleConnectFlow(): Promise<{ authorizeUrl: string } | null> {
-  return post<{ authorizeUrl: string }>("/api/gateway/integrations/google/connect/start", {
-    scopes: ["openid", "email", "profile"]
-  });
+export async function startGoogleConnectFlow(mode?: "read" | "write"): Promise<{ authorizeUrl: string } | null> {
+  const baseScopes = ["openid", "email", "profile", "https://www.googleapis.com/auth/gmail.readonly"];
+  const writeScopes = [
+    "https://www.googleapis.com/auth/gmail.compose",
+    "https://www.googleapis.com/auth/gmail.send",
+    "https://www.googleapis.com/auth/gmail.modify",
+  ];
+  const scopes = mode === "write" ? [...baseScopes, ...writeScopes] : baseScopes;
+  return post<{ authorizeUrl: string }>("/api/gateway/integrations/google/connect/start", { scopes });
 }
 
 export async function disconnectGoogleIntegration(): Promise<boolean> {

@@ -160,3 +160,114 @@ test("authorization snapshot distinguishes connected from authorized actions", (
   assert.equal(readAction?.canAttempt, true);
   assert.equal(calendarWrite?.canAttempt, false);
 });
+
+// ── G4 write capability derivation ───────────────────────────────────────────
+
+const writeAccount: typeof connectedAccount = {
+  ...connectedAccount,
+  scopesGranted: [
+    "https://www.googleapis.com/auth/gmail.readonly",
+    "https://www.googleapis.com/auth/gmail.compose",
+    "https://www.googleapis.com/auth/gmail.send",
+    "https://www.googleapis.com/auth/gmail.modify",
+  ],
+};
+
+test("gmail.modify scope derives gmail.compose, gmail.send, gmail.modify capabilities", () => {
+  const derived = deriveGoogleCapabilities(writeAccount.scopesGranted);
+  const ids = derived.availableCapabilities.map((c) => c.capabilityId);
+  assert.ok(ids.includes("gmail.compose"), "should include gmail.compose");
+  assert.ok(ids.includes("gmail.send"), "should include gmail.send");
+  assert.ok(ids.includes("gmail.modify"), "should include gmail.modify");
+  assert.ok(ids.includes("gmail.read_threads"), "should include gmail.read_threads");
+});
+
+test("gmail.draft.reply is policy approval sensitivity and requires gmail.compose", () => {
+  const snapshot = buildGoogleAuthorizationSnapshot(writeAccount);
+  const replyAction = snapshot.actions.find((a) => a.actionId === "gmail.draft.reply");
+  assert.ok(replyAction, "gmail.draft.reply action should exist in snapshot");
+  assert.equal(replyAction?.approvalSensitivity, "policy");
+  assert.equal(replyAction?.canAttempt, true);
+  assert.deepEqual(replyAction?.missingCapabilities, []);
+});
+
+test("gmail.message.archive requires gmail.modify and is available when scope granted", () => {
+  const snapshot = buildGoogleAuthorizationSnapshot(writeAccount);
+  const archiveAction = snapshot.actions.find((a) => a.actionId === "gmail.message.archive");
+  assert.ok(archiveAction, "gmail.message.archive action should exist");
+  assert.equal(archiveAction?.canAttempt, true);
+  assert.deepEqual(archiveAction?.missingCapabilities, []);
+});
+
+test("gmail.message.label requires gmail.modify and is available when scope granted", () => {
+  const snapshot = buildGoogleAuthorizationSnapshot(writeAccount);
+  const labelAction = snapshot.actions.find((a) => a.actionId === "gmail.message.label");
+  assert.ok(labelAction, "gmail.message.label action should exist");
+  assert.equal(labelAction?.canAttempt, true);
+  assert.deepEqual(labelAction?.missingCapabilities, []);
+});
+
+test("write actions show canAttempt=false when modify scope is missing", () => {
+  const readOnlyAccount = { ...connectedAccount };
+  const snapshot = buildGoogleAuthorizationSnapshot(readOnlyAccount);
+  const archiveAction = snapshot.actions.find((a) => a.actionId === "gmail.message.archive");
+  const labelAction = snapshot.actions.find((a) => a.actionId === "gmail.message.label");
+  assert.equal(archiveAction?.canAttempt, false);
+  assert.ok(archiveAction?.missingCapabilities.includes("gmail.modify"));
+  assert.equal(labelAction?.canAttempt, false);
+});
+
+test("gmail.message.send has approval sensitivity=required even with full write scopes", () => {
+  const snapshot = buildGoogleAuthorizationSnapshot(writeAccount);
+  const sendAction = snapshot.actions.find((a) => a.actionId === "gmail.message.send");
+  assert.ok(sendAction, "gmail.message.send should exist in snapshot");
+  assert.equal(sendAction?.approvalSensitivity, "required");
+  assert.equal(sendAction?.canAttempt, true);
+});
+
+test("checkGoogleActionPermission requires approval for gmail.draft.reply (policy sensitivity)", async () => {
+  const result = await checkGoogleActionPermission({
+    account: writeAccount,
+    actionId: "gmail.draft.reply",
+    principalContext: {
+      caller: { principalId: "service:api-gateway", principalType: "service" },
+      actor: { principalId: "user:alice", principalType: "human_user" },
+      scopes: [],
+      authnStrength: "strong",
+      authenticated: true,
+      tenantId: "tenant-local",
+      workspaceId: "workspace-local"
+    },
+    actor: { principalId: "user:alice", principalType: "human_user" },
+    caller: { principalId: "service:api-gateway", principalType: "service" },
+    tenantId: "tenant-local",
+    workspaceId: "workspace-local",
+    trace: { traceId: "11111111-1111-4111-8111-111111111111", correlationId: "22222222-2222-4222-8222-222222222222" },
+    policyClient: new StaticPolicyClient("ALLOW")
+  });
+  // policy sensitivity = "policy" means check passes through to policy client (ALLOW here)
+  assert.equal(result.decision, "allow");
+});
+
+test("checkGoogleActionPermission always requires approval for gmail.message.send", async () => {
+  const result = await checkGoogleActionPermission({
+    account: writeAccount,
+    actionId: "gmail.message.send",
+    principalContext: {
+      caller: { principalId: "service:api-gateway", principalType: "service" },
+      actor: { principalId: "user:alice", principalType: "human_user" },
+      scopes: [],
+      authnStrength: "strong",
+      authenticated: true,
+      tenantId: "tenant-local",
+      workspaceId: "workspace-local"
+    },
+    actor: { principalId: "user:alice", principalType: "human_user" },
+    caller: { principalId: "service:api-gateway", principalType: "service" },
+    tenantId: "tenant-local",
+    workspaceId: "workspace-local",
+    trace: { traceId: "11111111-1111-4111-8111-111111111111", correlationId: "22222222-2222-4222-8222-222222222222" },
+    policyClient: new StaticPolicyClient("ALLOW")
+  });
+  assert.equal(result.decision, "require_approval");
+});
