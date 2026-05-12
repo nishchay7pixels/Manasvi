@@ -76,6 +76,15 @@ test("extractResponseTextFromOrchestratorResult hides internal action proposal j
   assert.equal(response, "This action needs approval. Reply yes to proceed or no to cancel.");
 });
 
+test("extractResponseTextFromOrchestratorResult unwraps final_response json embedded in draft text", () => {
+  const response = extractResponseTextFromOrchestratorResult({
+    responseText:
+      "Text should be concise. I will output JSON next. " +
+      "{\"decisionType\":\"final_response\",\"responseText\":\"Here is the latest email.\"}"
+  });
+  assert.equal(response, "Here is the latest email.");
+});
+
 test("parseTelegramWebhook enforces webhook secret when configured", () => {
   const parsed = parseTelegramWebhook({
     body: {

@@ -59,7 +59,10 @@ const googlePermissionCheckSchema = z.object({
     "docs.document.write"
   ]),
   actorPrincipalId: z.string().min(1).default("user:local-operator"),
-  actorPrincipalType: z.enum(["human_user", "agent", "plugin"]).default("human_user"),
+  actorPrincipalType: z.preprocess(
+    (value) => (value === "user" ? "human_user" : value),
+    z.enum(["human_user", "agent", "plugin"])
+  ).default("human_user"),
   tenantId: z.string().min(1).default("tenant-local"),
   workspaceId: z.string().min(1).default("workspace-local"),
   pluginId: z.string().min(1).optional()
@@ -72,7 +75,10 @@ const gmailListSchema = z.object({
   pageToken: z.string().optional(),
   includeSpamTrash: z.boolean().optional(),
   actorPrincipalId: z.string().min(1).default("user:local-operator"),
-  actorPrincipalType: z.enum(["human_user", "agent", "plugin"]).default("human_user"),
+  actorPrincipalType: z.preprocess(
+    (value) => (value === "user" ? "human_user" : value),
+    z.enum(["human_user", "agent", "plugin"])
+  ).default("human_user"),
   tenantId: z.string().min(1).default("tenant-local"),
   workspaceId: z.string().min(1).default("workspace-local"),
   pluginId: z.string().min(1).optional()
@@ -80,7 +86,10 @@ const gmailListSchema = z.object({
 
 const gmailGetSchema = z.object({
   actorPrincipalId: z.string().min(1).default("user:local-operator"),
-  actorPrincipalType: z.enum(["human_user", "agent", "plugin"]).default("human_user"),
+  actorPrincipalType: z.preprocess(
+    (value) => (value === "user" ? "human_user" : value),
+    z.enum(["human_user", "agent", "plugin"])
+  ).default("human_user"),
   tenantId: z.string().min(1).default("tenant-local"),
   workspaceId: z.string().min(1).default("workspace-local"),
   pluginId: z.string().min(1).optional()
@@ -495,7 +504,7 @@ async function main(): Promise<void> {
       const isGmailThreadGet = req.method === "GET" && /^\/integrations\/google\/gmail\/threads\/[^/]+$/.test(gmailPath);
 
       const runGmailReadPermission = async (input: z.infer<typeof gmailGetSchema> | z.infer<typeof gmailListSchema>) => {
-        const account = await accountStore.getByProvider("google");
+        let account = await accountStore.getByProvider("google");
         const actor = {
           principalId: input.actorPrincipalId,
           principalType: input.actorPrincipalType,
@@ -578,6 +587,25 @@ async function main(): Promise<void> {
           });
           return { allowed: false as const, account: null };
         }
+        const tokenExpired =
+          typeof account.tokenExpiresAt === "string" &&
+          Number.isFinite(Date.parse(account.tokenExpiresAt)) &&
+          Date.parse(account.tokenExpiresAt) <= Date.now();
+        if (tokenExpired && account.refreshTokenReference) {
+          try {
+            account = await oauth.refreshGoogle(account);
+          } catch (error) {
+            await accountStore.setStatus(account.accountId, "refresh_failed", error instanceof Error ? error.message : "unknown");
+          }
+        }
+        if (!account.tokenReference) {
+          respondJson(res, 400, {
+            schemaVersion: CONTRACT_SCHEMA_VERSION,
+            error: "Google integration token reference missing"
+          });
+          return { allowed: false as const, account: null };
+        }
+
         const token = await tokenVault.get(account.tokenReference);
         if (!token?.accessToken) {
           respondJson(res, 400, {
@@ -591,19 +619,57 @@ async function main(): Promise<void> {
 
       const handleGmailUpstreamError = (error: unknown): boolean => {
         const message = error instanceof Error ? error.message : "unknown";
+        const refreshMatched = message.match(/OAuth token refresh failed \((\d+)\)/);
+        if (refreshMatched) {
+          respondJson(res, 401, {
+            schemaVersion: CONTRACT_SCHEMA_VERSION,
+            providerId: "google",
+            connector: "gmail-read",
+            error: {
+              code: "GOOGLE_REAUTH_REQUIRED",
+              message,
+              upstreamStatus: Number(refreshMatched[1]),
+              remediation: "Reconnect Google integration to refresh tokens."
+            }
+          });
+          return true;
+        }
         const matched = message.match(/Gmail API read failed \((\d+)\)/);
         if (!matched) return false;
-        respondJson(res, 502, {
+        const upstreamStatus = Number(matched[1]);
+        const isAuthz = upstreamStatus === 401 || upstreamStatus === 403;
+        respondJson(res, isAuthz ? 403 : 502, {
           schemaVersion: CONTRACT_SCHEMA_VERSION,
           providerId: "google",
           connector: "gmail-read",
           error: {
-            code: "GMAIL_UPSTREAM_ERROR",
+            code: isAuthz ? "GMAIL_AUTHORIZATION_FAILED" : "GMAIL_UPSTREAM_ERROR",
             message,
-            upstreamStatus: Number(matched[1])
+            upstreamStatus
           }
         });
         return true;
+      };
+
+      const runGmailReadWithRefreshRetry = async <T>(input: {
+        gate: { account: NonNullable<Awaited<ReturnType<typeof accountStore.getByProvider>>>; accessToken: string };
+        op: (accessToken: string) => Promise<T>;
+      }): Promise<T> => {
+        try {
+          return await input.op(input.gate.accessToken);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          const matched = message.match(/Gmail API read failed \((\d+)\)/);
+          const status = matched ? Number(matched[1]) : NaN;
+          const canRetry = (status === 401 || status === 403) && Boolean(input.gate.account.refreshTokenReference);
+          if (!canRetry) throw error;
+
+          const refreshed = await oauth.refreshGoogle(input.gate.account);
+          if (!refreshed.tokenReference) throw error;
+          const refreshedToken = await tokenVault.get(refreshed.tokenReference);
+          if (!refreshedToken?.accessToken) throw error;
+          return input.op(refreshedToken.accessToken);
+        }
       };
 
       if (req.method === "POST" && reqUrl.pathname === "/integrations/google/gmail/messages/list") {
@@ -628,7 +694,10 @@ async function main(): Promise<void> {
         });
         let result;
         try {
-          result = await gmail.listMessages(gate.accessToken, gmailQuery);
+          result = await runGmailReadWithRefreshRetry({
+            gate,
+            op: (accessToken) => gmail.listMessages(accessToken, gmailQuery)
+          });
         } catch (error) {
           if (handleGmailUpstreamError(error)) return true;
           throw error;
@@ -668,7 +737,10 @@ async function main(): Promise<void> {
         });
         let result;
         try {
-          result = await gmail.searchMessages(gate.accessToken, gmailQuery);
+          result = await runGmailReadWithRefreshRetry({
+            gate,
+            op: (accessToken) => gmail.searchMessages(accessToken, gmailQuery)
+          });
         } catch (error) {
           if (handleGmailUpstreamError(error)) return true;
           throw error;
@@ -698,7 +770,10 @@ async function main(): Promise<void> {
         };
         let result;
         try {
-          result = await gmail.listThreads(gate.accessToken, gmailQuery);
+          result = await runGmailReadWithRefreshRetry({
+            gate,
+            op: (accessToken) => gmail.listThreads(accessToken, gmailQuery)
+          });
         } catch (error) {
           if (handleGmailUpstreamError(error)) return true;
           throw error;
@@ -729,7 +804,10 @@ async function main(): Promise<void> {
         const messageId = decodeURIComponent(gmailPath.split("/").pop() ?? "");
         let message;
         try {
-          message = await gmail.getMessage(gate.accessToken, messageId, gate.account);
+          message = await runGmailReadWithRefreshRetry({
+            gate,
+            op: (accessToken) => gmail.getMessage(accessToken, messageId, gate.account)
+          });
         } catch (error) {
           if (handleGmailUpstreamError(error)) return true;
           throw error;
@@ -757,7 +835,10 @@ async function main(): Promise<void> {
         const threadId = decodeURIComponent(gmailPath.split("/").pop() ?? "");
         let thread;
         try {
-          thread = await gmail.getThread(gate.accessToken, threadId, gate.account);
+          thread = await runGmailReadWithRefreshRetry({
+            gate,
+            op: (accessToken) => gmail.getThread(accessToken, threadId, gate.account)
+          });
         } catch (error) {
           if (handleGmailUpstreamError(error)) return true;
           throw error;

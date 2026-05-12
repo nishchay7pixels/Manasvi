@@ -139,7 +139,11 @@ export class FetchGmailApiClient implements GmailApiClient {
       }
     });
     if (!response.ok) {
-      throw new Error(`Gmail API read failed (${response.status})`);
+      const upstreamBody = await response.text().catch(() => "");
+      const detail = upstreamBody.trim().slice(0, 600);
+      throw new Error(
+        `Gmail API read failed (${response.status})${detail ? `: ${detail}` : ""}`
+      );
     }
     return (await response.json()) as T;
   }

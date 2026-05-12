@@ -202,19 +202,56 @@ export function extractResponseTextFromOrchestratorResult(input: unknown): strin
 
 function sanitizeUserFacingResponse(text: string, status?: string): string {
   const trimmed = text.trim();
-  if (!trimmed.startsWith("{")) {
-    return text;
-  }
+  const candidate = extractJsonObject(trimmed);
+  if (!candidate) return text;
   try {
-    const parsed = JSON.parse(trimmed) as { decisionType?: string };
+    const parsed = JSON.parse(candidate) as { decisionType?: string; responseText?: string };
     if (parsed.decisionType === "action_proposal") {
-      if (status === "awaiting_approval") {
-        return "This action needs approval. Reply yes to proceed or no to cancel.";
-      }
-      return "Processing the requested action.";
+      return status === "awaiting_approval"
+        ? "This action needs approval. Reply yes to proceed or no to cancel."
+        : "Processing the requested action.";
+    }
+    if (parsed.decisionType === "final_response" && typeof parsed.responseText === "string" && parsed.responseText.trim().length > 0) {
+      return parsed.responseText;
     }
   } catch {
     return text;
   }
   return text;
+}
+
+function extractJsonObject(text: string): string | null {
+  const start = text.indexOf("{");
+  if (start < 0) return null;
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let index = start; index < text.length; index += 1) {
+    const ch = text[index];
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (ch === "\\") {
+        escaped = true;
+      } else if (ch === "\"") {
+        inString = false;
+      }
+      continue;
+    }
+    if (ch === "\"") {
+      inString = true;
+      continue;
+    }
+    if (ch === "{") {
+      depth += 1;
+      continue;
+    }
+    if (ch === "}") {
+      depth -= 1;
+      if (depth === 0) {
+        return text.slice(start, index + 1);
+      }
+    }
+  }
+  return null;
 }

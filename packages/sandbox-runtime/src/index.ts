@@ -1041,12 +1041,16 @@ const handlers = {
   },
   "tool:gmail-list-messages": async (parameters) => {
     const baseUrl = String(process.env.MANASVI_GATEWAY_URL || process.env.GATEWAY_URL || "http://127.0.0.1:4100");
+    const payload = { ...(parameters || {}) };
+    if (payload.actorPrincipalType === "user") {
+      payload.actorPrincipalType = "human_user";
+    }
     const response = await fetch(baseUrl + "/integrations/google/gmail/messages/list", {
       method: "POST",
       headers: {
         "content-type": "application/json"
       },
-      body: JSON.stringify(parameters || {})
+      body: JSON.stringify(payload)
     });
     const body = await response.json();
     if (!response.ok) {
@@ -1055,16 +1059,20 @@ const handlers = {
       err.details = body;
       throw err;
     }
-    return body;
+    return body?.result ?? body;
   },
   "tool:gmail-search-messages": async (parameters) => {
     const baseUrl = String(process.env.MANASVI_GATEWAY_URL || process.env.GATEWAY_URL || "http://127.0.0.1:4100");
+    const payload = { ...(parameters || {}) };
+    if (payload.actorPrincipalType === "user") {
+      payload.actorPrincipalType = "human_user";
+    }
     const response = await fetch(baseUrl + "/integrations/google/gmail/messages/search", {
       method: "POST",
       headers: {
         "content-type": "application/json"
       },
-      body: JSON.stringify(parameters || {})
+      body: JSON.stringify(payload)
     });
     const body = await response.json();
     if (!response.ok) {
@@ -1073,7 +1081,7 @@ const handlers = {
       err.details = body;
       throw err;
     }
-    return body;
+    return body?.result ?? body;
   },
   "tool:gmail-get-message": async (parameters) => {
     const messageId = String(parameters.messageId || "").trim();
@@ -1093,7 +1101,7 @@ const handlers = {
       err.details = body;
       throw err;
     }
-    return body;
+    return body?.result ?? body;
   },
   "tool:gmail-get-thread": async (parameters) => {
     const threadId = String(parameters.threadId || "").trim();
@@ -1113,7 +1121,7 @@ const handlers = {
       err.details = body;
       throw err;
     }
-    return body;
+    return body?.result ?? body;
   },
   "tool:shell-command": async (parameters) => {
     const { spawn } = require("node:child_process");
