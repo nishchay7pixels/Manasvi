@@ -246,7 +246,7 @@ function sanitizeUserFacingResponse(text: string, status?: string): string {
     if (parsed.decisionType === "action_proposal") {
       return status === "awaiting_approval"
         ? "This action needs approval. Reply yes to proceed or no to cancel."
-        : "Processing the requested action.";
+        : "I could not confirm completion for that action. Please retry the request.";
     }
     if (parsed.decisionType === "final_response" && typeof parsed.responseText === "string" && parsed.responseText.trim().length > 0) {
       return parsed.responseText;

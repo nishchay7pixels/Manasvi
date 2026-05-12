@@ -108,33 +108,51 @@ async function main(): Promise<void> {
     correlationId: string;
   }): Promise<unknown | null> {
     const started = Date.now();
-    const authToken = issueOrchestrationReadToken();
     while (Date.now() - started < config.replyPollTimeoutMs) {
-      const response = await fetch(
-        `${config.orchestratorBaseUrl.replace(/\/$/, "")}/orchestration/event-results?eventId=${encodeURIComponent(input.eventId)}`,
-        {
-          method: "GET",
-          headers: {
-            authorization: `Bearer ${authToken}`,
-            "x-trace-id": input.traceId,
-            "x-correlation-id": input.correlationId
+      let response: Response;
+      try {
+        const authToken = issueOrchestrationReadToken();
+        response = await fetch(
+          `${config.orchestratorBaseUrl.replace(/\/$/, "")}/orchestration/event-results?eventId=${encodeURIComponent(input.eventId)}`,
+          {
+            method: "GET",
+            headers: {
+              authorization: `Bearer ${authToken}`,
+              "x-trace-id": input.traceId,
+              "x-correlation-id": input.correlationId
+            }
           }
+        );
+      } catch (error) {
+        const isAbortError =
+          error instanceof Error &&
+          (error.name === "AbortError" || error.message.toLowerCase().includes("aborted"));
+        if (!isAbortError) {
+          throw error;
         }
-      );
+        await new Promise((resolve) => setTimeout(resolve, config.replyPollIntervalMs));
+        continue;
+      }
       if (response.status === 404) {
         await new Promise((resolve) => setTimeout(resolve, config.replyPollIntervalMs));
         continue;
       }
-      const body = (await response.json()) as { result?: unknown };
+      if (response.status === 401 || response.status === 403) {
+        await new Promise((resolve) => setTimeout(resolve, config.replyPollIntervalMs));
+        continue;
+      }
+      const body = (await response.json().catch(() => ({}))) as { result?: unknown };
       // Event result endpoint may return non-2xx for failed runs but still include
       // a structured result payload. Prefer that payload over generic timeout fallback.
       if (body.result) {
         return body.result;
       }
       if (response.ok) {
-        return null;
+        await new Promise((resolve) => setTimeout(resolve, config.replyPollIntervalMs));
+        continue;
       }
-      return null;
+      await new Promise((resolve) => setTimeout(resolve, config.replyPollIntervalMs));
+      continue;
     }
     return null;
   }
@@ -209,10 +227,16 @@ async function main(): Promise<void> {
         throw new Error(`Telegram answerCallbackQuery failed with status ${response.status}: ${body}`);
       }
     } catch (error) {
-      logger.warn("Failed to acknowledge Telegram callback query", {
-        callbackQueryId: input.callbackQueryId,
-        error: error instanceof Error ? error.message : "unknown"
-      });
+      console.warn(
+        JSON.stringify({
+          timestamp: new Date().toISOString(),
+          level: "warn",
+          service: "ingress-service",
+          message: "Failed to acknowledge Telegram callback query",
+          callbackQueryId: input.callbackQueryId,
+          error: error instanceof Error ? error.message : "unknown"
+        })
+      );
     }
   }
 
@@ -431,18 +455,23 @@ async function main(): Promise<void> {
             })
           );
 
-          ackManager.startRequest({
-            requestId: event.eventId,
-            sessionId: normalized.session?.conversationId ?? normalized.channel.principalId,
-            channelType: "telegram",
-            workflowType: detectWorkflowType(normalized.text),
-            sendFn: async (text) => {
-              if (normalized.replyTarget?.chatId) {
-                await sendTelegramMessage({ chatId: normalized.replyTarget.chatId, text });
+          const isCallbackUpdate = Boolean(
+            (normalized.metadata as { telegram?: { callbackQueryId?: unknown } } | undefined)?.telegram?.callbackQueryId
+          );
+          if (!isCallbackUpdate) {
+            ackManager.startRequest({
+              requestId: event.eventId,
+              sessionId: normalized.session?.conversationId ?? normalized.channel.principalId,
+              channelType: "telegram",
+              workflowType: detectWorkflowType(normalized.text),
+              sendFn: async (text) => {
+                if (normalized.replyTarget?.chatId) {
+                  await sendTelegramMessage({ chatId: normalized.replyTarget.chatId, text });
+                }
               }
-            }
-          });
-          pollingAckEventId = event.eventId;
+            });
+            pollingAckEventId = event.eventId;
+          }
 
           const orchestratorResult = await pollForOrchestratorResult({
             eventId: event.eventId,
@@ -450,9 +479,14 @@ async function main(): Promise<void> {
             correlationId: pollingTrace.correlationId
           });
 
-          ackManager.finalizeRequest(event.eventId);
+          if (!isCallbackUpdate) {
+            ackManager.finalizeRequest(event.eventId);
+          }
           pollingAckEventId = null;
 
+          if (!orchestratorResult && isCallbackUpdate) {
+            return;
+          }
           const replyText = orchestratorResult
             ? extractResponseTextFromOrchestratorResult(orchestratorResult)
             : "I received your message, but I could not produce a response in time.";
@@ -474,8 +508,51 @@ async function main(): Promise<void> {
             );
           }
         } catch (error) {
+          const isAbortError =
+            error instanceof Error &&
+            (error.name === "AbortError" || error.message.toLowerCase().includes("aborted"));
+          const isAuthPollingError =
+            error instanceof Error &&
+            (error.message.includes("AUTHENTICATION_REQUIRED") || error.message.includes("status 401") || error.message.includes("status 403"));
+          if (isAbortError && pollingAckEventId !== null && normalized.replyTarget?.chatId) {
+            try {
+              const recoveredResult = await pollForOrchestratorResult({
+                eventId: pollingAckEventId,
+                traceId: pollingTrace.traceId,
+                correlationId: pollingTrace.correlationId
+              });
+              if (recoveredResult) {
+                if (!isCallbackUpdate) {
+                  ackManager.finalizeRequest(pollingAckEventId);
+                }
+                await sendTelegramMessage({
+                  chatId: normalized.replyTarget.chatId,
+                  text: extractResponseTextFromOrchestratorResult(recoveredResult),
+                  approvalOptions: isAwaitingApprovalResult(recoveredResult)
+                });
+                pollingAckEventId = null;
+                return;
+              }
+            } catch {
+              // fall through to existing fallback path
+            }
+          }
           if (pollingAckEventId !== null) {
             ackManager.cancelRequest(pollingAckEventId, "polling_handler_error");
+          }
+          if (normalized.replyTarget?.chatId) {
+            try {
+              const fallbackText =
+                isAbortError || isAuthPollingError
+                  ? "I received your message, but I could not produce a response in time."
+                  : "I hit an internal runtime error while processing that request. Please try again.";
+              await sendTelegramMessage({
+                chatId: normalized.replyTarget.chatId,
+                text: fallbackText
+              });
+            } catch {
+              // Best-effort fallback notification to avoid crashing the polling loop.
+            }
           }
           console.error(
             JSON.stringify({

@@ -105,6 +105,15 @@ test("extractResponseTextFromOrchestratorResult hides internal action proposal j
   assert.equal(response, "This action needs approval. Reply yes to proceed or no to cancel.");
 });
 
+test("extractResponseTextFromOrchestratorResult does not emit processing placeholder after completion", () => {
+  const response = extractResponseTextFromOrchestratorResult({
+    status: "completed",
+    responseText:
+      "{\"decisionType\":\"action_proposal\",\"proposal\":{\"proposalType\":\"tool_invocation\",\"proposalId\":\"proposal-1\",\"toolId\":\"tool.gmail-send-message\",\"purpose\":\"Send email\",\"input\":{}}}"
+  });
+  assert.equal(response, "I could not confirm completion for that action. Please retry the request.");
+});
+
 test("extractResponseTextFromOrchestratorResult unwraps final_response json embedded in draft text", () => {
   const response = extractResponseTextFromOrchestratorResult({
     responseText:

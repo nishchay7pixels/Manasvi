@@ -105,7 +105,7 @@ export async function loadIngressServiceConfig(): Promise<IngressServiceConfig> 
       telegramApiBaseUrl: env.TELEGRAM_API_BASE_URL ?? "https://api.telegram.org",
       telegramAdapterMode: (env.TELEGRAM_ADAPTER_MODE as "polling" | "webhook" | "disabled" | undefined) ?? "polling",
       telegramPollingTimeoutSeconds: Number(env.TELEGRAM_POLLING_TIMEOUT_SECONDS ?? 25),
-      replyPollTimeoutMs: Number(env.REPLY_POLL_TIMEOUT_MS ?? env.TELEGRAM_POLL_TIMEOUT_MS ?? 12000),
+      replyPollTimeoutMs: Number(env.REPLY_POLL_TIMEOUT_MS ?? env.TELEGRAM_POLL_TIMEOUT_MS ?? 30000),
       replyPollIntervalMs: Number(env.REPLY_POLL_INTERVAL_MS ?? env.TELEGRAM_POLL_INTERVAL_MS ?? 300),
       slackSigningSecret: await secrets.optional("SLACK_SIGNING_SECRET"),
       slackBotToken: await secrets.optional("SLACK_BOT_TOKEN"),

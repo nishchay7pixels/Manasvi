@@ -178,6 +178,14 @@ async function main(): Promise<void> {
   };
   const deadLetterStore = new InMemoryDeadLetterStore();
   const pendingApprovalByConversation = new Map<string, { messageText: string; approvalRequestId?: string }>();
+  const toCompactJson = (value: unknown): string => {
+    try {
+      const raw = JSON.stringify(value);
+      return raw.length > 600 ? `${raw.slice(0, 597)}...` : raw;
+    } catch {
+      return String(value);
+    }
+  };
   const consumer = new EventConsumer({
     deadLetterStore,
     maxAttempts: config.maxEventHandlerAttempts,
@@ -385,6 +393,45 @@ async function main(): Promise<void> {
         trustClassifications: Array.from(new Set(run.observations.map((observation) => observation.trustClassification)))
       }
     });
+
+    const successfulToolObservations = run.observations.filter((observation) => {
+      if (observation.type !== "tool_result") {
+        return false;
+      }
+      const data = observation.data as Record<string, unknown>;
+      return data.executionStatus === "completed";
+    });
+    for (const observation of successfulToolObservations) {
+      const data = observation.data as Record<string, unknown>;
+      const toolId = typeof data.toolId === "string" ? data.toolId : "unknown-tool";
+      const output = "output" in data ? data.output : data;
+      await contextAssembler.assembleForMessage({
+        message: {
+          messageId: `agent-message:${randomUUID()}`,
+          text: `Tool ${toolId} completed successfully. Output: ${toCompactJson(output)}`,
+          sender: servicePrincipal,
+          trustClassification: "MODEL_INTERMEDIATE",
+          sourceRef: "orchestrator:tool-result",
+          createdAt: new Date().toISOString()
+        },
+        sessionResolve: {
+          tenantId: event.tenantId,
+          workspaceId: event.workspaceId,
+          isolationMode: "per_user_isolated",
+          sessionType: "user_interaction",
+          owner: principalContext.actor,
+          createdBy: servicePrincipal,
+          participants: [principalContext.caller],
+          explicitSessionId: run.session.sessionId,
+          resolutionHint: principalContext.actor.principalId
+        },
+        trace: {
+          traceId: event.trace.traceId,
+          correlationId: event.trace.correlationId,
+          ...(event.trace.parentTraceId ? { parentTraceId: event.trace.parentTraceId } : {})
+        }
+      });
+    }
 
     if (run.outcome.responseText && run.outcome.responseText.trim().length > 0) {
       await contextAssembler.assembleForMessage({

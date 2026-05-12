@@ -429,6 +429,12 @@ export class GovernedAgentRuntime {
         validatedInput = validateToolInput(toolEntry.toolId, normalizedProposalInput);
       } catch (error) {
         const message = error instanceof Error ? error.message : "validation failed";
+        const isRecoverableGmailReplyValidationError =
+          toolEntry.toolId === "tool.gmail-create-reply-draft" &&
+          /threadId|inReplyToMessageId|inReplyToMessageIdHeader|to|subject/.test(message);
+        const isRecoverableGmailSendValidationError =
+          toolEntry.toolId === "tool.gmail-send-message" &&
+          /to|subject/.test(message);
         observations.push(
           this.createObservation({
             type: "runtime_failure",
@@ -441,6 +447,13 @@ export class GovernedAgentRuntime {
             trace: input.trace
           })
         );
+        if (isRecoverableGmailReplyValidationError || isRecoverableGmailSendValidationError) {
+          transition("recovering_from_failure", "tool_input_invalid_recoverable", {
+            toolId: toolEntry.toolId
+          });
+          assembledContext = this.injectObservationIntoContext(assembledContext, observations[observations.length - 1]!);
+          continue;
+        }
         transition("completed", "tool_input_invalid", {
           toolId: toolEntry.toolId
         });
