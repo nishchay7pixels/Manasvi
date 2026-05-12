@@ -16,6 +16,7 @@ import { respondJson, startHttpService } from "@manasvi/service-runtime";
 
 import { type IngressNormalizedMessage } from "./channel-adapter.js";
 import { loadIngressServiceConfig } from "./config.js";
+import { DelayedAckManager, createConsoleAckLogger, detectWorkflowType } from "./delayed-ack-manager.js";
 import { InMemoryDuplicateGuard, InMemoryRateLimiter } from "./edge-controls.js";
 import { extractResponseTextFromOrchestratorResult, normalizeTelegramUpdate, parseTelegramWebhook } from "./telegram-adapter.js";
 import { TelegramPoller } from "./telegram-poller.js";
@@ -58,6 +59,15 @@ async function main(): Promise<void> {
   const resolver = new PrincipalResolver(tokenService);
   const rateLimiter = new InMemoryRateLimiter(config.ingressRateLimitMaxPerSource, config.ingressRateLimitWindowMs);
   const duplicateGuard = new InMemoryDuplicateGuard(config.ingressAntiSpamDuplicateTtlMs);
+
+  const ackManager = new DelayedAckManager(
+    {
+      enabled: config.ackEnabled,
+      ackDelayMs: config.ackDelayMs,
+      contextualAckEnabled: config.ackContextualEnabled
+    },
+    createConsoleAckLogger(config.serviceName)
+  );
 
   const publisher = new EventPublisher({
     transport: new HttpTransport({
@@ -331,49 +341,83 @@ async function main(): Promise<void> {
           return;
         }
 
-        const event = await publishNormalizedInboundEvent({
-          normalized,
-          trace: {
-            traceId: pollingTrace.traceId,
-            correlationId: pollingTrace.correlationId
-          }
-        });
-        console.log(
-          JSON.stringify({
-            timestamp: new Date().toISOString(),
-            level: "info",
-            service: "ingress-service",
-            message: "Telegram polling update published",
-            traceId: pollingTrace.traceId,
-            correlationId: pollingTrace.correlationId,
-            eventId: event.eventId,
-            actorPrincipalId: normalized.actor.principalId,
-            channelPrincipalId: normalized.channel.principalId
-          })
-        );
-
-        const orchestratorResult = await pollForOrchestratorResult({
-          eventId: event.eventId,
-          traceId: pollingTrace.traceId,
-          correlationId: pollingTrace.correlationId
-        });
-
-        const replyText = orchestratorResult
-          ? extractResponseTextFromOrchestratorResult(orchestratorResult)
-          : "I received your message, but I could not produce a response in time.";
-
-        if (normalized.replyTarget?.chatId) {
-          await sendTelegramMessage({ chatId: normalized.replyTarget.chatId, text: replyText });
+        let pollingAckEventId: string | null = null;
+        try {
+          const event = await publishNormalizedInboundEvent({
+            normalized,
+            trace: {
+              traceId: pollingTrace.traceId,
+              correlationId: pollingTrace.correlationId
+            }
+          });
           console.log(
             JSON.stringify({
               timestamp: new Date().toISOString(),
               level: "info",
               service: "ingress-service",
-              message: "Telegram polling reply delivered",
+              message: "Telegram polling update published",
               traceId: pollingTrace.traceId,
               correlationId: pollingTrace.correlationId,
               eventId: event.eventId,
-              chatId: normalized.replyTarget.chatId
+              actorPrincipalId: normalized.actor.principalId,
+              channelPrincipalId: normalized.channel.principalId
+            })
+          );
+
+          ackManager.startRequest({
+            requestId: event.eventId,
+            sessionId: normalized.session?.conversationId ?? normalized.channel.principalId,
+            channelType: "telegram",
+            workflowType: detectWorkflowType(normalized.text),
+            sendFn: async (text) => {
+              if (normalized.replyTarget?.chatId) {
+                await sendTelegramMessage({ chatId: normalized.replyTarget.chatId, text });
+              }
+            }
+          });
+          pollingAckEventId = event.eventId;
+
+          const orchestratorResult = await pollForOrchestratorResult({
+            eventId: event.eventId,
+            traceId: pollingTrace.traceId,
+            correlationId: pollingTrace.correlationId
+          });
+
+          ackManager.finalizeRequest(event.eventId);
+          pollingAckEventId = null;
+
+          const replyText = orchestratorResult
+            ? extractResponseTextFromOrchestratorResult(orchestratorResult)
+            : "I received your message, but I could not produce a response in time.";
+
+          if (normalized.replyTarget?.chatId) {
+            await sendTelegramMessage({ chatId: normalized.replyTarget.chatId, text: replyText });
+            console.log(
+              JSON.stringify({
+                timestamp: new Date().toISOString(),
+                level: "info",
+                service: "ingress-service",
+                message: "Telegram polling reply delivered",
+                traceId: pollingTrace.traceId,
+                correlationId: pollingTrace.correlationId,
+                eventId: event.eventId,
+                chatId: normalized.replyTarget.chatId
+              })
+            );
+          }
+        } catch (error) {
+          if (pollingAckEventId !== null) {
+            ackManager.cancelRequest(pollingAckEventId, "polling_handler_error");
+          }
+          console.error(
+            JSON.stringify({
+              timestamp: new Date().toISOString(),
+              level: "error",
+              service: "ingress-service",
+              message: "Telegram polling update handling failed",
+              traceId: pollingTrace.traceId,
+              correlationId: pollingTrace.correlationId,
+              error: error instanceof Error ? error.message : "unknown"
             })
           );
         }
@@ -383,7 +427,7 @@ async function main(): Promise<void> {
             timestamp: new Date().toISOString(),
             level: "error",
             service: "ingress-service",
-            message: "Telegram polling update handling failed",
+            message: "Telegram polling update pre-processing failed",
             traceId: pollingTrace.traceId,
             correlationId: pollingTrace.correlationId,
             error: error instanceof Error ? error.message : "unknown"
@@ -659,11 +703,23 @@ async function main(): Promise<void> {
           normalized: parsed.normalized,
           trace
         });
+        ackManager.startRequest({
+          requestId: event.eventId,
+          sessionId: parsed.normalized.session?.conversationId ?? parsed.normalized.channel.principalId,
+          channelType: "telegram",
+          workflowType: detectWorkflowType(parsed.normalized.text),
+          sendFn: async (text) => {
+            if (parsed.normalized.replyTarget?.chatId) {
+              await sendTelegramMessage({ chatId: parsed.normalized.replyTarget.chatId, text });
+            }
+          }
+        });
         const orchestratorResult = await pollForOrchestratorResult({
           eventId: event.eventId,
           traceId: trace.traceId,
           correlationId: trace.correlationId
         });
+        ackManager.finalizeRequest(event.eventId);
         const replyText = orchestratorResult
           ? extractResponseTextFromOrchestratorResult(orchestratorResult)
           : "I received your message, but I could not produce a response in time.";
@@ -741,11 +797,27 @@ async function main(): Promise<void> {
           normalized: parsed.normalized,
           trace
         });
+        ackManager.startRequest({
+          requestId: event.eventId,
+          sessionId: parsed.normalized.session?.conversationId ?? parsed.normalized.channel.principalId,
+          channelType: "slack",
+          workflowType: detectWorkflowType(parsed.normalized.text),
+          sendFn: async (text) => {
+            if (parsed.normalized.replyTarget?.channelId) {
+              await sendSlackMessage({
+                channelId: parsed.normalized.replyTarget.channelId,
+                text,
+                ...(parsed.normalized.replyTarget.threadId ? { threadId: parsed.normalized.replyTarget.threadId } : {})
+              });
+            }
+          }
+        });
         const orchestratorResult = await pollForOrchestratorResult({
           eventId: event.eventId,
           traceId: trace.traceId,
           correlationId: trace.correlationId
         });
+        ackManager.finalizeRequest(event.eventId);
         if (orchestratorResult && parsed.normalized.replyTarget?.channelId) {
           await sendSlackMessage({
             channelId: parsed.normalized.replyTarget.channelId,

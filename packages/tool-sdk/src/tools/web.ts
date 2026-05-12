@@ -404,8 +404,8 @@ const gmailCreateDraftSpec: BuiltInToolSpec = {
     provider: "manasvi-core",
     type: "adapter",
     actionClass: "write",
-    sideEffectClass: "internal_side_effect",
-    mutability: "write",
+    sideEffectClass: "mutating",
+    mutability: "mutating",
     capabilities: gmailWriteCapabilities,
     resourceClassesTouched: ["service-endpoint"],
     inputSchema: jsonSchemaObject(["to", "subject", "body"], {
@@ -484,7 +484,7 @@ const gmailSendMessageSpec: BuiltInToolSpec = {
     type: "adapter",
     actionClass: "execute",
     sideEffectClass: "external_side_effect",
-    mutability: "write",
+    mutability: "mutating",
     capabilities: gmailSendCapabilities,
     resourceClassesTouched: ["service-endpoint"],
     inputSchema: jsonSchemaObject(["to", "subject", "body"], {
@@ -510,7 +510,7 @@ const gmailSendMessageSpec: BuiltInToolSpec = {
       policyActionClass: "external-side-effect",
       resource: { resourceClass: "service-endpoint", resourceId: "integration:google:gmail" },
       requiresExplicitPolicy: true,
-      approvalHint: "always_require"
+      approvalHint: "must_require"
     },
     trustNotes: ["Sending email is irreversible and reaches real people.", "Always requires approval. Never auto-send.", "Requires gmail.send scope."],
     tags: ["gmail", "google", "write", "send", "integration", "approval-required"],
@@ -538,8 +538,8 @@ const gmailArchiveMessageSpec: BuiltInToolSpec = {
     provider: "manasvi-core",
     type: "adapter",
     actionClass: "write",
-    sideEffectClass: "internal_side_effect",
-    mutability: "write",
+    sideEffectClass: "mutating",
+    mutability: "mutating",
     capabilities: gmailModifyCapabilities,
     resourceClassesTouched: ["service-endpoint"],
     inputSchema: jsonSchemaObject(["messageId"], {

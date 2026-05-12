@@ -35,7 +35,13 @@ const ingressConfigSchema = baseServiceConfigSchema.extend({
   replyPollTimeoutMs: z.number().int().positive().max(120000).default(12000),
   replyPollIntervalMs: z.number().int().positive().max(5000).default(300),
   slackSigningSecret: z.string().min(1).optional(),
-  slackBotToken: z.string().min(1).optional()
+  slackBotToken: z.string().min(1).optional(),
+  /** Delayed acknowledgement — send one short ack if final response is not ready within ackDelayMs. */
+  ackEnabled: z.boolean().default(true),
+  /** Milliseconds before ack is sent when no final response is ready. Default: 2000. */
+  ackDelayMs: z.number().int().positive().max(30000).default(2000),
+  /** Use contextual ack messages when workflow type is known. */
+  ackContextualEnabled: z.boolean().default(true)
 });
 
 export type IngressServiceConfig = z.infer<typeof ingressConfigSchema>;
@@ -102,7 +108,10 @@ export async function loadIngressServiceConfig(): Promise<IngressServiceConfig> 
       replyPollTimeoutMs: Number(env.REPLY_POLL_TIMEOUT_MS ?? env.TELEGRAM_POLL_TIMEOUT_MS ?? 12000),
       replyPollIntervalMs: Number(env.REPLY_POLL_INTERVAL_MS ?? env.TELEGRAM_POLL_INTERVAL_MS ?? 300),
       slackSigningSecret: await secrets.optional("SLACK_SIGNING_SECRET"),
-      slackBotToken: await secrets.optional("SLACK_BOT_TOKEN")
+      slackBotToken: await secrets.optional("SLACK_BOT_TOKEN"),
+      ackEnabled: env.ACK_ENABLED !== "false",
+      ackDelayMs: Number(env.ACK_DELAY_MS ?? 2000),
+      ackContextualEnabled: env.ACK_CONTEXTUAL_ENABLED !== "false"
     })
   });
 }
