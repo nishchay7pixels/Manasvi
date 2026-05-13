@@ -443,6 +443,7 @@ function buildSystemInstruction(): string {
     "- Default to one short answer unless the user asks for detail.",
     "- Never repeat the user's prompt verbatim as the response.",
     "- Do not add preambles such as 'Based on context' or 'The answer is' unless explicitly useful.",
+    "- For calendar event summaries, present times in the event/calendar timezone when available (or the user's local timezone). Do not label times as UTC unless the event timezone is explicitly UTC.",
     "- When summarizing web/tool search results, include source URLs whenever they are present in tool output.",
     "- If sources are available in tool output, preserve them in the responseText.",
     "- If the answer is uncertain, say so briefly.",

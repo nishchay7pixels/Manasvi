@@ -89,20 +89,23 @@ export async function fetchIntegrationAccounts(): Promise<IntegrationAccount[]> 
   return data?.accounts ?? [];
 }
 
-export async function startGoogleConnectFlow(mode?: "read" | "write" | "calendar" | "full"): Promise<{ authorizeUrl: string } | null> {
+export async function startGoogleConnectFlow(mode?: "read" | "write" | "calendar" | "calendar-write" | "full"): Promise<{ authorizeUrl: string } | null> {
   const baseScopes = ["openid", "email", "profile", "https://www.googleapis.com/auth/gmail.readonly"];
   const writeScopes = [
     "https://www.googleapis.com/auth/gmail.compose",
     "https://www.googleapis.com/auth/gmail.send",
     "https://www.googleapis.com/auth/gmail.modify",
   ];
-  const calendarScopes = ["https://www.googleapis.com/auth/calendar.readonly"];
+  const calendarReadScopes = ["https://www.googleapis.com/auth/calendar.readonly"];
+  const calendarWriteScopes = ["https://www.googleapis.com/auth/calendar"];
   const isWrite = mode === "write" || mode === "full";
+  const isCalendarWrite = mode === "calendar-write" || mode === "full";
   const isCalendar = mode === "calendar" || mode === "full";
   const scopes = [
     ...baseScopes,
     ...(isWrite ? writeScopes : []),
-    ...(isCalendar ? calendarScopes : []),
+    // calendar write scope supersedes read-only scope
+    ...(isCalendarWrite ? calendarWriteScopes : isCalendar ? calendarReadScopes : []),
   ];
   return post<{ authorizeUrl: string }>("/api/gateway/integrations/google/connect/start", { scopes });
 }

@@ -644,6 +644,220 @@
           }
         },
         {
+          "ruleId": "allow-orchestrator-write-google-calendar-integration",
+          "description": "Allow orchestrator to perform policy-scoped Calendar write integration checks (create, update, delete events) against connected accounts.",
+          "priority": 688,
+          "effect": "allow",
+          "enabled": true,
+          "selectors": {
+            "callerTypes": ["service"],
+            "actorTypes": ["human_user", "agent", "service"],
+            "callerIds": ["service:orchestrator-service"],
+            "actorIds": []
+          },
+          "actionClasses": ["write"],
+          "resourceClasses": ["service-endpoint"],
+          "resourceIdPatterns": ["integration:google:calendar"],
+          "requiredCapabilities": [],
+          "conditions": {
+            "requireTenantMatch": true,
+            "requireWorkspaceMatch": true,
+            "allowSkipApproval": false,
+            "maxRiskLevel": "high"
+          },
+          "metadata": {
+            "highRiskCoverage": true,
+            "tags": ["integrations", "google", "calendar", "write"]
+          }
+        },
+        {
+          "ruleId": "allow-orchestrator-calendar-attendee-external-side-effect",
+          "description": "Allow orchestrator to initiate attendee-facing Calendar write checks (create_with_attendees, update_attendees) as external-side-effect after approval handling.",
+          "priority": 689,
+          "effect": "allow",
+          "enabled": true,
+          "selectors": {
+            "callerTypes": ["service"],
+            "actorTypes": ["human_user", "agent", "service"],
+            "callerIds": ["service:orchestrator-service"],
+            "actorIds": []
+          },
+          "actionClasses": ["external-side-effect"],
+          "resourceClasses": ["service-endpoint"],
+          "resourceIdPatterns": ["integration:google:calendar"],
+          "requiredCapabilities": [],
+          "conditions": {
+            "requireTenantMatch": true,
+            "requireWorkspaceMatch": true,
+            "allowSkipApproval": false,
+            "maxRiskLevel": "high"
+          },
+          "metadata": {
+            "highRiskCoverage": true,
+            "tags": ["integrations", "google", "calendar", "write", "attendees"]
+          }
+        },
+        {
+          "ruleId": "allow-api-gateway-write-google-calendar-integration-account",
+          "description": "Allow api-gateway to evaluate and execute Calendar write actions (create, update, delete) against connected Google integration account resources.",
+          "priority": 690,
+          "effect": "allow",
+          "enabled": true,
+          "selectors": {
+            "callerTypes": ["service"],
+            "actorTypes": ["human_user", "agent", "service"],
+            "callerIds": ["service:api-gateway"],
+            "actorIds": []
+          },
+          "actionClasses": ["write"],
+          "resourceClasses": ["service-endpoint"],
+          "resourceIdPatterns": ["integration:google:*"],
+          "requiredCapabilities": [],
+          "conditions": {
+            "requireTenantMatch": true,
+            "requireWorkspaceMatch": true,
+            "allowSkipApproval": false,
+            "maxRiskLevel": "high"
+          },
+          "metadata": {
+            "highRiskCoverage": true,
+            "tags": ["integrations", "google", "calendar", "write", "api-gateway"]
+          }
+        },
+        {
+          "ruleId": "allow-api-gateway-calendar-attendee-external-side-effect",
+          "description": "Allow api-gateway to execute attendee-facing Calendar write policy checks as external-side-effect after upstream approval handling.",
+          "priority": 691,
+          "effect": "allow",
+          "enabled": true,
+          "selectors": {
+            "callerTypes": ["service"],
+            "actorTypes": ["human_user", "agent", "service"],
+            "callerIds": ["service:api-gateway"],
+            "actorIds": []
+          },
+          "actionClasses": ["external-side-effect"],
+          "resourceClasses": ["service-endpoint"],
+          "resourceIdPatterns": ["integration:google:*"],
+          "requiredCapabilities": [],
+          "conditions": {
+            "requireTenantMatch": true,
+            "requireWorkspaceMatch": true,
+            "allowSkipApproval": false,
+            "maxRiskLevel": "high"
+          },
+          "metadata": {
+            "highRiskCoverage": true,
+            "tags": ["integrations", "google", "calendar", "write", "attendees", "api-gateway"]
+          }
+        },
+        {
+          "ruleId": "allow-execution-phase-calendar-write-via-orchestrator",
+          "description": "Allow execution-phase Calendar write checks when orchestrator is both caller and actor during delegated execution.",
+          "priority": 692,
+          "effect": "allow",
+          "enabled": true,
+          "selectors": {
+            "callerTypes": ["service"],
+            "actorTypes": ["service"],
+            "callerIds": ["service:orchestrator-service"],
+            "actorIds": ["service:orchestrator-service"]
+          },
+          "actionClasses": ["write"],
+          "resourceClasses": ["service-endpoint"],
+          "resourceIdPatterns": ["integration:google:calendar"],
+          "requiredCapabilities": [],
+          "conditions": {
+            "requireTenantMatch": false,
+            "requireWorkspaceMatch": false,
+            "allowSkipApproval": false,
+            "maxRiskLevel": "high"
+          },
+          "metadata": {
+            "highRiskCoverage": true,
+            "tags": ["integrations", "google", "calendar", "write", "execution-phase"]
+          }
+        },
+        {
+          "ruleId": "allow-execution-phase-calendar-attendee-side-effect-via-orchestrator",
+          "description": "Allow execution-phase Calendar attendee-facing write checks when orchestrator is caller+actor and approval has already been granted upstream.",
+          "priority": 693,
+          "effect": "allow",
+          "enabled": true,
+          "selectors": {
+            "callerTypes": ["service"],
+            "actorTypes": ["service"],
+            "callerIds": ["service:orchestrator-service"],
+            "actorIds": ["service:orchestrator-service"]
+          },
+          "actionClasses": ["external-side-effect"],
+          "resourceClasses": ["service-endpoint"],
+          "resourceIdPatterns": ["integration:google:calendar"],
+          "requiredCapabilities": [],
+          "conditions": {
+            "requireTenantMatch": false,
+            "requireWorkspaceMatch": false,
+            "allowSkipApproval": false,
+            "maxRiskLevel": "high"
+          },
+          "metadata": {
+            "highRiskCoverage": true,
+            "tags": ["integrations", "google", "calendar", "write", "attendees", "execution-phase"]
+          }
+        },
+        {
+          "ruleId": "require-approval-orchestrator-calendar-attendee-facing",
+          "description": "Calendar actions that send invites or updates to attendees always require approval. These are external side effects that reach real people and cannot be undone.",
+          "priority": 760,
+          "effect": "require_approval",
+          "enabled": true,
+          "selectors": {
+            "callerTypes": ["service"],
+            "actorTypes": ["human_user", "agent", "service"],
+            "callerIds": ["service:orchestrator-service"],
+            "actorIds": []
+          },
+          "actionClasses": ["external-side-effect"],
+          "resourceClasses": ["service-endpoint"],
+          "resourceIdPatterns": ["integration:google:calendar"],
+          "requiredCapabilities": [],
+          "conditions": {
+            "requireTenantMatch": true,
+            "requireWorkspaceMatch": true,
+            "allowSkipApproval": false
+          },
+          "metadata": {
+            "highRiskCoverage": true,
+            "tags": ["integrations", "google", "calendar", "write", "attendees", "approval"]
+          }
+        },
+        {
+          "ruleId": "require-approval-orchestrator-calendar-delete-event",
+          "description": "Calendar event deletion always requires approval. Deleted events cannot be recovered and attendees may be notified.",
+          "priority": 761,
+          "effect": "require_approval",
+          "enabled": true,
+          "selectors": {
+            "callerTypes": ["service"],
+            "actorTypes": ["human_user", "agent", "service"],
+            "callerIds": ["service:orchestrator-service"],
+            "actorIds": []
+          },
+          "actionClasses": ["write"],
+          "resourceClasses": ["service-endpoint"],
+          "resourceIdPatterns": ["integration:google:calendar"],
+          "requiredCapabilities": ["calendar.delete_event"],
+          "conditions": {
+            "requireTenantMatch": true,
+            "requireWorkspaceMatch": true,
+            "allowSkipApproval": false
+          },
+          "metadata": {
+            "highRiskCoverage": true,
+            "tags": ["integrations", "google", "calendar", "delete", "approval"]
+          }
+        },
+        {
           "ruleId": "allow-orchestrator-fs1-read-tools",
           "description": "Allow orchestrator to invoke FS1 safe read-only filesystem tools (fs-read-file, fs-list-directory, fs-stat, fs-search-files). All paths are workspace-sandboxed at the runtime layer.",
           "priority": 679,

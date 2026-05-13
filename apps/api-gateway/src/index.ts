@@ -16,6 +16,7 @@ import {
   GmailReadConnector,
   GmailWriteConnector,
   CalendarReadConnector,
+  CalendarWriteConnector,
   IntegrationAccountStore,
   OAuthFlowService,
   OAuthStateStore,
@@ -60,6 +61,11 @@ const googlePermissionCheckSchema = z.object({
     "gmail.message.label",
     "calendar.events.read",
     "calendar.events.write",
+    "calendar.event.create",
+    "calendar.event.create_with_attendees",
+    "calendar.event.update",
+    "calendar.event.update_attendees",
+    "calendar.event.delete",
     "drive.files.read",
     "drive.files.write",
     "docs.document.read",
@@ -189,7 +195,9 @@ const calendarGetEventSchema = calendarReadBaseSchema.extend({
 
 const calendarTodaySchema = calendarReadBaseSchema.extend({
   calendarId: z.string().min(1).default("primary"),
-  timezone: z.string().optional()
+  timezone: z.string().optional(),
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  dayOffset: z.number().int().min(-3650).max(3650).optional()
 });
 
 const calendarUpcomingSchema = calendarReadBaseSchema.extend({
@@ -202,6 +210,69 @@ const calendarAvailabilitySchema = calendarReadBaseSchema.extend({
   timeMin: z.string().min(1),
   timeMax: z.string().min(1),
   checkTimeIso: z.string().optional()
+});
+
+const calendarWriteBaseSchema = z.object({
+  actorPrincipalId: z.string().min(1).default("user:local-operator"),
+  actorPrincipalType: z.preprocess(
+    (value) => (value === "user" ? "human_user" : value),
+    z.enum(["human_user", "agent", "plugin"])
+  ).default("human_user"),
+  tenantId: z.string().min(1).default("tenant-local"),
+  workspaceId: z.string().min(1).default("workspace-local"),
+  approvalState: z.enum(["approved", "not_required"]).optional(),
+  pluginId: z.string().min(1).optional()
+});
+
+const calendarAttendeeSchema = z.object({
+  email: z.string().email(),
+  displayName: z.string().optional()
+});
+
+const calendarReminderSchema = z.object({
+  useDefault: z.boolean().optional(),
+  overrides: z.array(z.object({
+    method: z.enum(["email", "popup"]),
+    minutes: z.number().int().nonnegative()
+  })).optional()
+});
+
+const calendarCreateEventSchema = calendarWriteBaseSchema.extend({
+  calendarId: z.string().min(1).default("primary"),
+  summary: z.string().min(1).max(500),
+  startDateTime: z.string().min(1),
+  endDateTime: z.string().min(1),
+  timeZone: z.string().optional(),
+  description: z.string().max(8000).optional(),
+  location: z.string().max(500).optional(),
+  attendees: z.array(calendarAttendeeSchema).optional(),
+  reminders: calendarReminderSchema.optional(),
+  visibility: z.enum(["default", "public", "private", "confidential"]).optional(),
+  guestsCanModify: z.boolean().optional(),
+  guestsCanInviteOthers: z.boolean().optional(),
+  sendNotifications: z.boolean().optional()
+});
+
+const calendarUpdateEventSchema = calendarWriteBaseSchema.extend({
+  calendarId: z.string().min(1).default("primary"),
+  eventId: z.string().min(1),
+  summary: z.string().min(1).max(500).optional(),
+  description: z.string().max(8000).optional(),
+  location: z.string().max(500).optional(),
+  startDateTime: z.string().optional(),
+  endDateTime: z.string().optional(),
+  timeZone: z.string().optional(),
+  attendeesToAdd: z.array(calendarAttendeeSchema).optional(),
+  attendeesToRemove: z.array(z.string().email()).optional(),
+  reminders: calendarReminderSchema.optional(),
+  visibility: z.enum(["default", "public", "private", "confidential"]).optional(),
+  sendNotifications: z.boolean().optional()
+});
+
+const calendarDeleteEventSchema = calendarWriteBaseSchema.extend({
+  calendarId: z.string().min(1).default("primary"),
+  eventId: z.string().min(1),
+  sendNotifications: z.boolean().optional()
 });
 
 async function main(): Promise<void> {
@@ -253,6 +324,7 @@ async function main(): Promise<void> {
   const gmail = new GmailReadConnector(new FetchGmailApiClient());
   const gmailWrite = new GmailWriteConnector(new FetchGmailApiClient());
   const calendar = new CalendarReadConnector(new FetchCalendarApiClient());
+  const calendarWrite = new CalendarWriteConnector(new FetchCalendarApiClient());
 
   // Maps Zod-parsed recipients (name?: string | undefined) to GmailRecipient (exactOptionalPropertyTypes)
   const toGmailRecipients = (list: Array<{ email: string; name?: string | undefined }>): GmailRecipient[] =>
@@ -1529,11 +1601,24 @@ async function main(): Promise<void> {
           producingService: "api-gateway", eventType: "tool.invoked", severity: "info",
           traceId: trace.traceId, correlationId: trace.correlationId,
           reasonCodes: ["calendar_today_requested"],
-          payload: { providerId: "google", calendarId: input.calendarId, timezone: input.timezone ?? "UTC" }
+          payload: {
+            providerId: "google",
+            calendarId: input.calendarId,
+            timezone: input.timezone ?? "local",
+            date: input.date ?? null,
+            dayOffset: input.dayOffset ?? 0
+          }
         });
         let result;
         try {
-          result = await calendar.getTodayEvents(gate.accessToken, gate.account, input.calendarId, input.timezone);
+          result = await calendar.getTodayEvents(
+            gate.accessToken,
+            gate.account,
+            input.calendarId,
+            input.timezone,
+            input.date,
+            input.dayOffset
+          );
         } catch (error) {
           if (handleCalendarUpstreamError(error)) return true;
           throw error;
@@ -1644,6 +1729,251 @@ async function main(): Promise<void> {
           event,
           ingestionRecord: calendar.toIngressRecord(event)
         });
+        return true;
+      }
+
+      // ── Google Calendar write helpers ─────────────────────────────────────────
+
+      const runCalendarWritePermission = async (
+        input: { actorPrincipalId: string; actorPrincipalType: "human_user" | "agent" | "plugin"; tenantId: string; workspaceId: string; approvalState?: "approved" | "not_required" | undefined; pluginId?: string | undefined },
+        actionId: "calendar.event.create" | "calendar.event.create_with_attendees" | "calendar.event.update" | "calendar.event.update_attendees" | "calendar.event.delete"
+      ) => {
+        let account = await accountStore.getByProvider("google");
+        const actor = {
+          principalId: input.actorPrincipalId,
+          principalType: input.actorPrincipalType,
+          tenantId: input.tenantId,
+          workspaceId: input.workspaceId
+        } as const;
+        const caller = input.pluginId
+          ? ({ principalId: input.pluginId, principalType: "plugin", tenantId: input.tenantId, workspaceId: input.workspaceId } as const)
+          : ({ principalId: "service:api-gateway", principalType: "service", tenantId: input.tenantId, workspaceId: input.workspaceId } as const);
+        const principalContext = { caller, actor, tenantId: input.tenantId, workspaceId: input.workspaceId, scopes: [] as string[], authnStrength: "strong" as const, authenticated: true };
+        const permissionInput: Parameters<typeof checkGoogleActionPermission>[0] = {
+          account, actionId, principalContext, actor, caller,
+          tenantId: input.tenantId, workspaceId: input.workspaceId,
+          approvalPresent: input.approvalState === "approved",
+          trace: { traceId: trace.traceId, correlationId: trace.correlationId },
+          policyClient
+        };
+        if (input.pluginId) permissionInput.pluginId = input.pluginId;
+
+        const permission = await checkGoogleActionPermission(permissionInput);
+        const auditInput: Parameters<typeof buildGooglePermissionAuditEvent>[0] = {
+          traceId: trace.traceId, correlationId: trace.correlationId,
+          actor, caller, tenantId: input.tenantId, workspaceId: input.workspaceId,
+          ...(account?.accountId ? { accountId: account.accountId } : {}),
+          ...(input.pluginId ? { pluginId: input.pluginId } : {}),
+          result: permission
+        };
+        audit.emit(buildGooglePermissionAuditEvent(auditInput));
+
+        if (permission.decision === "deny") {
+          respondJson(res, 403, { schemaVersion: CONTRACT_SCHEMA_VERSION, providerId: "google", connector: "calendar-write", permission });
+          return { allowed: false as const, account: null };
+        }
+        if (permission.decision === "require_approval" && input.approvalState !== "approved") {
+          respondJson(res, 202, {
+            schemaVersion: CONTRACT_SCHEMA_VERSION, providerId: "google", connector: "calendar-write",
+            permission, approvalRequired: true, approvalReason: permission.reasonCodes,
+            approvalReview: {
+              actionId,
+              serviceFamily: "calendar",
+              approvalSensitivity: permission.action.approvalSensitivity,
+              requiresExplicitApproval: true
+            }
+          });
+          return { allowed: false as const, account: null };
+        }
+        if (!account?.tokenReference) {
+          respondJson(res, 400, { schemaVersion: CONTRACT_SCHEMA_VERSION, error: "Google integration token reference missing" });
+          return { allowed: false as const, account: null };
+        }
+        const tokenExpired =
+          typeof account.tokenExpiresAt === "string" &&
+          Number.isFinite(Date.parse(account.tokenExpiresAt)) &&
+          Date.parse(account.tokenExpiresAt) <= Date.now();
+        if (tokenExpired && account.refreshTokenReference) {
+          try { account = await oauth.refreshGoogle(account); }
+          catch (error) { await accountStore.setStatus(account.accountId, "refresh_failed", error instanceof Error ? error.message : "unknown"); }
+        }
+        if (!account.tokenReference) {
+          respondJson(res, 400, { schemaVersion: CONTRACT_SCHEMA_VERSION, error: "Google integration token reference missing" });
+          return { allowed: false as const, account: null };
+        }
+        const token = await tokenVault.get(account.tokenReference);
+        if (!token?.accessToken) {
+          respondJson(res, 400, { schemaVersion: CONTRACT_SCHEMA_VERSION, error: "Google access token not available" });
+          return { allowed: false as const, account: null };
+        }
+        return { allowed: true as const, account, accessToken: token.accessToken };
+      };
+
+      const handleCalendarWriteUpstreamError = (error: unknown): boolean => {
+        const message = error instanceof Error ? error.message : "unknown";
+        const refreshMatched = message.match(/OAuth token refresh failed \((\d+)\)/);
+        if (refreshMatched) {
+          respondJson(res, 401, {
+            schemaVersion: CONTRACT_SCHEMA_VERSION, providerId: "google", connector: "calendar-write",
+            error: { code: "GOOGLE_REAUTH_REQUIRED", message, upstreamStatus: Number(refreshMatched[1]), remediation: "Reconnect Google integration with calendar write scope." }
+          });
+          return true;
+        }
+        const matched = message.match(/Calendar API write failed \((\d+)\)/);
+        if (!matched) return false;
+        const upstreamStatus = Number(matched[1]);
+        const isAuthz = upstreamStatus === 401 || upstreamStatus === 403;
+        respondJson(res, isAuthz ? 403 : 502, {
+          schemaVersion: CONTRACT_SCHEMA_VERSION, providerId: "google", connector: "calendar-write",
+          error: { code: isAuthz ? "CALENDAR_WRITE_AUTHORIZATION_FAILED" : "CALENDAR_WRITE_UPSTREAM_ERROR", message, upstreamStatus }
+        });
+        return true;
+      };
+
+      // ── POST /integrations/google/calendar/events/create ──────────────────────
+      if (req.method === "POST" && reqUrl.pathname === "/integrations/google/calendar/events/create") {
+        const input = calendarCreateEventSchema.parse(await readJsonBody(req));
+        const hasAttendees = Boolean(input.attendees && input.attendees.length > 0);
+        const actionId = hasAttendees ? "calendar.event.create_with_attendees" : "calendar.event.create";
+        const gate = await runCalendarWritePermission(input, actionId);
+        if (!gate.allowed) return true;
+        audit.emit({
+          producingService: "api-gateway", eventType: "tool.invoked", severity: "info",
+          traceId: trace.traceId, correlationId: trace.correlationId,
+          reasonCodes: ["calendar_create_event_requested"],
+          payload: {
+            providerId: "google", actionId,
+            calendarId: input.calendarId, summary: input.summary,
+            hasAttendees, attendeeCount: input.attendees?.length ?? 0,
+            startDateTime: input.startDateTime, endDateTime: input.endDateTime
+          }
+        });
+        let result;
+        try {
+          result = await calendarWrite.createEvent(gate.accessToken, gate.account, {
+            calendarId: input.calendarId,
+            summary: input.summary,
+            startDateTime: input.startDateTime,
+            endDateTime: input.endDateTime,
+            ...(input.timeZone ? { timeZone: input.timeZone } : {}),
+            ...(input.description ? { description: input.description } : {}),
+            ...(input.location ? { location: input.location } : {}),
+            ...(input.attendees ? { attendees: input.attendees.map((a) => a.displayName !== undefined ? { email: a.email, displayName: a.displayName } : { email: a.email }) } : {}),
+            ...(input.reminders ? { reminders: input.reminders } : {}),
+            ...(input.visibility ? { visibility: input.visibility } : {}),
+            ...(typeof input.guestsCanModify === "boolean" ? { guestsCanModify: input.guestsCanModify } : {}),
+            ...(typeof input.guestsCanInviteOthers === "boolean" ? { guestsCanInviteOthers: input.guestsCanInviteOthers } : {}),
+            ...(typeof input.sendNotifications === "boolean" ? { sendNotifications: input.sendNotifications } : {})
+          });
+        } catch (error) {
+          audit.emit({ producingService: "api-gateway", eventType: "tool.failed", severity: "warn", traceId: trace.traceId, correlationId: trace.correlationId, reasonCodes: ["calendar_create_event_failed"], payload: { providerId: "google", error: error instanceof Error ? error.message.slice(0, 200) : "unknown" } });
+          if (handleCalendarWriteUpstreamError(error)) return true;
+          throw error;
+        }
+        audit.emit({
+          producingService: "api-gateway", eventType: "tool.completed", severity: "info",
+          traceId: trace.traceId, correlationId: trace.correlationId,
+          reasonCodes: ["calendar_create_event_completed"],
+          resource: { resourceClass: "integration-account", resourceId: gate.account.accountId },
+          payload: {
+            providerId: "google", actionId,
+            eventId: result.eventId, calendarId: result.calendarId,
+            summary: result.summary, startIso: result.startIso, endIso: result.endIso,
+            hasAttendees: result.hasAttendees, attendeeCount: result.attendeeCount,
+            hasConflict: result.conflictCheck?.hasConflict ?? false
+          }
+        });
+        respondJson(res, 201, { schemaVersion: CONTRACT_SCHEMA_VERSION, providerId: "google", connector: "calendar-write", result });
+        return true;
+      }
+
+      // ── POST /integrations/google/calendar/events/update ──────────────────────
+      if (req.method === "POST" && reqUrl.pathname === "/integrations/google/calendar/events/update") {
+        const input = calendarUpdateEventSchema.parse(await readJsonBody(req));
+        const hasAttendeeMutation = Boolean(input.attendeesToAdd?.length || input.attendeesToRemove?.length);
+        const actionId = hasAttendeeMutation ? "calendar.event.update_attendees" : "calendar.event.update";
+        const gate = await runCalendarWritePermission(input, actionId);
+        if (!gate.allowed) return true;
+        audit.emit({
+          producingService: "api-gateway", eventType: "tool.invoked", severity: "info",
+          traceId: trace.traceId, correlationId: trace.correlationId,
+          reasonCodes: ["calendar_update_event_requested"],
+          payload: {
+            providerId: "google", actionId,
+            calendarId: input.calendarId, eventId: input.eventId,
+            hasTimeChange: Boolean(input.startDateTime || input.endDateTime),
+            hasAttendeeMutation
+          }
+        });
+        let result;
+        try {
+          result = await calendarWrite.updateEvent(gate.accessToken, gate.account, {
+            calendarId: input.calendarId,
+            eventId: input.eventId,
+            ...(input.summary ? { summary: input.summary } : {}),
+            ...(input.description !== undefined ? { description: input.description } : {}),
+            ...(input.location !== undefined ? { location: input.location } : {}),
+            ...(input.startDateTime ? { startDateTime: input.startDateTime } : {}),
+            ...(input.endDateTime ? { endDateTime: input.endDateTime } : {}),
+            ...(input.timeZone ? { timeZone: input.timeZone } : {}),
+            ...(input.attendeesToAdd ? { attendeesToAdd: input.attendeesToAdd.map((a) => a.displayName !== undefined ? { email: a.email, displayName: a.displayName } : { email: a.email }) } : {}),
+            ...(input.attendeesToRemove ? { attendeesToRemove: input.attendeesToRemove } : {}),
+            ...(input.reminders ? { reminders: input.reminders } : {}),
+            ...(input.visibility ? { visibility: input.visibility } : {}),
+            ...(typeof input.sendNotifications === "boolean" ? { sendNotifications: input.sendNotifications } : {})
+          });
+        } catch (error) {
+          audit.emit({ producingService: "api-gateway", eventType: "tool.failed", severity: "warn", traceId: trace.traceId, correlationId: trace.correlationId, reasonCodes: ["calendar_update_event_failed"], payload: { providerId: "google", error: error instanceof Error ? error.message.slice(0, 200) : "unknown" } });
+          if (handleCalendarWriteUpstreamError(error)) return true;
+          throw error;
+        }
+        audit.emit({
+          producingService: "api-gateway", eventType: "tool.completed", severity: "info",
+          traceId: trace.traceId, correlationId: trace.correlationId,
+          reasonCodes: ["calendar_update_event_completed"],
+          resource: { resourceClass: "integration-account", resourceId: gate.account.accountId },
+          payload: {
+            providerId: "google", actionId,
+            eventId: result.eventId, calendarId: result.calendarId,
+            summary: result.summary, startIso: result.startIso, endIso: result.endIso,
+            hasConflict: result.conflictCheck?.hasConflict ?? false
+          }
+        });
+        respondJson(res, 200, { schemaVersion: CONTRACT_SCHEMA_VERSION, providerId: "google", connector: "calendar-write", result });
+        return true;
+      }
+
+      // ── POST /integrations/google/calendar/events/delete ──────────────────────
+      if (req.method === "POST" && reqUrl.pathname === "/integrations/google/calendar/events/delete") {
+        const input = calendarDeleteEventSchema.parse(await readJsonBody(req));
+        const gate = await runCalendarWritePermission(input, "calendar.event.delete");
+        if (!gate.allowed) return true;
+        audit.emit({
+          producingService: "api-gateway", eventType: "tool.invoked", severity: "info",
+          traceId: trace.traceId, correlationId: trace.correlationId,
+          reasonCodes: ["calendar_delete_event_requested"],
+          payload: { providerId: "google", actionId: "calendar.event.delete", calendarId: input.calendarId, eventId: input.eventId }
+        });
+        let result;
+        try {
+          result = await calendarWrite.deleteEvent(gate.accessToken, gate.account, {
+            calendarId: input.calendarId,
+            eventId: input.eventId,
+            ...(typeof input.sendNotifications === "boolean" ? { sendNotifications: input.sendNotifications } : {})
+          });
+        } catch (error) {
+          audit.emit({ producingService: "api-gateway", eventType: "tool.failed", severity: "warn", traceId: trace.traceId, correlationId: trace.correlationId, reasonCodes: ["calendar_delete_event_failed"], payload: { providerId: "google", error: error instanceof Error ? error.message.slice(0, 200) : "unknown" } });
+          if (handleCalendarWriteUpstreamError(error)) return true;
+          throw error;
+        }
+        audit.emit({
+          producingService: "api-gateway", eventType: "tool.completed", severity: "info",
+          traceId: trace.traceId, correlationId: trace.correlationId,
+          reasonCodes: ["calendar_delete_event_completed"],
+          resource: { resourceClass: "integration-account", resourceId: gate.account.accountId },
+          payload: { providerId: "google", actionId: "calendar.event.delete", eventId: result.eventId, calendarId: result.calendarId, deletedAt: result.deletedAt }
+        });
+        respondJson(res, 200, { schemaVersion: CONTRACT_SCHEMA_VERSION, providerId: "google", connector: "calendar-write", result });
         return true;
       }
 

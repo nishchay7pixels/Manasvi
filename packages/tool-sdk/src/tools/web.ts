@@ -760,7 +760,9 @@ const calendarListEventsSpec: BuiltInToolSpec = {
 
 const calendarTodayEventsInputSchema = z.object({
   calendarId: z.string().default("primary"),
-  timezone: z.string().optional()
+  timezone: z.string().optional(),
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  dayOffset: z.number().int().optional()
 });
 
 const calendarTodayEventsSpec: BuiltInToolSpec = {
@@ -769,12 +771,14 @@ const calendarTodayEventsSpec: BuiltInToolSpec = {
     toolId: "tool.calendar-get-today-events",
     name: "Calendar Get Today Events",
     description:
-      "Returns all events on the primary (or specified) Google Calendar for today. " +
-      "Timezone-aware: the 'today' window is computed in the given timezone (defaults to UTC). " +
-      "Use this to answer 'What's on my calendar today?' or 'What meetings do I have today?'",
+      "Returns all events for a date window on the primary (or specified) Google Calendar. " +
+      "Default behavior is 'today' in the given timezone (or local timezone). " +
+      "Also supports relative day offsets (for example tomorrow with dayOffset=1) and explicit date (YYYY-MM-DD).",
     inputSchema: jsonSchemaObject([], {
       calendarId: prop("Calendar ID to query. Defaults to 'primary'.", "string"),
-      timezone: prop("IANA timezone name for today's window (e.g. 'America/New_York'). Defaults to UTC.", "string")
+      timezone: prop("IANA timezone name for date window computation (e.g. 'America/New_York'). Defaults to local timezone.", "string"),
+      date: prop("Specific date in YYYY-MM-DD format. If provided, query that date in the given timezone.", "string"),
+      dayOffset: prop("Relative day offset from base date (today if no date provided). Example: 1=tomorrow, -1=yesterday.", "number")
     }),
     outputSchema: jsonSchemaObject(["events", "nextPageToken", "timeZone", "calendarId"], {
       events: prop("Events scheduled for today.", "array"),
@@ -889,6 +893,303 @@ const calendarCheckAvailabilitySpec: BuiltInToolSpec = {
   examples: []
 };
 
+// ── calendar write tools ──────────────────────────────────────────────────────
+
+const calendarWriteBaseManifest = {
+  schemaVersion: "1.0",
+  contractVersion: "1.0.0",
+  version: "1.0.0",
+  owner: "manasvi-platform",
+  provider: "manasvi-core",
+  type: "adapter",
+  actionClass: "write",
+  sideEffectClass: "mutating",
+  mutability: "mutating",
+  resourceClassesTouched: ["service-endpoint"],
+  tags: ["calendar", "google", "write", "integration"],
+  status: "enabled",
+  createdAt: now(),
+  updatedAt: now()
+} as const;
+
+// tool.calendar-create-event
+
+const calendarAttendeeInputSchema = z.object({
+  email: z.string().email(),
+  displayName: z.string().optional()
+});
+
+const calendarCreateEventInputSchema = z.object({
+  calendarId: z.string().default("primary"),
+  summary: z.string().min(1).max(500),
+  startDateTime: z.string().min(1),
+  endDateTime: z.string().min(1),
+  timeZone: z.string().optional(),
+  description: z.string().max(8000).optional(),
+  location: z.string().max(500).optional(),
+  attendees: z.array(calendarAttendeeInputSchema).optional(),
+  sendNotifications: z.boolean().optional(),
+  approvalState: z.enum(["approved", "not_required"]).optional()
+});
+
+const calendarWriteEventResultSchema = z.object({
+  eventId: z.string(),
+  calendarId: z.string(),
+  htmlLink: z.string().nullable(),
+  status: z.string(),
+  summary: z.string(),
+  startIso: z.string(),
+  endIso: z.string(),
+  attendeeCount: z.number().int().nonnegative(),
+  hasAttendees: z.boolean(),
+  actionId: z.string(),
+  conflictCheck: z.object({
+    hasConflict: z.boolean(),
+    conflictSeverity: z.enum(["none", "soft", "hard"]),
+    warning: z.string().nullable(),
+    conflicts: z.array(z.object({ start: z.string(), end: z.string() }))
+  }).nullable()
+});
+
+const calendarCreateEventSpec: BuiltInToolSpec = {
+  manifest: parseManifest({
+    ...calendarWriteBaseManifest,
+    toolId: "tool.calendar-create-event",
+    name: "Calendar Create Event",
+    description:
+      "Creates a new Google Calendar event. " +
+      "Supports simple self-blocking events ('block 4–5 PM tomorrow') and richer meetings with attendees. " +
+      "When attendees are specified, this is an attendee-facing action and requires approval. " +
+      "Conflict detection runs before creation — the result includes any detected conflicts. " +
+      "Self-only events use policy approval sensitivity; attendee-facing events always require explicit approval.",
+    capabilities: [
+      {
+        capabilityId: "integration.google.capability.calendar.create_event",
+        required: true,
+        scope: { tenantScoped: true, workspaceScoped: true, resourceClass: "service-endpoint" },
+        constraints: {}
+      }
+    ],
+    runtimeHints: {
+      defaultTimeoutMs: 20000,
+      defaultSandboxMode: "restricted_remote",
+      egressProfiles: ["default-allowlist"],
+      filesystemProfile: "none",
+      declaredSecretRefs: [],
+      requireExecutorPath: true,
+      approvalSensitive: true
+    },
+    policyBinding: {
+      policyActionClass: "write",
+      resource: { resourceClass: "service-endpoint", resourceId: "integration:google:calendar" },
+      requiresExplicitPolicy: true,
+      approvalHint: "required_for_attendee_facing"
+    },
+    trustNotes: [
+      "Calendar create is a mutating action. Event creation may send notifications to attendees.",
+      "Attendee-facing creation (with attendees list) always requires approval.",
+      "Self-only blocking events use policy-based approval sensitivity."
+    ],
+    inputSchema: jsonSchemaObject(["summary", "startDateTime", "endDateTime"], {
+      calendarId: prop("Calendar ID to create event on. Defaults to 'primary'.", "string"),
+      summary: prop("Event title/summary (required).", "string"),
+      startDateTime: prop("ISO-8601 event start datetime.", "string"),
+      endDateTime: prop("ISO-8601 event end datetime.", "string"),
+      timeZone: prop("IANA timezone for start/end. e.g. 'America/New_York'.", "string"),
+      description: prop("Event description or notes.", "string"),
+      location: prop("Event location.", "string"),
+      attendees: prop("List of attendees with email and optional display name.", "array"),
+      sendNotifications: prop("Whether to send notifications to attendees. Defaults to true when attendees present.", "boolean"),
+      approvalState: prop("Set to 'approved' when this action has been explicitly approved.", "string")
+    }),
+    outputSchema: jsonSchemaObject(["eventId", "calendarId", "summary", "startIso", "endIso", "actionId"], {
+      eventId: prop("Created event ID.", "string"),
+      calendarId: prop("Calendar the event was created on.", "string"),
+      htmlLink: prop("Google Calendar link to the event.", "string"),
+      status: prop("Event status (confirmed/tentative/cancelled).", "string"),
+      summary: prop("Event title.", "string"),
+      startIso: prop("ISO-8601 start.", "string"),
+      endIso: prop("ISO-8601 end.", "string"),
+      attendeeCount: prop("Number of attendees.", "number"),
+      hasAttendees: prop("True if event has attendees.", "boolean"),
+      actionId: prop("The resolved action ID (create or create_with_attendees).", "string"),
+      conflictCheck: prop("Conflict detection result for the proposed time window.", "object")
+    }),
+    runtimeBinding: { toolRef: "tool:calendar-create-event", operation: "calendar_create_event" }
+  }),
+  inputSchema: calendarCreateEventInputSchema,
+  outputSchema: calendarWriteEventResultSchema,
+  examples: []
+};
+
+// tool.calendar-update-event
+
+const calendarUpdateEventInputSchema = z.object({
+  calendarId: z.string().default("primary"),
+  eventId: z.string().min(1),
+  summary: z.string().min(1).max(500).optional(),
+  description: z.string().max(8000).optional(),
+  location: z.string().max(500).optional(),
+  startDateTime: z.string().optional(),
+  endDateTime: z.string().optional(),
+  timeZone: z.string().optional(),
+  attendeesToAdd: z.array(calendarAttendeeInputSchema).optional(),
+  attendeesToRemove: z.array(z.string().email()).optional(),
+  sendNotifications: z.boolean().optional(),
+  approvalState: z.enum(["approved", "not_required"]).optional()
+});
+
+const calendarUpdateEventResultSchema = calendarWriteEventResultSchema;
+
+const calendarUpdateEventSpec: BuiltInToolSpec = {
+  manifest: parseManifest({
+    ...calendarWriteBaseManifest,
+    toolId: "tool.calendar-update-event",
+    name: "Calendar Update Event",
+    description:
+      "Updates an existing Google Calendar event using partial patch semantics (only supplied fields change). " +
+      "Supports updating title, time, location, description, and attendee list. " +
+      "When attendees are added/removed, this is an attendee-facing action and requires approval. " +
+      "Conflict detection runs before time changes. " +
+      "Use 'Move my 3 PM meeting to 4 PM' or 'Reschedule and notify attendees' workflows.",
+    capabilities: [
+      {
+        capabilityId: "integration.google.capability.calendar.update_event",
+        required: true,
+        scope: { tenantScoped: true, workspaceScoped: true, resourceClass: "service-endpoint" },
+        constraints: {}
+      }
+    ],
+    runtimeHints: {
+      defaultTimeoutMs: 20000,
+      defaultSandboxMode: "restricted_remote",
+      egressProfiles: ["default-allowlist"],
+      filesystemProfile: "none",
+      declaredSecretRefs: [],
+      requireExecutorPath: true,
+      approvalSensitive: true
+    },
+    policyBinding: {
+      policyActionClass: "write",
+      resource: { resourceClass: "service-endpoint", resourceId: "integration:google:calendar" },
+      requiresExplicitPolicy: true,
+      approvalHint: "required_for_attendee_facing"
+    },
+    trustNotes: [
+      "Calendar update is a mutating action. Changes to attendee-facing events send notifications.",
+      "Attendee mutations always require approval.",
+      "Time changes trigger conflict detection before applying."
+    ],
+    inputSchema: jsonSchemaObject(["eventId"], {
+      calendarId: prop("Calendar ID containing the event. Defaults to 'primary'.", "string"),
+      eventId: prop("ID of the event to update (required).", "string"),
+      summary: prop("New event title.", "string"),
+      description: prop("New event description.", "string"),
+      location: prop("New event location.", "string"),
+      startDateTime: prop("New ISO-8601 start datetime.", "string"),
+      endDateTime: prop("New ISO-8601 end datetime.", "string"),
+      timeZone: prop("IANA timezone for new start/end times.", "string"),
+      attendeesToAdd: prop("Attendees to add (email + optional display name).", "array"),
+      attendeesToRemove: prop("Email addresses of attendees to remove.", "array"),
+      sendNotifications: prop("Whether to send update notifications. Defaults to true when attendees affected.", "boolean"),
+      approvalState: prop("Set to 'approved' when this action has been explicitly approved.", "string")
+    }),
+    outputSchema: jsonSchemaObject(["eventId", "calendarId", "summary", "startIso", "endIso", "actionId"], {
+      eventId: prop("Updated event ID.", "string"),
+      calendarId: prop("Calendar containing the event.", "string"),
+      htmlLink: prop("Google Calendar link to the event.", "string"),
+      summary: prop("Current event title.", "string"),
+      startIso: prop("Current event start ISO.", "string"),
+      endIso: prop("Current event end ISO.", "string"),
+      attendeeCount: prop("Current attendee count.", "number"),
+      hasAttendees: prop("True if event has attendees.", "boolean"),
+      actionId: prop("Resolved action ID (update or update_attendees).", "string"),
+      conflictCheck: prop("Conflict detection result if time was changed (null if no time change).", "object")
+    }),
+    runtimeBinding: { toolRef: "tool:calendar-update-event", operation: "calendar_update_event" }
+  }),
+  inputSchema: calendarUpdateEventInputSchema,
+  outputSchema: calendarUpdateEventResultSchema,
+  examples: []
+};
+
+// tool.calendar-delete-event
+
+const calendarDeleteEventInputSchema = z.object({
+  calendarId: z.string().default("primary"),
+  eventId: z.string().min(1),
+  sendNotifications: z.boolean().optional(),
+  approvalState: z.enum(["approved", "not_required"]).optional()
+});
+
+const calendarDeleteEventResultSchema = z.object({
+  eventId: z.string(),
+  calendarId: z.string(),
+  deleted: z.boolean(),
+  deletedAt: z.string(),
+  actionId: z.literal("calendar.event.delete"),
+  connectorId: z.string(),
+  accountId: z.string()
+});
+
+const calendarDeleteEventSpec: BuiltInToolSpec = {
+  manifest: parseManifest({
+    ...calendarWriteBaseManifest,
+    toolId: "tool.calendar-delete-event",
+    name: "Calendar Delete Event",
+    description:
+      "Deletes or cancels a Google Calendar event. " +
+      "This is a destructive, attendee-facing action and always requires approval. " +
+      "When attendees are present, cancellation notifications are sent by default. " +
+      "Use for 'Cancel my 3 PM meeting' or 'Remove this event from my calendar' workflows.",
+    capabilities: [
+      {
+        capabilityId: "integration.google.capability.calendar.delete_event",
+        required: true,
+        scope: { tenantScoped: true, workspaceScoped: true, resourceClass: "service-endpoint" },
+        constraints: {}
+      }
+    ],
+    runtimeHints: {
+      defaultTimeoutMs: 15000,
+      defaultSandboxMode: "restricted_remote",
+      egressProfiles: ["default-allowlist"],
+      filesystemProfile: "none",
+      declaredSecretRefs: [],
+      requireExecutorPath: true,
+      approvalSensitive: true
+    },
+    policyBinding: {
+      policyActionClass: "write",
+      resource: { resourceClass: "service-endpoint", resourceId: "integration:google:calendar" },
+      requiresExplicitPolicy: true,
+      approvalHint: "always_required"
+    },
+    trustNotes: [
+      "Calendar delete is a destructive, irreversible action.",
+      "Always requires explicit approval before execution.",
+      "May send cancellation notifications to event attendees."
+    ],
+    inputSchema: jsonSchemaObject(["eventId"], {
+      calendarId: prop("Calendar ID containing the event. Defaults to 'primary'.", "string"),
+      eventId: prop("ID of the event to delete (required).", "string"),
+      sendNotifications: prop("Whether to send cancellation notifications. Defaults to true.", "boolean"),
+      approvalState: prop("Set to 'approved' when this action has been explicitly approved.", "string")
+    }),
+    outputSchema: jsonSchemaObject(["eventId", "calendarId", "deleted", "deletedAt", "actionId"], {
+      eventId: prop("Deleted event ID.", "string"),
+      calendarId: prop("Calendar the event was deleted from.", "string"),
+      deleted: prop("True if deletion succeeded.", "boolean"),
+      deletedAt: prop("ISO timestamp of deletion.", "string"),
+      actionId: prop("Always 'calendar.event.delete'.", "string")
+    }),
+    runtimeBinding: { toolRef: "tool:calendar-delete-event", operation: "calendar_delete_event" }
+  }),
+  inputSchema: calendarDeleteEventInputSchema,
+  outputSchema: calendarDeleteEventResultSchema,
+  examples: []
+};
+
 // ── exports ────────────────────────────────────────────────────────────────────
 
 export const WEB_TOOL_SPECS = {
@@ -906,7 +1207,10 @@ export const WEB_TOOL_SPECS = {
   "tool.calendar-list-events": calendarListEventsSpec,
   "tool.calendar-get-today-events": calendarTodayEventsSpec,
   "tool.calendar-get-upcoming-events": calendarUpcomingEventsSpec,
-  "tool.calendar-check-availability": calendarCheckAvailabilitySpec
+  "tool.calendar-check-availability": calendarCheckAvailabilitySpec,
+  "tool.calendar-create-event": calendarCreateEventSpec,
+  "tool.calendar-update-event": calendarUpdateEventSpec,
+  "tool.calendar-delete-event": calendarDeleteEventSpec
 } as const;
 
 export type WebToolId = keyof typeof WEB_TOOL_SPECS;

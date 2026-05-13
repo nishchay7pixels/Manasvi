@@ -271,6 +271,8 @@ interface GoogleFreeBusyResponse {
 export interface CalendarApiClient {
   get<T>(url: string, accessToken: string): Promise<T>;
   post<T>(url: string, body: Record<string, unknown>, accessToken: string): Promise<T>;
+  patch<T>(url: string, body: Record<string, unknown>, accessToken: string): Promise<T>;
+  delete_(url: string, accessToken: string): Promise<void>;
 }
 
 export class FetchCalendarApiClient implements CalendarApiClient {
@@ -310,6 +312,41 @@ export class FetchCalendarApiClient implements CalendarApiClient {
     }
     return (await response.json()) as T;
   }
+
+  async patch<T>(url: string, body: Record<string, unknown>, accessToken: string): Promise<T> {
+    const response = await fetch(url, {
+      method: "PATCH",
+      headers: {
+        authorization: `Bearer ${accessToken}`,
+        "content-type": "application/json"
+      },
+      body: JSON.stringify(body)
+    });
+    if (!response.ok) {
+      const upstreamBody = await response.text().catch(() => "");
+      const detail = upstreamBody.trim().slice(0, 600);
+      throw new Error(
+        `Calendar API write failed (${response.status})${detail ? `: ${detail}` : ""}`
+      );
+    }
+    return (await response.json()) as T;
+  }
+
+  async delete_(url: string, accessToken: string): Promise<void> {
+    const response = await fetch(url, {
+      method: "DELETE",
+      headers: {
+        authorization: `Bearer ${accessToken}`
+      }
+    });
+    if (!response.ok) {
+      const upstreamBody = await response.text().catch(() => "");
+      const detail = upstreamBody.trim().slice(0, 600);
+      throw new Error(
+        `Calendar API write failed (${response.status})${detail ? `: ${detail}` : ""}`
+      );
+    }
+  }
 }
 
 // ── Normalization helpers ─────────────────────────────────────────────────────
@@ -336,6 +373,72 @@ function resolveIsoEnd(dt: GoogleCalendarEventDateTime | undefined): string {
 
 function isAllDayEvent(event: GoogleCalendarEvent): boolean {
   return Boolean(event.start?.date && !event.start.dateTime);
+}
+
+function getDatePartsInTimeZone(date: Date, timeZone: string): { year: number; month: number; day: number } {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).formatToParts(date);
+  const year = Number(parts.find((part) => part.type === "year")?.value);
+  const month = Number(parts.find((part) => part.type === "month")?.value);
+  const day = Number(parts.find((part) => part.type === "day")?.value);
+  if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) {
+    throw new Error(`Failed to resolve date parts for timezone '${timeZone}'.`);
+  }
+  return { year, month, day };
+}
+
+function parseTimeZoneOffsetMinutes(date: Date, timeZone: string): number {
+  const tzPart = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    timeZoneName: "shortOffset",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false
+  })
+    .formatToParts(date)
+    .find((part) => part.type === "timeZoneName")
+    ?.value;
+  if (!tzPart || tzPart === "GMT" || tzPart === "UTC") {
+    return 0;
+  }
+  const match = tzPart.match(/^(?:GMT|UTC)([+-])(\d{1,2})(?::?(\d{2}))?$/);
+  if (!match) {
+    return 0;
+  }
+  const sign = match[1] === "-" ? -1 : 1;
+  const hours = Number(match[2] ?? "0");
+  const minutes = Number(match[3] ?? "0");
+  return sign * (hours * 60 + minutes);
+}
+
+function localTimeInZoneToUtcIso(
+  year: number,
+  month: number,
+  day: number,
+  hour: number,
+  minute: number,
+  second: number,
+  timeZone: string
+): string {
+  const asUtc = new Date(Date.UTC(year, month - 1, day, hour, minute, second));
+  const offsetMinutes = parseTimeZoneOffsetMinutes(asUtc, timeZone);
+  return new Date(asUtc.getTime() - offsetMinutes * 60_000).toISOString();
+}
+
+function shiftYmd(year: number, month: number, day: number, offsetDays: number): { year: number; month: number; day: number } {
+  if (offsetDays === 0) {
+    return { year, month, day };
+  }
+  const shifted = new Date(Date.UTC(year, month - 1, day + offsetDays, 12, 0, 0));
+  return {
+    year: shifted.getUTCFullYear(),
+    month: shifted.getUTCMonth() + 1,
+    day: shifted.getUTCDate()
+  };
 }
 
 function extractMeetingLink(event: GoogleCalendarEvent): string | null {
@@ -497,6 +600,118 @@ function computeTotalBusyMinutes(busyBlocks: CalendarBusyBlock[], windowStart: D
   return Math.floor(total / 60000);
 }
 
+// ── Calendar write types ──────────────────────────────────────────────────────
+
+export type CalendarWriteActionId =
+  | "calendar.event.create"
+  | "calendar.event.create_with_attendees"
+  | "calendar.event.update"
+  | "calendar.event.update_attendees"
+  | "calendar.event.delete";
+
+export interface CalendarAttendeeInput {
+  email: string;
+  displayName?: string;
+}
+
+export interface CalendarReminderInput {
+  useDefault?: boolean | undefined;
+  overrides?: Array<{ method: "email" | "popup"; minutes: number }> | undefined;
+}
+
+export interface CalendarCreateEventInput {
+  calendarId?: string;
+  summary: string;
+  startDateTime: string;
+  endDateTime: string;
+  timeZone?: string;
+  description?: string;
+  location?: string;
+  attendees?: CalendarAttendeeInput[];
+  reminders?: CalendarReminderInput;
+  visibility?: "default" | "public" | "private" | "confidential";
+  guestsCanModify?: boolean;
+  guestsCanInviteOthers?: boolean;
+  sendNotifications?: boolean;
+}
+
+export interface CalendarUpdateEventInput {
+  calendarId?: string;
+  eventId: string;
+  summary?: string;
+  description?: string;
+  location?: string;
+  startDateTime?: string;
+  endDateTime?: string;
+  timeZone?: string;
+  attendeesToAdd?: CalendarAttendeeInput[];
+  attendeesToRemove?: string[];
+  reminders?: CalendarReminderInput;
+  visibility?: "default" | "public" | "private" | "confidential";
+  sendNotifications?: boolean;
+}
+
+export interface CalendarDeleteEventInput {
+  calendarId?: string;
+  eventId: string;
+  sendNotifications?: boolean;
+}
+
+export interface CalendarConflictCheckResult {
+  calendarId: string;
+  proposedStart: string;
+  proposedEnd: string;
+  hasConflict: boolean;
+  conflicts: CalendarBusyBlock[];
+  freeSlots: CalendarFreeSlot[];
+  conflictSeverity: "none" | "soft" | "hard";
+  warning: string | null;
+}
+
+export interface CalendarCreateEventResult {
+  eventId: string;
+  calendarId: string;
+  htmlLink: string | null;
+  status: string;
+  summary: string;
+  startIso: string;
+  endIso: string;
+  attendeeCount: number;
+  hasAttendees: boolean;
+  created: string | null;
+  actionId: CalendarWriteActionId;
+  connectorId: string;
+  accountId: string;
+  conflictCheck: CalendarConflictCheckResult | null;
+}
+
+export interface CalendarUpdateEventResult {
+  eventId: string;
+  calendarId: string;
+  htmlLink: string | null;
+  status: string;
+  summary: string;
+  startIso: string;
+  endIso: string;
+  attendeeCount: number;
+  hasAttendees: boolean;
+  updated: string | null;
+  actionId: CalendarWriteActionId;
+  connectorId: string;
+  accountId: string;
+  conflictCheck: CalendarConflictCheckResult | null;
+}
+
+export interface CalendarDeleteEventResult {
+  eventId: string;
+  calendarId: string;
+  deleted: boolean;
+  deletedAt: string;
+  actionId: "calendar.event.delete";
+  connectorId: string;
+  accountId: string;
+}
+
 // ── CalendarReadConnector ─────────────────────────────────────────────────────
 
 export class CalendarReadConnector {
@@ -634,17 +849,37 @@ export class CalendarReadConnector {
     accessToken: string,
     account: IntegrationAccountRecord,
     calendarId = "primary",
-    timezone?: string
+    timezone?: string,
+    date?: string,
+    dayOffset = 0
   ): Promise<CalendarEventListResult> {
-    const tz = timezone ?? "UTC";
-    const now = new Date();
-    const todayStart = new Date(now.toLocaleDateString("en-CA", { timeZone: tz }) + "T00:00:00");
-    const todayEnd = new Date(now.toLocaleDateString("en-CA", { timeZone: tz }) + "T23:59:59");
+    const tz = timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone ?? "UTC";
+    const normalizedOffset = Number.isFinite(dayOffset) ? Math.trunc(dayOffset) : 0;
+    let year: number;
+    let month: number;
+    let day: number;
+    if (date) {
+      const m = date.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      if (!m) {
+        throw new Error("Invalid date format. Expected YYYY-MM-DD.");
+      }
+      year = Number(m[1]);
+      month = Number(m[2]);
+      day = Number(m[3]);
+      ({ year, month, day } = shiftYmd(year, month, day, normalizedOffset));
+    } else {
+      const now = new Date();
+      ({ year, month, day } = getDatePartsInTimeZone(now, tz));
+      ({ year, month, day } = shiftYmd(year, month, day, normalizedOffset));
+    }
+
+    const timeMin = localTimeInZoneToUtcIso(year, month, day, 0, 0, 0, tz);
+    const timeMax = localTimeInZoneToUtcIso(year, month, day, 23, 59, 59, tz);
 
     return this.listEvents(accessToken, account, {
       calendarId,
-      timeMin: todayStart.toISOString(),
-      timeMax: todayEnd.toISOString(),
+      timeMin,
+      timeMax,
       maxResults: 50,
       singleEvents: true,
       orderBy: "startTime"
@@ -681,7 +916,7 @@ export class CalendarReadConnector {
 
   async checkAvailability(
     accessToken: string,
-    account: IntegrationAccountRecord,
+    _account: IntegrationAccountRecord,
     calendarId: string,
     timeMin: string,
     timeMax: string,
@@ -775,5 +1010,275 @@ export class CalendarReadConnector {
       this.lastError = error instanceof Error ? error.message : "unknown";
       throw error;
     }
+  }
+}
+
+// ── CalendarWriteConnector ────────────────────────────────────────────────────
+
+export class CalendarWriteConnector {
+  private static readonly BASE_URL = "https://www.googleapis.com/calendar/v3";
+
+  constructor(private readonly apiClient: CalendarApiClient) {}
+
+  async checkConflict(
+    accessToken: string,
+    calendarId: string,
+    proposedStart: string,
+    proposedEnd: string
+  ): Promise<CalendarConflictCheckResult> {
+    const url = `${CalendarWriteConnector.BASE_URL}/freeBusy`;
+    const body: Record<string, unknown> = {
+      timeMin: proposedStart,
+      timeMax: proposedEnd,
+      items: [{ id: calendarId }]
+    };
+
+    let busyBlocks: CalendarBusyBlock[] = [];
+    try {
+      const raw = await this.apiClient.post<GoogleFreeBusyResponse>(url, body, accessToken);
+      busyBlocks = (raw.calendars?.[calendarId]?.busy ?? []).map((b) => ({
+        start: b.start,
+        end: b.end
+      }));
+    } catch {
+      // Conflict check failure is non-fatal — return unknown state
+      return {
+        calendarId,
+        proposedStart,
+        proposedEnd,
+        hasConflict: false,
+        conflicts: [],
+        freeSlots: [],
+        conflictSeverity: "none",
+        warning: "Conflict check could not be completed. Proceeding without conflict data."
+      };
+    }
+
+    const windowStart = new Date(proposedStart);
+    const windowEnd = new Date(proposedEnd);
+    const freeSlots = computeFreeSlots(busyBlocks, windowStart, windowEnd, 0);
+    const hasConflict = busyBlocks.length > 0;
+    const conflictSeverity: CalendarConflictCheckResult["conflictSeverity"] = !hasConflict
+      ? "none"
+      : busyBlocks.some((b) => new Date(b.start) < windowEnd && new Date(b.end) > windowStart)
+        ? "hard"
+        : "soft";
+    const warning = hasConflict
+      ? `Proposed time ${proposedStart}–${proposedEnd} overlaps with ${busyBlocks.length} existing event(s).`
+      : null;
+
+    return {
+      calendarId,
+      proposedStart,
+      proposedEnd,
+      hasConflict,
+      conflicts: busyBlocks,
+      freeSlots,
+      conflictSeverity,
+      warning
+    };
+  }
+
+  async createEvent(
+    accessToken: string,
+    account: IntegrationAccountRecord,
+    input: CalendarCreateEventInput
+  ): Promise<CalendarCreateEventResult> {
+    const calendarId = input.calendarId ?? "primary";
+    const hasAttendees = Boolean(input.attendees && input.attendees.length > 0);
+
+    const conflictCheck = await this.checkConflict(
+      accessToken,
+      calendarId,
+      input.startDateTime,
+      input.endDateTime
+    );
+
+    const eventBody: Record<string, unknown> = {
+      summary: input.summary,
+      start: input.timeZone
+        ? { dateTime: input.startDateTime, timeZone: input.timeZone }
+        : { dateTime: input.startDateTime },
+      end: input.timeZone
+        ? { dateTime: input.endDateTime, timeZone: input.timeZone }
+        : { dateTime: input.endDateTime }
+    };
+    if (input.description) eventBody.description = input.description;
+    if (input.location) eventBody.location = input.location;
+    if (input.attendees?.length) {
+      eventBody.attendees = input.attendees.map((a) =>
+        a.displayName ? { email: a.email, displayName: a.displayName } : { email: a.email }
+      );
+    }
+    if (input.reminders) {
+      eventBody.reminders = input.reminders.useDefault === true
+        ? { useDefault: true }
+        : { useDefault: false, overrides: input.reminders.overrides ?? [] };
+    }
+    if (input.visibility) eventBody.visibility = input.visibility;
+    if (typeof input.guestsCanModify === "boolean") eventBody.guestsCanModify = input.guestsCanModify;
+    if (typeof input.guestsCanInviteOthers === "boolean") eventBody.guestsCanInviteOthers = input.guestsCanInviteOthers;
+
+    const sendUpdates = hasAttendees && input.sendNotifications !== false ? "all" : "none";
+    const url = `${CalendarWriteConnector.BASE_URL}/calendars/${encodeURIComponent(calendarId)}/events?sendUpdates=${sendUpdates}`;
+
+    const raw = await this.withErrorCapture<GoogleCalendarEvent>(() =>
+      this.apiClient.post<GoogleCalendarEvent>(url, eventBody, accessToken)
+    );
+
+    const startIso = resolveIsoStart(raw.start);
+    const endIso = resolveIsoEnd(raw.end);
+    const attendeeCount = raw.attendees?.length ?? 0;
+    const actionId: CalendarWriteActionId = hasAttendees
+      ? "calendar.event.create_with_attendees"
+      : "calendar.event.create";
+
+    return {
+      eventId: raw.id,
+      calendarId,
+      htmlLink: raw.htmlLink ?? null,
+      status: raw.status ?? "confirmed",
+      summary: raw.summary ?? input.summary,
+      startIso,
+      endIso,
+      attendeeCount,
+      hasAttendees: attendeeCount > 0,
+      created: raw.created ?? null,
+      actionId,
+      connectorId: account.connectorId,
+      accountId: account.accountId,
+      conflictCheck
+    };
+  }
+
+  async updateEvent(
+    accessToken: string,
+    account: IntegrationAccountRecord,
+    input: CalendarUpdateEventInput
+  ): Promise<CalendarUpdateEventResult> {
+    const calendarId = input.calendarId ?? "primary";
+
+    // Fetch current event to merge attendees and determine conflict window
+    const getUrl = `${CalendarWriteConnector.BASE_URL}/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(input.eventId)}`;
+    let currentEvent: GoogleCalendarEvent | null = null;
+    try {
+      currentEvent = await this.apiClient.get<GoogleCalendarEvent>(getUrl, accessToken);
+    } catch {
+      // Non-fatal: proceed with patch even if we can't read current state
+    }
+
+    const patchBody: Record<string, unknown> = {};
+    if (input.summary !== undefined) patchBody.summary = input.summary;
+    if (input.description !== undefined) patchBody.description = input.description;
+    if (input.location !== undefined) patchBody.location = input.location;
+    if (input.visibility !== undefined) patchBody.visibility = input.visibility;
+
+    let hasTimeChange = false;
+    if (input.startDateTime !== undefined || input.endDateTime !== undefined) {
+      hasTimeChange = true;
+      const tz = input.timeZone;
+      if (input.startDateTime !== undefined) {
+        patchBody.start = tz ? { dateTime: input.startDateTime, timeZone: tz } : { dateTime: input.startDateTime };
+      }
+      if (input.endDateTime !== undefined) {
+        patchBody.end = tz ? { dateTime: input.endDateTime, timeZone: tz } : { dateTime: input.endDateTime };
+      }
+    }
+
+    // Merge attendees: start from existing list, add/remove as requested
+    const existingAttendees: Array<{ email: string; displayName?: string }> =
+      (currentEvent?.attendees ?? []).map((a) => ({
+        email: a.email ?? "",
+        ...(a.displayName ? { displayName: a.displayName } : {})
+      }));
+    const removeSet = new Set(input.attendeesToRemove ?? []);
+    let mergedAttendees = existingAttendees.filter((a) => !removeSet.has(a.email));
+    if (input.attendeesToAdd?.length) {
+      const existingEmails = new Set(mergedAttendees.map((a) => a.email));
+      for (const add of input.attendeesToAdd) {
+        if (!existingEmails.has(add.email)) {
+          mergedAttendees.push(add.displayName ? { email: add.email, displayName: add.displayName } : { email: add.email });
+        }
+      }
+    }
+    const attendeesChanged = Boolean(input.attendeesToAdd?.length || input.attendeesToRemove?.length);
+    if (attendeesChanged) {
+      patchBody.attendees = mergedAttendees;
+    }
+    if (input.reminders) {
+      patchBody.reminders = input.reminders.useDefault === true
+        ? { useDefault: true }
+        : { useDefault: false, overrides: input.reminders.overrides ?? [] };
+    }
+
+    const hasAttendees = mergedAttendees.length > 0;
+    const sendUpdates = hasAttendees && input.sendNotifications !== false ? "all" : "none";
+
+    // Conflict check if time is changing
+    let conflictCheck: CalendarConflictCheckResult | null = null;
+    if (hasTimeChange && input.startDateTime && input.endDateTime) {
+      conflictCheck = await this.checkConflict(
+        accessToken,
+        calendarId,
+        input.startDateTime,
+        input.endDateTime
+      );
+    }
+
+    const patchUrl = `${CalendarWriteConnector.BASE_URL}/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(input.eventId)}?sendUpdates=${sendUpdates}`;
+    const raw = await this.withErrorCapture<GoogleCalendarEvent>(() =>
+      this.apiClient.patch<GoogleCalendarEvent>(patchUrl, patchBody, accessToken)
+    );
+
+    const startIso = resolveIsoStart(raw.start);
+    const endIso = resolveIsoEnd(raw.end);
+    const attendeeCount = raw.attendees?.length ?? 0;
+    const actionId: CalendarWriteActionId =
+      (attendeesChanged && hasAttendees) || (hasAttendees && hasTimeChange)
+        ? "calendar.event.update_attendees"
+        : "calendar.event.update";
+
+    return {
+      eventId: raw.id,
+      calendarId,
+      htmlLink: raw.htmlLink ?? null,
+      status: raw.status ?? "confirmed",
+      summary: raw.summary ?? "",
+      startIso,
+      endIso,
+      attendeeCount,
+      hasAttendees: attendeeCount > 0,
+      updated: raw.updated ?? null,
+      actionId,
+      connectorId: account.connectorId,
+      accountId: account.accountId,
+      conflictCheck
+    };
+  }
+
+  async deleteEvent(
+    accessToken: string,
+    account: IntegrationAccountRecord,
+    input: CalendarDeleteEventInput
+  ): Promise<CalendarDeleteEventResult> {
+    const calendarId = input.calendarId ?? "primary";
+    const sendUpdates = input.sendNotifications !== false ? "all" : "none";
+    const url = `${CalendarWriteConnector.BASE_URL}/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(input.eventId)}?sendUpdates=${sendUpdates}`;
+
+    await this.withErrorCapture(() => this.apiClient.delete_(url, accessToken));
+
+    return {
+      eventId: input.eventId,
+      calendarId,
+      deleted: true,
+      deletedAt: new Date().toISOString(),
+      actionId: "calendar.event.delete",
+      connectorId: account.connectorId,
+      accountId: account.accountId
+    };
+  }
+
+  private withErrorCapture<T>(op: () => Promise<T>): Promise<T> {
+    return op();
   }
 }

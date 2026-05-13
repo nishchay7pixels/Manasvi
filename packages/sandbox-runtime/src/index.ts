@@ -1343,6 +1343,78 @@ const handlers = {
     }
     return body?.result ?? body;
   },
+  "tool:calendar-create-event": async (parameters) => {
+    const baseUrl = String(process.env.MANASVI_GATEWAY_URL || process.env.GATEWAY_URL || "http://127.0.0.1:4100");
+    const payload = { ...(parameters || {}) };
+    if (payload.actorPrincipalType === "user") payload.actorPrincipalType = "human_user";
+    if (process.env.MANASVI_APPROVAL_STATE === "approved") payload.approvalState = "approved";
+    if (!payload.summary || !payload.startDateTime || !payload.endDateTime) {
+      const err = new Error("summary, startDateTime, and endDateTime are required");
+      err.code = "INVALID_INPUT";
+      throw err;
+    }
+    const response = await fetch(baseUrl + "/integrations/google/calendar/events/create", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    const body = await response.json();
+    if (!response.ok) {
+      const err = new Error("CALENDAR_CREATE_EVENT_FAILED:" + response.status);
+      err.code = response.status === 202 ? "CALENDAR_WRITE_APPROVAL_REQUIRED" : "TOOL_UPSTREAM_ERROR";
+      err.details = body;
+      throw err;
+    }
+    return body?.result ?? body;
+  },
+  "tool:calendar-update-event": async (parameters) => {
+    const baseUrl = String(process.env.MANASVI_GATEWAY_URL || process.env.GATEWAY_URL || "http://127.0.0.1:4100");
+    const payload = { ...(parameters || {}) };
+    if (payload.actorPrincipalType === "user") payload.actorPrincipalType = "human_user";
+    if (process.env.MANASVI_APPROVAL_STATE === "approved") payload.approvalState = "approved";
+    if (!payload.eventId) {
+      const err = new Error("eventId is required");
+      err.code = "INVALID_INPUT";
+      throw err;
+    }
+    const response = await fetch(baseUrl + "/integrations/google/calendar/events/update", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    const body = await response.json();
+    if (!response.ok) {
+      const err = new Error("CALENDAR_UPDATE_EVENT_FAILED:" + response.status);
+      err.code = response.status === 202 ? "CALENDAR_WRITE_APPROVAL_REQUIRED" : "TOOL_UPSTREAM_ERROR";
+      err.details = body;
+      throw err;
+    }
+    return body?.result ?? body;
+  },
+  "tool:calendar-delete-event": async (parameters) => {
+    const baseUrl = String(process.env.MANASVI_GATEWAY_URL || process.env.GATEWAY_URL || "http://127.0.0.1:4100");
+    const payload = { ...(parameters || {}) };
+    if (payload.actorPrincipalType === "user") payload.actorPrincipalType = "human_user";
+    if (process.env.MANASVI_APPROVAL_STATE === "approved") payload.approvalState = "approved";
+    if (!payload.eventId) {
+      const err = new Error("eventId is required");
+      err.code = "INVALID_INPUT";
+      throw err;
+    }
+    const response = await fetch(baseUrl + "/integrations/google/calendar/events/delete", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    const body = await response.json();
+    if (!response.ok) {
+      const err = new Error("CALENDAR_DELETE_EVENT_FAILED:" + response.status);
+      err.code = response.status === 202 ? "CALENDAR_WRITE_APPROVAL_REQUIRED" : "TOOL_UPSTREAM_ERROR";
+      err.details = body;
+      throw err;
+    }
+    return body?.result ?? body;
+  },
   "tool:shell-command": async (parameters) => {
     const { spawn } = require("node:child_process");
     let command = String(parameters.command || "");

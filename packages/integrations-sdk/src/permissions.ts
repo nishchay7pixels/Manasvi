@@ -35,6 +35,10 @@ export type GoogleCapabilityId =
   | "gmail.modify"
   | "calendar.read_events"
   | "calendar.write_events"
+  | "calendar.create_event"
+  | "calendar.update_event"
+  | "calendar.invite_attendees"
+  | "calendar.delete_event"
   | "drive.read_files"
   | "drive.write_files"
   | "docs.read"
@@ -58,6 +62,11 @@ export type GoogleActionId =
   | "gmail.message.label"
   | "calendar.events.read"
   | "calendar.events.write"
+  | "calendar.event.create"
+  | "calendar.event.create_with_attendees"
+  | "calendar.event.update"
+  | "calendar.event.update_attendees"
+  | "calendar.event.delete"
   | "drive.files.read"
   | "drive.files.write"
   | "docs.document.read"
@@ -127,7 +136,14 @@ export const GOOGLE_SCOPE_CATALOG: GoogleScopeDescriptor[] = [
     serviceFamily: "calendar",
     class: "write",
     sensitivity: "medium",
-    impliedCapabilities: ["calendar.read_events", "calendar.write_events"]
+    impliedCapabilities: [
+      "calendar.read_events",
+      "calendar.write_events",
+      "calendar.create_event",
+      "calendar.update_event",
+      "calendar.invite_attendees",
+      "calendar.delete_event"
+    ]
   },
   {
     providerScope: "https://www.googleapis.com/auth/drive.readonly",
@@ -171,6 +187,10 @@ export const GOOGLE_CAPABILITY_CATALOG: GoogleCapabilityDescriptor[] = [
   { capabilityId: "gmail.modify", serviceFamily: "gmail", class: "write", displayName: "Modify Gmail mailbox", description: "Archive messages, apply/remove labels, and mutate mailbox state.", approvalSensitivity: "policy" },
   { capabilityId: "calendar.read_events", serviceFamily: "calendar", class: "read", displayName: "Read Calendar events", description: "Read calendar events and metadata.", approvalSensitivity: "none" },
   { capabilityId: "calendar.write_events", serviceFamily: "calendar", class: "write", displayName: "Write Calendar events", description: "Create and modify calendar events.", approvalSensitivity: "policy" },
+  { capabilityId: "calendar.create_event", serviceFamily: "calendar", class: "write", displayName: "Create Calendar events", description: "Create new calendar events (self-blocking or meeting).", approvalSensitivity: "policy" },
+  { capabilityId: "calendar.update_event", serviceFamily: "calendar", class: "write", displayName: "Update Calendar events", description: "Update existing calendar event details, time, or location.", approvalSensitivity: "policy" },
+  { capabilityId: "calendar.invite_attendees", serviceFamily: "calendar", class: "communication_write", displayName: "Invite Calendar attendees", description: "Invite external attendees to calendar events (sends notifications).", approvalSensitivity: "required" },
+  { capabilityId: "calendar.delete_event", serviceFamily: "calendar", class: "write", displayName: "Delete Calendar events", description: "Cancel or delete calendar events (may notify attendees).", approvalSensitivity: "required" },
   { capabilityId: "drive.read_files", serviceFamily: "drive", class: "read", displayName: "Read Drive files", description: "Read Drive file metadata/content where permitted.", approvalSensitivity: "none" },
   { capabilityId: "drive.write_files", serviceFamily: "drive", class: "sharing_write", displayName: "Write/Share Drive files", description: "Create/update/share Drive files.", approvalSensitivity: "policy" },
   { capabilityId: "docs.read", serviceFamily: "docs", class: "read", displayName: "Read Docs", description: "Read Google Docs content.", approvalSensitivity: "none" },
@@ -186,6 +206,11 @@ export const GOOGLE_ACTION_CATALOG: GoogleActionDescriptor[] = [
   { actionId: "gmail.message.label", serviceFamily: "gmail", class: "write", requiredCapabilities: ["gmail.modify"], approvalSensitivity: "policy", policyActionClass: "write" },
   { actionId: "calendar.events.read", serviceFamily: "calendar", class: "read", requiredCapabilities: ["calendar.read_events"], approvalSensitivity: "none", policyActionClass: "read" },
   { actionId: "calendar.events.write", serviceFamily: "calendar", class: "write", requiredCapabilities: ["calendar.write_events"], approvalSensitivity: "policy", policyActionClass: "write" },
+  { actionId: "calendar.event.create", serviceFamily: "calendar", class: "write", requiredCapabilities: ["calendar.create_event"], approvalSensitivity: "policy", policyActionClass: "write" },
+  { actionId: "calendar.event.create_with_attendees", serviceFamily: "calendar", class: "communication_write", requiredCapabilities: ["calendar.create_event", "calendar.invite_attendees"], approvalSensitivity: "required", policyActionClass: "external-side-effect" },
+  { actionId: "calendar.event.update", serviceFamily: "calendar", class: "write", requiredCapabilities: ["calendar.update_event"], approvalSensitivity: "policy", policyActionClass: "write" },
+  { actionId: "calendar.event.update_attendees", serviceFamily: "calendar", class: "communication_write", requiredCapabilities: ["calendar.update_event", "calendar.invite_attendees"], approvalSensitivity: "required", policyActionClass: "external-side-effect" },
+  { actionId: "calendar.event.delete", serviceFamily: "calendar", class: "write", requiredCapabilities: ["calendar.delete_event"], approvalSensitivity: "required", policyActionClass: "write" },
   { actionId: "drive.files.read", serviceFamily: "drive", class: "read", requiredCapabilities: ["drive.read_files"], approvalSensitivity: "none", policyActionClass: "read" },
   { actionId: "drive.files.write", serviceFamily: "drive", class: "sharing_write", requiredCapabilities: ["drive.write_files"], approvalSensitivity: "policy", policyActionClass: "write" },
   { actionId: "docs.document.read", serviceFamily: "docs", class: "read", requiredCapabilities: ["docs.read"], approvalSensitivity: "none", policyActionClass: "read" },

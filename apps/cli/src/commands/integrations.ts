@@ -341,9 +341,10 @@ export async function runIntegrationsAdd(provider?: string, mode?: string): Prom
   }
   const port = await getGatewayPort();
 
-  // mode: "read-only" | "write" (G4) | "calendar" (G5) | "full" (all)
+  // mode: "read-only" | "write" (G4) | "calendar" (G5) | "calendar-write" (G6) | "full" (all)
   const isWrite = mode === "write" || mode === "full";
   const isCalendar = mode === "calendar" || mode === "full";
+  const isCalendarWrite = mode === "calendar-write" || mode === "full";
 
   const baseScopes = ["openid", "email", "profile", "https://www.googleapis.com/auth/gmail.readonly"];
   const writeScopes = [
@@ -351,12 +352,14 @@ export async function runIntegrationsAdd(provider?: string, mode?: string): Prom
     "https://www.googleapis.com/auth/gmail.send",
     "https://www.googleapis.com/auth/gmail.modify"
   ];
-  const calendarScopes = ["https://www.googleapis.com/auth/calendar.readonly"];
+  const calendarReadScopes = ["https://www.googleapis.com/auth/calendar.readonly"];
+  const calendarWriteScopes = ["https://www.googleapis.com/auth/calendar"];
 
   const scopes = [
     ...baseScopes,
     ...(isWrite ? writeScopes : []),
-    ...(isCalendar ? calendarScopes : [])
+    // calendar write scope supersedes read-only scope
+    ...(isCalendarWrite ? calendarWriteScopes : isCalendar ? calendarReadScopes : [])
   ];
 
   if (isWrite) {
@@ -364,7 +367,11 @@ export async function runIntegrationsAdd(provider?: string, mode?: string): Prom
     hint("This allows Manasvi to draft, send, archive, and label Gmail messages.");
     hint("Send actions always require explicit approval before execution.");
   }
-  if (isCalendar) {
+  if (isCalendarWrite) {
+    info("Requesting Calendar write scope (calendar — full access).");
+    hint("This allows Manasvi to create, update, and delete calendar events.");
+    hint("Attendee-facing actions and event deletions always require explicit approval before execution.");
+  } else if (isCalendar) {
     info("Requesting Calendar read scope (calendar.readonly).");
     hint("This allows Manasvi to read calendar events, check availability, and summarize meetings.");
     hint("Calendar read is a safe read-only scope — no events will be created or modified.");
@@ -436,6 +443,59 @@ export async function runIntegrationsGmailWriteStatus(): Promise<void> {
     if (!hasCompose || !hasSend || !hasModify) {
       hint("To enable full Gmail write access, reconnect with write scopes:");
       hint("  pnpm manasvi integrations add google write");
+    }
+  } catch {
+    warn("Failed to reach API gateway.");
+  }
+}
+
+export async function runIntegrationsCalendarWriteStatus(): Promise<void> {
+  banner("integrations calendar write status");
+  const port = await getGatewayPort();
+  try {
+    const res = await fetch(`http://127.0.0.1:${port}/integrations/google/authorization`);
+    if (!res.ok) {
+      warn("Could not fetch Google integration authorization");
+      return;
+    }
+    const body = (await res.json()) as {
+      authorization: {
+        connected: boolean;
+        availableCapabilities: Array<{ capabilityId: string; class: string; approvalSensitivity: string }>;
+        actions: Array<{ actionId: string; canAttempt: boolean; approvalSensitivity: string; missingCapabilities: string[] }>;
+      };
+    };
+    if (!body.authorization.connected) {
+      info("Google not connected.");
+      hint("Connect with calendar write scope: pnpm manasvi integrations add google calendar-write");
+      return;
+    }
+    const auth = body.authorization;
+    const writeActionIds = [
+      "calendar.event.create",
+      "calendar.event.create_with_attendees",
+      "calendar.event.update",
+      "calendar.event.update_attendees",
+      "calendar.event.delete"
+    ];
+    const writeActions = auth.actions.filter((action) => writeActionIds.includes(action.actionId));
+    section("Calendar Write Capability Status");
+    for (const action of writeActions) {
+      const status = action.canAttempt ? "AVAILABLE" : "MISSING SCOPE";
+      const approval = action.approvalSensitivity === "required" ? " [APPROVAL REQUIRED]" : action.approvalSensitivity === "policy" ? " [APPROVAL MAY BE REQUIRED]" : "";
+      console.log(`  ${action.actionId}: ${status}${approval}`);
+      if (!action.canAttempt && action.missingCapabilities.length > 0) {
+        console.log(`    missing: ${action.missingCapabilities.join(", ")}`);
+      }
+    }
+    console.log();
+    const hasCreate = auth.availableCapabilities.some((c) => c.capabilityId === "calendar.create_event");
+    const hasUpdate = auth.availableCapabilities.some((c) => c.capabilityId === "calendar.update_event");
+    const hasInvite = auth.availableCapabilities.some((c) => c.capabilityId === "calendar.invite_attendees");
+    const hasDelete = auth.availableCapabilities.some((c) => c.capabilityId === "calendar.delete_event");
+    if (!hasCreate || !hasUpdate || !hasInvite || !hasDelete) {
+      hint("To enable full Calendar write access, reconnect with the calendar write scope:");
+      hint("  pnpm manasvi integrations add google calendar-write");
     }
   } catch {
     warn("Failed to reach API gateway.");

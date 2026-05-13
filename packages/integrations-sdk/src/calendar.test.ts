@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   CalendarReadConnector,
+  CalendarWriteConnector,
   type CalendarApiClient
 } from "./calendar.js";
 import type { IntegrationAccountRecord } from "./index.js";
@@ -43,8 +44,13 @@ const noCalendarScopeAccount: IntegrationAccountRecord = {
 };
 
 class MockCalendarClient implements CalendarApiClient {
+  public lastGetUrl: string | null = null;
+  public lastPatchUrl: string | null = null;
+  public lastPatchBody: Record<string, unknown> | null = null;
+  public lastDeleteUrl: string | null = null;
   constructor(private readonly data: Record<string, unknown> = {}) {}
   async get<T>(url: string): Promise<T> {
+    this.lastGetUrl = url;
     const key = Object.keys(this.data).find((k) => url.includes(k));
     if (!key) throw new Error(`no mock for GET ${url}`);
     return this.data[key] as T;
@@ -53,6 +59,16 @@ class MockCalendarClient implements CalendarApiClient {
     const key = Object.keys(this.data).find((k) => url.includes(k));
     if (!key) throw new Error(`no mock for POST ${url}`);
     return this.data[key] as T;
+  }
+  async patch<T>(url: string, body: Record<string, unknown>): Promise<T> {
+    this.lastPatchUrl = url;
+    this.lastPatchBody = body;
+    const key = Object.keys(this.data).find((k) => url.includes(k));
+    if (!key) throw new Error(`no mock for PATCH ${url}`);
+    return this.data[key] as T;
+  }
+  async delete_(url: string): Promise<void> {
+    this.lastDeleteUrl = url;
   }
 }
 
@@ -331,6 +347,40 @@ test("getUpcomingEvents: hasMore=false when fewer events than requested", async 
   assert.equal(result.hasMore, false);
 });
 
+test("getTodayEvents: computes timezone-local day window for Asia/Kolkata", async () => {
+  const mock = new MockCalendarClient({
+    "/calendars/primary/events": { items: [] }
+  });
+  const connector = new CalendarReadConnector(mock);
+  await connector.getTodayEvents("token", connectedAccount, "primary", "Asia/Kolkata");
+
+  assert.ok(mock.lastGetUrl, "expected lastGetUrl to be captured");
+  const url = new URL(mock.lastGetUrl as string);
+  const timeMin = url.searchParams.get("timeMin");
+  const timeMax = url.searchParams.get("timeMax");
+  assert.ok(timeMin, "expected timeMin query parameter");
+  assert.ok(timeMax, "expected timeMax query parameter");
+  const spanMs = new Date(timeMax as string).getTime() - new Date(timeMin as string).getTime();
+  assert.equal(spanMs, 86_399_000);
+});
+
+test("getTodayEvents: supports explicit date and dayOffset", async () => {
+  const mock = new MockCalendarClient({
+    "/calendars/primary/events": { items: [] }
+  });
+  const connector = new CalendarReadConnector(mock);
+  await connector.getTodayEvents("token", connectedAccount, "primary", "Asia/Kolkata", "2026-05-13", 1);
+
+  assert.ok(mock.lastGetUrl, "expected lastGetUrl to be captured");
+  const url = new URL(mock.lastGetUrl as string);
+  const timeMin = url.searchParams.get("timeMin");
+  const timeMax = url.searchParams.get("timeMax");
+  assert.ok(timeMin, "expected timeMin query parameter");
+  assert.ok(timeMax, "expected timeMax query parameter");
+  assert.equal(timeMin, "2026-05-13T18:30:00.000Z");
+  assert.equal(timeMax, "2026-05-14T18:29:59.000Z");
+});
+
 // ── checkAvailability tests ───────────────────────────────────────────────────
 
 test("checkAvailability: returns busy blocks and free slots", async () => {
@@ -356,8 +406,8 @@ test("checkAvailability: returns busy blocks and free slots", async () => {
   assert.equal(result.totalBusyMinutes, 150);
   assert.ok(result.freeSlots.length >= 2);
   const firstSlot = result.freeSlots[0]!;
-  assert.equal(firstSlot.start, timeMin);
-  assert.equal(firstSlot.end, "2026-05-12T10:00:00Z");
+  assert.equal(new Date(firstSlot.start).toISOString(), new Date(timeMin).toISOString());
+  assert.equal(new Date(firstSlot.end).toISOString(), new Date("2026-05-12T10:00:00Z").toISOString());
   assert.equal(firstSlot.durationMinutes, 60);
   assert.equal(result.isFreeAt, null);
 });
@@ -449,7 +499,9 @@ test("toIngressRecord: produces EXTERNAL_UNTRUSTED provenance-linked record", as
 test("connector tracks lastError on API failure", async () => {
   const failClient: CalendarApiClient = {
     async get() { throw new Error("Calendar API read failed (401)"); },
-    async post() { throw new Error("Calendar API request failed (401)"); }
+    async post() { throw new Error("Calendar API request failed (401)"); },
+    async patch() { throw new Error("Calendar API write failed (401)"); },
+    async delete_() { throw new Error("Calendar API write failed (401)"); }
   };
   const connector = new CalendarReadConnector(failClient);
   await assert.rejects(() => connector.listEvents("token", connectedAccount, {}));
@@ -501,4 +553,209 @@ test("conference data meeting link extracted from entry points", async () => {
   const ev = result.events[0]!;
   assert.equal(ev.hasMeetingLink, true);
   assert.equal(ev.meetingLink, "https://meet.google.com/xyz-abc");
+});
+
+// ── CalendarWriteConnector tests ──────────────────────────────────────────────
+
+const writeAccount: typeof connectedAccount = {
+  ...connectedAccount,
+  accountId: "integration:google:acct-cal-write",
+  scopesGranted: ["https://www.googleapis.com/auth/calendar"]
+};
+
+const mockCreatedEvent = {
+  id: "new-event-id-123",
+  summary: "Team Standup",
+  status: "confirmed",
+  htmlLink: "https://calendar.google.com/event?eid=new-event-id-123",
+  start: { dateTime: "2026-05-14T09:00:00Z", timeZone: "UTC" },
+  end: { dateTime: "2026-05-14T09:30:00Z", timeZone: "UTC" },
+  created: "2026-05-13T12:00:00Z",
+  attendees: []
+};
+
+const mockFreeBusyNoBusy = {
+  calendars: { primary: { busy: [] } }
+};
+
+const mockFreeBusyWithConflict = {
+  calendars: {
+    primary: {
+      busy: [
+        { start: "2026-05-14T09:00:00Z", end: "2026-05-14T09:30:00Z" }
+      ]
+    }
+  }
+};
+
+test("CalendarWriteConnector: createEvent returns normalized result with actionId=create", async () => {
+  const client = new MockCalendarClient({
+    freeBusy: mockFreeBusyNoBusy,
+    "/calendars/primary/events": mockCreatedEvent
+  });
+  const connector = new CalendarWriteConnector(client);
+  const result = await connector.createEvent("token", writeAccount, {
+    calendarId: "primary",
+    summary: "Team Standup",
+    startDateTime: "2026-05-14T09:00:00Z",
+    endDateTime: "2026-05-14T09:30:00Z"
+  });
+  assert.equal(result.eventId, "new-event-id-123");
+  assert.equal(result.summary, "Team Standup");
+  assert.equal(result.calendarId, "primary");
+  assert.equal(result.actionId, "calendar.event.create");
+  assert.equal(result.hasAttendees, false);
+  assert.equal(result.connectorId, writeAccount.connectorId);
+  assert.equal(result.accountId, writeAccount.accountId);
+  assert.ok(result.conflictCheck !== null);
+  assert.equal(result.conflictCheck!.hasConflict, false);
+});
+
+test("CalendarWriteConnector: createEvent with attendees yields actionId=create_with_attendees", async () => {
+  const eventWithAttendees = {
+    ...mockCreatedEvent,
+    id: "event-attendees-456",
+    attendees: [{ email: "alice@example.com", responseStatus: "needsAction" }]
+  };
+  const client = new MockCalendarClient({
+    freeBusy: mockFreeBusyNoBusy,
+    "/calendars/primary/events": eventWithAttendees
+  });
+  const connector = new CalendarWriteConnector(client);
+  const result = await connector.createEvent("token", writeAccount, {
+    calendarId: "primary",
+    summary: "1:1 with Alice",
+    startDateTime: "2026-05-15T10:00:00Z",
+    endDateTime: "2026-05-15T10:30:00Z",
+    attendees: [{ email: "alice@example.com", displayName: "Alice" }]
+  });
+  assert.equal(result.actionId, "calendar.event.create_with_attendees");
+  assert.equal(result.hasAttendees, true);
+  assert.equal(result.attendeeCount, 1);
+});
+
+test("CalendarWriteConnector: createEvent detects conflict in conflictCheck", async () => {
+  const client = new MockCalendarClient({
+    freeBusy: mockFreeBusyWithConflict,
+    "/calendars/primary/events": mockCreatedEvent
+  });
+  const connector = new CalendarWriteConnector(client);
+  const result = await connector.createEvent("token", writeAccount, {
+    calendarId: "primary",
+    summary: "Overlapping Event",
+    startDateTime: "2026-05-14T09:00:00Z",
+    endDateTime: "2026-05-14T09:30:00Z"
+  });
+  assert.ok(result.conflictCheck !== null);
+  assert.equal(result.conflictCheck!.hasConflict, true);
+  assert.equal(result.conflictCheck!.conflictSeverity, "hard");
+  assert.ok(result.conflictCheck!.warning !== null);
+  assert.equal(result.conflictCheck!.conflicts.length, 1);
+});
+
+test("CalendarWriteConnector: checkConflict returns hasConflict=false when calendar is free", async () => {
+  const client = new MockCalendarClient({ freeBusy: mockFreeBusyNoBusy });
+  const connector = new CalendarWriteConnector(client);
+  const result = await connector.checkConflict(
+    "token", "primary",
+    "2026-05-14T14:00:00Z",
+    "2026-05-14T15:00:00Z"
+  );
+  assert.equal(result.hasConflict, false);
+  assert.equal(result.conflictSeverity, "none");
+  assert.equal(result.warning, null);
+  assert.equal(result.conflicts.length, 0);
+});
+
+test("CalendarWriteConnector: checkConflict returns hasConflict=true when busy", async () => {
+  const client = new MockCalendarClient({ freeBusy: mockFreeBusyWithConflict });
+  const connector = new CalendarWriteConnector(client);
+  const result = await connector.checkConflict(
+    "token", "primary",
+    "2026-05-14T09:00:00Z",
+    "2026-05-14T09:30:00Z"
+  );
+  assert.equal(result.hasConflict, true);
+  assert.equal(result.conflictSeverity, "hard");
+  assert.ok(result.warning !== null);
+});
+
+test("CalendarWriteConnector: updateEvent sends PATCH with supplied fields", async () => {
+  const updatedEvent = {
+    id: "existing-event-789",
+    summary: "Updated Title",
+    status: "confirmed",
+    htmlLink: null,
+    start: { dateTime: "2026-05-14T11:00:00Z" },
+    end: { dateTime: "2026-05-14T12:00:00Z" },
+    updated: "2026-05-13T13:00:00Z",
+    attendees: []
+  };
+  const client = new MockCalendarClient({
+    freeBusy: mockFreeBusyNoBusy,
+    "/calendars/primary/events/existing-event-789": updatedEvent
+  });
+  const connector = new CalendarWriteConnector(client);
+  const result = await connector.updateEvent("token", writeAccount, {
+    calendarId: "primary",
+    eventId: "existing-event-789",
+    summary: "Updated Title",
+    startDateTime: "2026-05-14T11:00:00Z",
+    endDateTime: "2026-05-14T12:00:00Z"
+  });
+  assert.equal(result.eventId, "existing-event-789");
+  assert.equal(result.summary, "Updated Title");
+  assert.ok(result.actionId === "calendar.event.update" || result.actionId === "calendar.event.update_attendees");
+  assert.ok(client.lastPatchUrl?.includes("existing-event-789"));
+  assert.ok(result.conflictCheck !== null);
+});
+
+test("CalendarWriteConnector: updateEvent with attendeesToAdd yields update_attendees actionId", async () => {
+  const updatedEvent = {
+    id: "event-add-attendee",
+    summary: "Meeting",
+    status: "confirmed",
+    htmlLink: null,
+    start: { dateTime: "2026-05-15T14:00:00Z" },
+    end: { dateTime: "2026-05-15T15:00:00Z" },
+    updated: "2026-05-13T13:00:00Z",
+    attendees: [{ email: "bob@example.com", responseStatus: "needsAction" }]
+  };
+  const client = new MockCalendarClient({
+    "/calendars/primary/events/event-add-attendee": updatedEvent
+  });
+  const connector = new CalendarWriteConnector(client);
+  const result = await connector.updateEvent("token", writeAccount, {
+    calendarId: "primary",
+    eventId: "event-add-attendee",
+    attendeesToAdd: [{ email: "bob@example.com" }]
+  });
+  assert.equal(result.actionId, "calendar.event.update_attendees");
+  assert.equal(result.hasAttendees, true);
+});
+
+test("CalendarWriteConnector: deleteEvent issues DELETE and returns result", async () => {
+  const client = new MockCalendarClient();
+  const connector = new CalendarWriteConnector(client);
+  const result = await connector.deleteEvent("token", writeAccount, {
+    calendarId: "primary",
+    eventId: "to-delete-999"
+  });
+  assert.equal(result.eventId, "to-delete-999");
+  assert.equal(result.calendarId, "primary");
+  assert.equal(result.deleted, true);
+  assert.equal(result.actionId, "calendar.event.delete");
+  assert.equal(result.connectorId, writeAccount.connectorId);
+  assert.ok(client.lastDeleteUrl?.includes("to-delete-999"));
+});
+
+test("CalendarWriteConnector: deleteEvent sendNotifications=false omits sendUpdates=all", async () => {
+  const client = new MockCalendarClient();
+  const connector = new CalendarWriteConnector(client);
+  await connector.deleteEvent("token", writeAccount, {
+    calendarId: "primary",
+    eventId: "event-no-notify",
+    sendNotifications: false
+  });
+  assert.ok(client.lastDeleteUrl?.includes("sendUpdates=none"));
 });

@@ -19,6 +19,13 @@ const WRITE_CAPABILITY_LABELS: Record<string, string> = {
   "gmail.modify": "Modify mailbox (archive, label)",
 };
 
+const CALENDAR_WRITE_CAPABILITY_LABELS: Record<string, string> = {
+  "calendar.create_event": "Create events",
+  "calendar.update_event": "Update events",
+  "calendar.invite_attendees": "Invite / notify attendees",
+  "calendar.delete_event": "Delete events",
+};
+
 export function Integrations() {
   const { data, loading, refresh } = useApi(fetchIntegrationAccounts, []);
   const { data: authz, refresh: refreshAuthz } = useApi(fetchGoogleAuthorizationSnapshot, []);
@@ -47,7 +54,19 @@ export function Integrations() {
 
   const hasAllWriteCapabilities = writeCapabilities.every((c) => c.available);
 
-  const onConnect = async (mode?: "read" | "write" | "calendar" | "full") => {
+  const calendarWriteCapabilities = useMemo(() =>
+    Object.entries(CALENDAR_WRITE_CAPABILITY_LABELS).map(([id, label]) => ({
+      id,
+      label,
+      available: availableCapabilityIds.has(id),
+      approvalSensitivity: authz?.availableCapabilities.find((c) => c.capabilityId === id)?.approvalSensitivity ?? null,
+    })),
+    [availableCapabilityIds, authz]
+  );
+
+  const hasAllCalendarWriteCapabilities = calendarWriteCapabilities.every((c) => c.available);
+
+  const onConnect = async (mode?: "read" | "write" | "calendar" | "calendar-write" | "full") => {
     setBusy(true);
     const started = await startGoogleConnectFlow(mode);
     setBusy(false);
@@ -115,6 +134,7 @@ export function Integrations() {
               <button className="btn" disabled={busy} onClick={() => onConnect("read")}>Connect (Gmail read)</button>
               <button className="btn" disabled={busy} onClick={() => onConnect("calendar")}>Connect with Calendar read</button>
               <button className="btn" disabled={busy} onClick={() => onConnect("write")}>Connect with Gmail write</button>
+              <button className="btn" disabled={busy} onClick={() => onConnect("calendar-write")}>Connect with Calendar write</button>
               <button className="btn" disabled={busy} onClick={() => onConnect("full")}>Connect (full scopes)</button>
               <button className="btn btn-danger" disabled={busy || !google} onClick={onDisconnect}>Disconnect</button>
               <button className="btn btn-ghost" disabled={busy} onClick={async () => { await refresh(); await refreshAuthz(); }}>Refresh</button>
@@ -205,6 +225,57 @@ export function Integrations() {
         <div style={{ marginTop: 12 }}>
           <button className="btn btn-ghost" onClick={refreshCalendarHealth}>Refresh Calendar health</button>
         </div>
+      </div>
+
+      <div className="card" style={{ marginTop: 16 }}>
+        <h3>Calendar Write Capabilities</h3>
+        {!authz ? (
+          <p className="muted">No authorization data available. Connect Google first.</p>
+        ) : (
+          <>
+            <table className="table" style={{ marginTop: 12 }}>
+              <thead>
+                <tr>
+                  <th>Capability</th>
+                  <th>Function</th>
+                  <th>Approval</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {calendarWriteCapabilities.map((cap) => (
+                  <tr key={cap.id}>
+                    <td><code>{cap.id}</code></td>
+                    <td>{cap.label}</td>
+                    <td>
+                      {cap.approvalSensitivity === "required" ? (
+                        <span style={{ color: "var(--color-danger, #ef4444)", fontWeight: 700 }}>always</span>
+                      ) : cap.approvalSensitivity === "policy" ? (
+                        <span style={{ color: "var(--color-warning, #f59e0b)" }}>policy</span>
+                      ) : (
+                        <span className="muted">—</span>
+                      )}
+                    </td>
+                    <td>
+                      {cap.available
+                        ? <span style={{ color: "var(--color-success, #22c55e)", fontWeight: 600 }}>AVAILABLE</span>
+                        : <span style={{ color: "var(--color-danger, #ef4444)", fontWeight: 600 }}>MISSING SCOPE</span>
+                      }
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {!hasAllCalendarWriteCapabilities && (
+              <div style={{ marginTop: 12 }}>
+                <p className="muted">Calendar write capabilities are missing. Reconnect with Calendar write scope to enable creating, updating, and deleting events.</p>
+                <button className="btn" style={{ marginTop: 8 }} disabled={busy} onClick={() => onConnect("calendar-write")}>
+                  Upgrade to Calendar write scope
+                </button>
+              </div>
+            )}
+          </>
+        )}
       </div>
 
       {calendarHealth?.calendarReadAuthorized && (

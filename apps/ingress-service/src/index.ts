@@ -162,6 +162,17 @@ async function main(): Promise<void> {
     text: string;
     approvalOptions?: boolean;
   }): Promise<void> {
+    const renderTelegramHtml = (raw: string): string => {
+      // Escape first, then allow a minimal Markdown subset for Telegram HTML parse mode.
+      const escaped = raw
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+      return escaped
+        .replace(/\*\*([^*\n][\s\S]*?)\*\*/g, "<b>$1</b>")
+        .replace(/`([^`\n]+)`/g, "<code>$1</code>");
+    };
+
     if (!config.telegramBotToken) {
       return;
     }
@@ -173,7 +184,8 @@ async function main(): Promise<void> {
         },
         body: JSON.stringify({
           chat_id: input.chatId,
-          text: input.text,
+          text: renderTelegramHtml(input.text),
+          parse_mode: "HTML",
           ...(input.approvalOptions
             ? {
                 reply_markup: {

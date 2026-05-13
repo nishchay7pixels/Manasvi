@@ -76,6 +76,7 @@ import {
   runIntegrationsCalendarHealth,
   runIntegrationsCalendarToday,
   runIntegrationsCalendarUpcoming,
+  runIntegrationsCalendarWriteStatus,
   runIntegrationsList,
   runIntegrationsRemove,
   runIntegrationsStatus
@@ -135,7 +136,7 @@ ${style.bold("Channels:")}
 
 ${style.bold("Integrations:")}
   ${style.cyan("integrations list")}   List connected integrations
-  ${style.cyan("integrations add")}    Start provider connection flow (add google write/calendar/full for scopes)
+  ${style.cyan("integrations add")}    Start provider connection flow (add google write/calendar/calendar-write/full for scopes)
   ${style.cyan("integrations status")} Show integration status
   ${style.cyan("integrations check")}  Evaluate policy/scopes for an action
   ${style.cyan("integrations gmail-health")} Gmail connector health/readiness
@@ -144,6 +145,7 @@ ${style.bold("Integrations:")}
   ${style.cyan("integrations calendar-health")} Calendar connector health/readiness
   ${style.cyan("integrations calendar-today")} Show today's calendar events
   ${style.cyan("integrations calendar-upcoming")} Show upcoming calendar events
+  ${style.cyan("integrations calendar-write-status")} Show Calendar write capability readiness
   ${style.cyan("integrations remove")} Disconnect integration
 
 ${style.bold("Tools:")}
@@ -298,6 +300,7 @@ async function main(): Promise<void> {
           case "calendar-health": await runIntegrationsCalendarHealth(); break;
           case "calendar-today": await runIntegrationsCalendarToday(rest[0]); break;
           case "calendar-upcoming": await runIntegrationsCalendarUpcoming(rest[0]); break;
+          case "calendar-write-status": await runIntegrationsCalendarWriteStatus(); break;
           case "remove": await runIntegrationsRemove(rest[0]); break;
           default: printError(`Unknown subcommand: integrations ${sub}`); process.exit(1);
         }
