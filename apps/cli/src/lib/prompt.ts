@@ -74,7 +74,51 @@ export async function select(label: string, choices: Choice[], defaultIndex = 0)
 // ── Password / secret input ────────────────────────────────────────────────────
 
 export async function secret(label: string): Promise<string> {
-  // Can't truly hide input without raw mode — warn user instead
-  const answer = await ask(`  ${style.cyan("?")} ${label} ${style.dim("(input visible)")}: `);
+  // Use raw mode to hide input if running in a TTY
+  if (process.stdin.isTTY && process.stdout.isTTY) {
+    return readHidden(`  ${style.cyan("?")} ${label}: `);
+  }
+  // Non-TTY fallback (pipes, CI): read line normally but warn
+  const answer = await ask(`  ${style.cyan("?")} ${label} ${style.dim("(input visible — non-TTY)")}: `);
   return answer.trim();
+}
+
+function readHidden(prompt: string): Promise<string> {
+  return new Promise((resolve) => {
+    process.stdout.write(prompt);
+    process.stdin.setRawMode(true);
+    process.stdin.resume();
+    process.stdin.setEncoding("utf8");
+
+    let value = "";
+
+    const onData = (char: string) => {
+      if (char === "\r" || char === "\n") {
+        // Enter — done
+        process.stdin.setRawMode(false);
+        process.stdin.pause();
+        process.stdin.removeListener("data", onData);
+        process.stdout.write("\n");
+        resolve(value);
+      } else if (char === "") {
+        // Ctrl-C
+        process.stdin.setRawMode(false);
+        process.stdin.pause();
+        process.stdin.removeListener("data", onData);
+        process.stdout.write("\n");
+        process.exit(130);
+      } else if (char === "" || char === "\b") {
+        // Backspace
+        if (value.length > 0) {
+          value = value.slice(0, -1);
+          process.stdout.write("\b \b");
+        }
+      } else {
+        value += char;
+        process.stdout.write("*");
+      }
+    };
+
+    process.stdin.on("data", onData);
+  });
 }

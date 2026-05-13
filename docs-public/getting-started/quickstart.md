@@ -27,6 +27,10 @@ If you're missing any of these, see [Prerequisites](/docs/getting-started/prereq
 If you don't want to install Ollama yet, you can use **mock mode** — it gives predictable test responses without connecting to any AI. You'll still see the full pipeline working.
 :::
 
+:::tip One-command setup
+If you want a single guided flow instead of the steps below, run `pnpm manasvi setup` after installing dependencies — it detects init state, walks you through model and channel selection, and runs doctor. Use `--profile demo` for a zero-config local start.
+:::
+
 ---
 
 ## Step 1 — Get Ollama ready (5 min)
@@ -269,5 +273,9 @@ Tools are governed: every invocation goes through policy evaluation, intent sign
 **Understand the system** — learn what each part does and why:
 → [Core concepts](/docs/concepts/agent-runtime)
 
-**Something went wrong?** — run `pnpm manasvi doctor` first:
+**Something went wrong?** — run `pnpm manasvi doctor` first (add `--fix` for safe auto-repair):
 → [Troubleshooting](/docs/getting-started/troubleshooting)
+
+**Inspect logs** — tail service output with `pnpm manasvi logs <service> --follow`
+
+**Check all connections** — `pnpm manasvi connections` shows model, channel, and Google integration status in one view

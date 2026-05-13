@@ -207,21 +207,28 @@ corepack enable
 pnpm install
 ```
 
-### Initialize local configuration
+### Guided first-run setup (recommended)
 
 ```bash
-pnpm manasvi init
+pnpm manasvi setup
 ```
 
-This creates `~/.manasvi/`, writes CLI configuration, and generates local cryptographic secrets into `.env.local`. Existing secrets are preserved unless `--force` is used.
-
-### Guided onboarding
+`setup` is the recommended entry point for new installations. It detects init state, runs `init` if needed, walks you through model and channel configuration, and finishes with a `doctor` check. Use `--profile` to skip interactive prompts:
 
 ```bash
-pnpm manasvi onboard
+pnpm manasvi setup --profile demo      # mock model, no external services
+pnpm manasvi setup --profile dev       # interactive model selection
+pnpm manasvi setup --profile telegram  # Telegram-connected assistant
+pnpm manasvi setup --profile google    # Google integration focus
+pnpm manasvi setup --yes               # non-interactive, safe defaults
 ```
 
-Onboarding can configure a model provider, Telegram or Slack channel settings, and docs UI preferences.
+### Step-by-step alternative
+
+```bash
+pnpm manasvi init      # create ~/.manasvi/ and generate secrets
+pnpm manasvi onboard   # configure model provider and channels
+```
 
 ### Start local services
 
@@ -264,20 +271,35 @@ The operator CLI lives in `apps/cli` and is exposed through the root script:
 pnpm manasvi <command> [subcommand] [options]
 ```
 
+Global flags available on every command:
+
+| Flag | Alias | Description |
+| --- | --- | --- |
+| `--help` | `-h` | Command help (also: `pnpm manasvi help <cmd>`) |
+| `--verbose` | `-v` | Extra detail including PIDs and traces |
+| `--yes` | `-y` | Non-interactive mode |
+| `--force` | | Command-specific force behaviour |
+| `--json` | | Machine-readable JSON output |
+| `--no-color` | | Disable ANSI color codes |
+
 Common commands include:
 
 | Area | Commands |
 | --- | --- |
-| Core lifecycle | `init`, `onboard`, `start`, `stop`, `restart`, `status`, `doctor`, `ui`, `version` |
-| Configuration | `config show`, `config validate`, `config path`, `config edit` |
+| Getting started | `setup`, `init`, `onboard` |
+| Lifecycle | `start`, `stop`, `restart`, `status`, `doctor`, `logs` |
+| Configuration | `config show`, `config validate`, `config explain`, `config path`, `config edit` |
 | Models | `models list`, `models add`, `models test`, `models use` |
 | Channels | `channels list`, `channels add`, `channels status`, `channels remove`, `channels logs` |
-| Integrations | `integrations list`, `integrations add`, `integrations status`, `integrations check`, `integrations gmail-health`, `integrations gmail-attention`, `integrations gmail-write-status`, `integrations calendar-health`, `integrations calendar-today`, `integrations calendar-upcoming`, `integrations remove` |
+| Connections | `connect`, `connections` |
+| Governance | `governance summary`, `governance tools`, `governance policies`, `governance risks` |
+| Approvals | `approvals list`, `approvals inspect`, `approvals approve`, `approvals reject` |
+| Integrations | `integrations list`, `integrations add`, `integrations status`, `integrations gmail-health`, `integrations calendar-today` |
 | Tools | `tools list`, `tools inspect`, `tools sets` |
-| Plugins | `plugins list`, `plugins inspect` |
+| Plugins | `plugins list`, `plugins inspect`, `plugins status` |
 | Nodes | `nodes list`, `nodes status`, `nodes pair` |
 
-See `docs-public/reference/cli.md` and `docs-internal/cli/current-cli-capabilities.md` for deeper CLI details.
+See `docs-public/reference/cli.md` for full CLI reference documentation.
 
 ## Local Service Ports
 
@@ -371,7 +393,7 @@ Before production use:
 
 Current repository direction, based on docs and implementation milestones:
 
-- **CLI/operator experience** — richer diagnostics, integration lifecycle management, and safer local service operations.
+- **CLI/operator experience** — command registry with grouped help, guided `setup`, `--json` output, doctor categories with `--fix`, `logs --follow`, `connect`/`connections` shortcuts, and governance visibility commands delivered. Next: approval queue operations, calendar write CLI, plugin/node transactional pairing.
 - **Sandbox hardening** — stronger isolation, egress controls, workspace controls, and runtime policy enforcement.
 - **Replay and tampering resistance** — durable verification for approvals, intents, and dispatch.
 - **Plugin provenance and isolation** — stronger plugin packaging, manifest review, and capability governance.
@@ -402,8 +424,7 @@ For local development, start with:
 
 ```bash
 pnpm install
-pnpm manasvi init
-pnpm manasvi onboard
+pnpm manasvi setup    # guided first-run: init + onboard + doctor
 pnpm manasvi start
 pnpm manasvi status
 ```

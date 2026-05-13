@@ -200,11 +200,20 @@ export async function runChannelsAdd(channelName?: string): Promise<void> {
 
 // ── Status ────────────────────────────────────────────────────────────────────
 
-export async function runChannelsStatus(): Promise<void> {
-  banner("channels status");
+export async function runChannelsStatus(opts: { json?: boolean } = {}): Promise<void> {
+  const { printJson, jsonOk, jsonFail } = await import("../lib/json.js");
 
   const config = await loadConfig();
-  if (!config?.initialized) { warn("Run `pnpm manasvi init` first"); return; }
+  if (!config?.initialized) {
+    if (opts.json) {
+      printJson(jsonFail("channels status", [{ code: "not_initialized", message: "Run pnpm manasvi init first" }]));
+      process.exit(1);
+    }
+    warn("Run `pnpm manasvi init` first");
+    return;
+  }
+
+  if (!opts.json) banner("channels status");
 
   const envPath = envFilePath(config.projectPath);
   const env = await readEnvFile(envPath);
@@ -358,6 +367,26 @@ export async function runChannelsStatus(): Promise<void> {
   if (!slackEnabled) {
     console.log();
     info("Slack not configured. Add it with: pnpm manasvi channels add slack");
+  }
+
+  if (opts.json) {
+    printJson(jsonOk("channels status", {
+      telegram: {
+        enabled: telegramEnabled,
+        mode: telegramMode,
+        hasToken: hasTelegramToken,
+        ingressRunning,
+        pollerRunning: liveStatus?.poller?.running ?? null,
+        updatesReceived: liveStatus?.poller?.updatesReceived ?? null,
+        lastError: liveStatus?.poller?.lastError ?? null
+      },
+      slack: {
+        enabled: slackEnabled,
+        hasToken: hasSlackToken,
+        hasSigningSecret: hasSlackSecret
+      }
+    }));
+    return;
   }
 
   console.log();

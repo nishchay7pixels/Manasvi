@@ -12,7 +12,7 @@ import { checkAllServices } from "../lib/health.js";
 import { style } from "../lib/ui.js";
 import { envFilePath, readEnvFile } from "../lib/env.js";
 
-export async function runStart(args: { services?: string[] } = {}): Promise<void> {
+export async function runStart(args: { services?: string[]; service?: string } = {}): Promise<void> {
   banner("start");
 
   const config = await requireConfig();
@@ -20,10 +20,17 @@ export async function runStart(args: { services?: string[] } = {}): Promise<void
   const workspaceRoot = resolve(env.MANASVI_WORKSPACE_ROOT ?? config.workspacePath ?? resolve(config.projectPath, "workspace"));
   await mkdir(workspaceRoot, { recursive: true });
 
-  section("Starting services");
-  info(`Workspace root: ${workspaceRoot}`);
-  info("Services will start in dependency order. This may take a few seconds.");
-  console.log();
+  // Single-service mode
+  if (args.service) {
+    section(`Starting service: ${args.service}`);
+    info("Starting a single service. Dependencies must already be running.");
+    console.log();
+  } else {
+    section("Starting services");
+    info(`Workspace root: ${workspaceRoot}`);
+    info("Services will start in dependency order. This may take a few seconds.");
+    console.log();
+  }
 
   const results = await startAllServices(config, (service, status) => {
     const labels: Record<string, string> = {

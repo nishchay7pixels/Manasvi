@@ -23,17 +23,22 @@ const SERVICE_LABELS: Record<string, string> = {
   "approval-service": "Approval"
 };
 
-export async function runStop(opts: { force?: boolean } = {}): Promise<void> {
+export async function runStop(opts: { force?: boolean; service?: string } = {}): Promise<void> {
   banner("stop");
 
   if (opts.force) {
     info("Force mode: services that do not stop gracefully will be killed.");
   }
 
-  section("Stopping services");
+  if (opts.service) {
+    section(`Stopping service: ${opts.service}`);
+  } else {
+    section("Stopping services");
+  }
 
   const results = await stopAllServices(
     (service, status, pid) => {
+      if (opts.service && service !== opts.service) return;
       const label = (SERVICE_LABELS[service] ?? service).padEnd(20);
 
       if (status === "stopping") {

@@ -7,11 +7,31 @@ import { select, input, secret } from "../lib/prompt.js";
 import { loadConfig, saveConfig, type ModelProvider } from "../lib/config.js";
 import { envFilePath, mergeEnvFile, readEnvFile } from "../lib/env.js";
 import { checkAnthropic, checkDeepSeek, checkOllama, checkOpenAI, listAnthropicModels } from "../lib/health.js";
+import { printJson, jsonOk, jsonFail } from "../lib/json.js";
 
-export async function runModelsList(): Promise<void> {
+export async function runModelsList(opts: { json?: boolean } = {}): Promise<void> {
+  const config = await loadConfig();
+
+  if (opts.json) {
+    if (!config?.initialized) {
+      printJson(jsonFail("models list", [{ code: "not_initialized", message: "Run pnpm manasvi init first" }]));
+      process.exit(1);
+    }
+    printJson(jsonOk("models list", {
+      activeProvider: config.model.provider,
+      providers: {
+        deepseek: { model: config.model.deepseekModel, baseUrl: config.model.deepseekBaseUrl, active: config.model.provider === "deepseek" },
+        ollama: { model: config.model.ollamaModel, baseUrl: config.model.ollamaBaseUrl, active: config.model.provider === "ollama" },
+        openai: { model: config.model.openaiModel, baseUrl: config.model.openaiBaseUrl, active: config.model.provider === "openai" },
+        claude: { model: config.model.claudeModel, baseUrl: config.model.claudeBaseUrl, active: config.model.provider === "claude" },
+        mock: { model: "mock", baseUrl: null, active: config.model.provider === "mock" }
+      }
+    }, { nextSteps: ["pnpm manasvi models test", "pnpm manasvi models use <provider>"] }));
+    return;
+  }
+
   banner("models");
 
-  const config = await loadConfig();
   if (!config?.initialized) {
     warn("Run `pnpm manasvi init` first");
     return;

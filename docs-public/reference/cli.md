@@ -14,7 +14,22 @@ pnpm manasvi <command> [subcommand] [options]
 
 ---
 
-## Global options
+## Quick Start
+
+```bash
+# First-run guided setup (recommended)
+pnpm manasvi setup
+
+# Or step by step:
+pnpm manasvi init
+pnpm manasvi onboard
+pnpm manasvi start
+pnpm manasvi status
+```
+
+---
+
+## Global Options
 
 | Flag | Alias | Description |
 |------|-------|-------------|
@@ -22,17 +37,50 @@ pnpm manasvi <command> [subcommand] [options]
 | `--verbose` | `-v` | Show extra detail (PIDs, full error traces) |
 | `--yes` | `-y` | Non-interactive mode — accept all defaults |
 | `--force` | | Command-specific force behaviour (see each command) |
+| `--json` | | Machine-readable JSON output (no ANSI) |
+| `--no-color` | | Disable ANSI color codes |
 
 ---
 
-## Core commands
+## Help System
+
+```bash
+pnpm manasvi help               # Top-level command list
+pnpm manasvi help <command>     # Detailed help for a command
+pnpm manasvi help config show   # Help for a subcommand
+pnpm manasvi models --help      # Inline --help flag (works everywhere)
+```
+
+Unknown commands produce friendly suggestions:
+```bash
+pnpm manasvi ststus
+# Unknown command: ststus
+# Did you mean: status?
+```
+
+---
+
+## Getting Started Commands
+
+### `setup`
+
+Guided first-run wrapper. Detects init state, configures model + channels, runs doctor.
+
+```bash
+pnpm manasvi setup                     # Interactive
+pnpm manasvi setup --profile demo      # Quick local demo (mock model)
+pnpm manasvi setup --profile dev       # Interactive model selection
+pnpm manasvi setup --profile telegram  # Telegram-connected assistant
+pnpm manasvi setup --profile google    # Google integration focus
+pnpm manasvi setup --yes               # Non-interactive with safe defaults
+```
 
 ### `init`
 
 Initialize Manasvi on this machine.
 
 ```bash
-pnpm manasvi init [--force] [--project <path>]
+pnpm manasvi init [--force] [--project <path>] [--workspace <path>]
 ```
 
 - Creates `~/.manasvi/` directory
@@ -40,453 +88,371 @@ pnpm manasvi init [--force] [--project <path>]
 - Writes default config to `~/.manasvi/config.json`
 - Checks Node.js version, pnpm, and tsx prerequisites
 
-Safe to re-run — existing secrets in `.env.local` are preserved unless `--force` is passed.
-
-**Options:**
-
 | Flag | Description |
 |------|-------------|
 | `--force` | Regenerate all secrets and overwrite config |
-| `--project <path>` | Path to Manasvi project root (auto-detected by default) |
-
----
+| `--project <path>` | Path to Manasvi project root |
+| `--workspace <path>` | Workspace root for filesystem tools |
 
 ### `onboard`
 
-Guided interactive setup — choose a model provider, configure channels, and set preferences.
+Guided interactive setup for model provider, channels, and preferences.
 
 ```bash
 pnpm manasvi onboard [--yes] [--provider <name>]
 ```
 
-Walks through:
-1. Model provider selection (deepseek / mock / ollama / openai / claude)
-2. Channel setup (telegram / slack)
-3. Docs UI preferences
-
-**Options:**
-
 | Flag | Description |
 |------|-------------|
 | `--yes` / `-y` | Accept all defaults, skip prompts |
-| `--provider <name>` | Pre-select model provider (`deepseek`, `mock`, `ollama`, `openai`, `claude`) |
+| `--provider <name>` | Pre-select provider: `deepseek`, `mock`, `ollama`, `openai`, `claude` |
 
 ---
+
+## Lifecycle Commands
 
 ### `start`
 
-Start all Manasvi services.
+Start all services (or a single service) in dependency order.
 
 ```bash
-pnpm manasvi start
+pnpm manasvi start                          # All services
+pnpm manasvi start orchestrator-service     # Single service
 ```
-
-Services are started in dependency order. The CLI waits for each service's `/health` endpoint before proceeding to the next. Service logs are written to `~/.manasvi/logs/<service>.log`.
-
----
 
 ### `stop`
 
-Stop all running Manasvi services.
+Stop all running services (or a single service).
 
 ```bash
-pnpm manasvi stop [--force]
+pnpm manasvi stop                      # Graceful (5s grace period)
+pnpm manasvi stop --force              # SIGKILL after grace period
+pnpm manasvi stop orchestrator-service  # Single service
 ```
-
-Sends SIGTERM to each tracked service and waits up to 5 seconds for it to exit cleanly.
-If a service hasn't stopped within the grace period:
-
-- Without `--force` — prints an error and exits with code 1. The service is left running and its PID is preserved so you can retry.
-- With `--force` — sends SIGKILL to any service still alive after the grace period.
-
-**Options:**
-
-| Flag | Description |
-|------|-------------|
-| `--force` | Send SIGKILL to services that do not stop within the grace period |
-
-**Examples:**
-
-```bash
-# Graceful stop — waits up to 5s per service
-pnpm manasvi stop
-
-# Force stop — kills anything that doesn't exit in time
-pnpm manasvi stop --force
-```
-
-**Exit codes:**
-
-| Code | Meaning |
-|------|---------|
-| `0` | All services stopped (or were already not running) |
-| `1` | One or more services did not stop within the grace period (run with `--force`) |
-
----
 
 ### `restart`
 
-Stop all services and start them again.
+Stop then start all services.
 
 ```bash
 pnpm manasvi restart [--force]
 ```
 
-Accepts the same `--force` flag as `stop` — useful when services are hung and need a hard restart.
-
-```bash
-# Graceful restart
-pnpm manasvi restart
-
-# Force-kill anything stuck, then start fresh
-pnpm manasvi restart --force
-```
-
----
-
 ### `status`
 
-Show health of all services and current configuration.
+Show service health and configuration.
 
 ```bash
-pnpm manasvi status [--verbose]
+pnpm manasvi status                         # All services
+pnpm manasvi status -v                      # With PIDs + backend checks
+pnpm manasvi status --json                  # JSON output
+pnpm manasvi status orchestrator-service    # Single service
 ```
-
-Displays:
-- Health status and latency for each service
-- Active model provider
-- Enabled channels
-- Docs UI URL
-
-**Options:**
-
-| Flag | Description |
-|------|-------------|
-| `--verbose` / `-v` | Show PIDs alongside each service |
-
----
 
 ### `doctor`
 
 Diagnose setup issues with actionable fixes.
 
 ```bash
-pnpm manasvi doctor
+pnpm manasvi doctor                      # All checks
+pnpm manasvi doctor --fix                # Apply safe automatic fixes
+pnpm manasvi doctor --category models    # Specific category only
+pnpm manasvi doctor --json               # JSON output
 ```
 
-Checks:
-- Node.js version (≥20 required)
-- pnpm availability
-- Config file presence and validity
-- Required secrets in `.env.local`
-- Port availability for all nine services
-- Service health (if running)
-- Model backend connectivity (DeepSeek, Ollama, OpenAI, or Claude reachability)
+**Categories:** `system` | `config` | `secrets` | `models` | `channels` | `services` | `security`
 
-Each check is labeled pass / warn / fail with a suggested fix.
+### `logs`
 
----
-
-### `ui`
-
-Open or print the URL for the documentation UI.
+View service log files from `~/.manasvi/logs/`.
 
 ```bash
-pnpm manasvi ui [--open]
-```
-
-**Options:**
-
-| Flag | Description |
-|------|-------------|
-| `--open` | Open the URL in your default browser |
-
----
-
-### `version`
-
-Print the CLI version.
-
-```bash
-pnpm manasvi version
+pnpm manasvi logs                              # List all log files
+pnpm manasvi logs orchestrator-service         # Last 50 lines
+pnpm manasvi logs api-gateway --tail 100       # Last 100 lines
+pnpm manasvi logs ingress-service --follow     # Stream new lines (Ctrl+C to stop)
 ```
 
 ---
 
-## Configuration commands
+## Configuration Commands
 
 ### `config show`
 
-Print the full current configuration.
+Show current configuration. Secrets are **masked by default**.
 
 ```bash
-pnpm manasvi config show
+pnpm manasvi config show              # Masked output
+pnpm manasvi config show --secrets    # Unmasked (requires confirmation)
+pnpm manasvi config show --json       # JSON output
 ```
 
 ### `config validate`
 
-Validate the config file and check that required environment variables are present.
+Validate config and required env vars.
 
 ```bash
 pnpm manasvi config validate
+pnpm manasvi config validate --json
 ```
 
-### `config path`
+### `config explain`
 
-Print the path to the config file.
+Explain a configuration variable.
 
 ```bash
-pnpm manasvi config path
+pnpm manasvi config explain                    # List all documented variables
+pnpm manasvi config explain MODEL_ADAPTER_MODE
+pnpm manasvi config explain TELEGRAM_ADAPTER_MODE
+pnpm manasvi config explain MANASVI_FS_WRITES_ENABLED
 ```
 
-### `config edit`
-
-Open the config file in `$EDITOR`.
+### `config path` / `config edit`
 
 ```bash
-pnpm manasvi config edit
+pnpm manasvi config path    # Print config file path
+pnpm manasvi config edit    # Open in $EDITOR
 ```
 
 ---
 
-## Model commands
-
-### `models list`
-
-List all configured model providers and show which one is active.
+## Model Commands
 
 ```bash
-pnpm manasvi models list
+pnpm manasvi models list              # List configured providers (shows active)
+pnpm manasvi models list --json
+pnpm manasvi models add deepseek      # Configure DeepSeek (asks for API key)
+pnpm manasvi models add ollama        # Configure Ollama (local)
+pnpm manasvi models add openai        # Configure OpenAI
+pnpm manasvi models add claude        # Configure Claude/Anthropic
+pnpm manasvi models test              # Test active provider connectivity
+pnpm manasvi models use ollama        # Switch active provider
+```
+
+**Supported providers:** `deepseek`, `ollama`, `openai`, `claude`, `mock`
+
+---
+
+## Channel Commands
+
+```bash
+pnpm manasvi channels list                     # List configured channels
+pnpm manasvi channels add telegram             # Configure Telegram bot
+pnpm manasvi channels add slack                # Configure Slack workspace
+pnpm manasvi channels login telegram           # Alias for channels add
+pnpm manasvi channels status                   # Channel health
+pnpm manasvi channels status --json
+pnpm manasvi channels remove telegram          # Remove a channel
+pnpm manasvi channels logs ingress-service     # Tail channel logs
 ```
 
 ---
 
-## Integration commands
+## Governance Commands
 
-### `integrations list`
+### `tools`
 
-List all integration accounts and status.
+Inspect built-in tool governance: risk levels, policy bindings, sandbox profiles.
+
+```bash
+pnpm manasvi tools list                          # All tools
+pnpm manasvi tools list --enabled                # Only enabled
+pnpm manasvi tools inspect tool.local-file-read  # Full detail
+pnpm manasvi tools sets                          # Default tool sets
+```
+
+### `governance`
+
+Read-only governance posture overview.
+
+```bash
+pnpm manasvi governance summary    # Overall posture: services, tool risks, config
+pnpm manasvi governance tools      # Tool risk overview (delegates to tools list)
+pnpm manasvi governance policies   # Policy set, approval TTL, runtime constraints
+pnpm manasvi governance risks      # Risk profile: tools + active channels + config
+```
+
+All governance subcommands support `--json`.
+
+### `approvals`
+
+Approval queue management.
+
+> **Note:** Approval queue CLI requires a backend REST API on the approval-service. Not yet implemented — commands display honest status and what is needed.
+
+```bash
+pnpm manasvi approvals list         # (shows what's missing)
+pnpm manasvi approvals inspect <id>
+pnpm manasvi approvals approve <id>
+pnpm manasvi approvals reject <id>
+```
+
+---
+
+## Integration Commands
+
+### `integrations`
+
+Manage Google integrations (Gmail, Calendar).
 
 ```bash
 pnpm manasvi integrations list
-```
-
-### `integrations add google`
-
-Start the Google OAuth connection flow and print/open the authorization URL.
-
-```bash
-pnpm manasvi integrations add google
-```
-
-### `integrations status`
-
-Show current Google integration status, scopes, and refresh/auth metadata.
-
-```bash
+pnpm manasvi integrations add google              # Read-only OAuth
+pnpm manasvi integrations add google write        # Gmail write scopes
+pnpm manasvi integrations add google calendar     # Calendar read
+pnpm manasvi integrations add google calendar-write  # Calendar write
+pnpm manasvi integrations add google full         # All scopes
 pnpm manasvi integrations status
-```
-
-### `integrations check <google-action-id>`
-
-Run scope/capability/policy permission evaluation for a specific Google action.
-
-```bash
 pnpm manasvi integrations check gmail.threads.read
-pnpm manasvi integrations check gmail.message.send
-```
-
-### `integrations gmail-health`
-
-Show Gmail read connector health/read readiness.
-
-```bash
 pnpm manasvi integrations gmail-health
-```
-
-### `integrations gmail-attention`
-
-Summarize recent inbox items likely needing attention (unread/important focus).
-
-```bash
 pnpm manasvi integrations gmail-attention
-```
-
-### `integrations remove google`
-
-Disconnect and revoke the Google integration.
-
-```bash
+pnpm manasvi integrations gmail-write-status
+pnpm manasvi integrations calendar-health
+pnpm manasvi integrations calendar-today [timezone]
+pnpm manasvi integrations calendar-upcoming [maxResults]
+pnpm manasvi integrations calendar-write-status
 pnpm manasvi integrations remove google
 ```
 
-### `models add`
+### `connect`
 
-Configure a model provider interactively.
-
-```bash
-pnpm manasvi models add [provider]
-```
-
-**provider:** `ollama`, `openai`, or `claude`. Prompts if omitted.
-
-### `models test`
-
-Test connectivity to the active model provider.
+Shortcut to connect a model, channel, or integration.
 
 ```bash
-pnpm manasvi models test
+pnpm manasvi connect model        # → models add (interactive)
+pnpm manasvi connect telegram     # → channels add telegram
+pnpm manasvi connect slack        # → channels add slack
+pnpm manasvi connect google       # → integrations add google
 ```
 
-Sends a minimal request and reports success or the specific error.
+### `connections`
 
-### `models use`
-
-Switch the active model provider.
+Unified status of all configured connections.
 
 ```bash
-pnpm manasvi models use <provider>
+pnpm manasvi connections
+pnpm manasvi connections --json
 ```
 
-**provider:** `mock`, `ollama`, `openai`, or `claude`.
+Output shows: active model + reachability, Telegram/Slack channel status, Google integration scope status.
 
 ---
 
-## Channel commands
+## Advanced Commands
 
-### `channels list`
+### `plugins`
 
-List all configured channels and their status.
+Plugin (extension plane) management.
 
 ```bash
-pnpm manasvi channels list
+pnpm manasvi plugins list     # Current state (scaffolded — management API pending)
+pnpm manasvi plugins status   # Extension plane status
+pnpm manasvi plugins inspect <pluginId>
 ```
 
-### `channels add`
+### `nodes`
 
-Configure a channel interactively.
+Remote execution node management.
 
 ```bash
-pnpm manasvi channels add [channel]
+pnpm manasvi nodes list      # Registered nodes (reads from node manager)
+pnpm manasvi nodes status    # Node manager health + registered count
+pnpm manasvi nodes pair      # Guided pairing instructions
 ```
 
-**channel:** `telegram` or `slack`. Prompts if omitted.
+> **Note:** `nodes pair` is instructional only. Transactional pairing requires backend API support.
 
-### `channels status`
+---
 
-Show health and activity for all configured channels.
-
-```bash
-pnpm manasvi channels status
-```
-
-### `channels remove`
-
-Remove a channel's configuration.
+## Docs & Info
 
 ```bash
-pnpm manasvi channels remove <channel>
-```
-
-Removes the channel's token from `.env.local` and marks it disabled in config.
-
-### `channels logs`
-
-Tail the ingress service log, filtered to a specific channel.
-
-```bash
-pnpm manasvi channels logs [channel]
+pnpm manasvi ui               # Show docs UI URL
+pnpm manasvi ui --open        # Open in browser
+pnpm manasvi docs             # Alias for ui --open
+pnpm manasvi version          # Print CLI version
 ```
 
 ---
 
-## Tool commands
+## JSON Output
 
-### `tools list`
-
-List all available tools and their action classes.
+Core read commands support `--json` for automation and scripting:
 
 ```bash
-pnpm manasvi tools list
+pnpm manasvi status --json
+pnpm manasvi doctor --json
+pnpm manasvi config show --json
+pnpm manasvi config validate --json
+pnpm manasvi models list --json
+pnpm manasvi channels status --json
+pnpm manasvi connections --json
+pnpm manasvi governance summary --json
+pnpm manasvi governance risks --json
 ```
 
-Fetches live data from the orchestrator if it is running. Falls back to the built-in tool registry if not.
+### JSON envelope
 
-### `tools inspect`
+All JSON responses use a stable type:
 
-Show full detail for a specific tool — description, parameters, policy class, sandbox profile.
-
-```bash
-pnpm manasvi tools inspect <tool-name>
+```json
+{
+  "ok": true,
+  "command": "status",
+  "timestamp": "2026-05-14T00:00:00.000Z",
+  "data": {},
+  "warnings": [{ "code": "...", "message": "..." }],
+  "errors": [{ "code": "...", "message": "...", "fix": "..." }],
+  "nextSteps": ["pnpm manasvi start"]
+}
 ```
+
+- `ok: false` when `errors` is non-empty
+- Exit code is non-zero on failure
+- No ANSI codes in JSON output
+- Sensitive values masked unless explicitly requested
 
 ---
 
-## Plugin commands
+## Security Notes
 
-### `plugins list`
-
-List installed out-of-process plugins.
-
-```bash
-pnpm manasvi plugins list
-```
-
-### `plugins inspect`
-
-Show details for a specific plugin.
-
-```bash
-pnpm manasvi plugins inspect <plugin-name>
-```
+- **Secret input is hidden**: API keys and tokens are hidden (`*`) during entry in TTY environments.
+- **Config masking**: `config show` masks all sensitive values by default.
+- **Confirmations**: Destructive actions (remove, force-stop, show secrets) require explicit confirmation.
+- **Governance visibility**: `doctor`, `governance risks`, and `tools list` surface unsafe misconfigurations.
+- **Internal secrets**: Generated cryptographically on `init` — never hardcoded.
 
 ---
 
-## Node commands
-
-### `nodes list`
-
-List all registered remote nodes.
-
-```bash
-pnpm manasvi nodes list
-```
-
-### `nodes status`
-
-Show node manager health and active node count.
-
-```bash
-pnpm manasvi nodes status
-```
-
-### `nodes pair`
-
-Start the interactive node pairing flow to register a new remote node.
-
-```bash
-pnpm manasvi nodes pair
-```
-
----
-
-## Files and directories
+## Files and Directories
 
 | Path | Contents |
 |------|----------|
-| `~/.manasvi/config.json` | CLI configuration (model, channels, preferences) |
-| `~/.manasvi/pids.json` | PIDs of running service processes |
-| `~/.manasvi/logs/` | Per-service log files |
-| `.env.local` | All secrets and environment variables (project root) |
+| `~/.manasvi/config.json` | CLI config (model, channels, ports) |
+| `~/.manasvi/pids.json` | Running service PIDs |
+| `~/.manasvi/logs/<service>.log` | Per-service log files |
+| `<project>/.env.local` | Runtime secrets and settings |
+
+Override CLI home:
+```bash
+export MANASVI_HOME=/path/to/.manasvi
+```
 
 ---
 
-## Quick start
+## Key Environment Variables
 
-```bash
-pnpm manasvi init        # First-time setup — generates secrets, checks prereqs
-pnpm manasvi onboard     # Choose model and channels interactively
-pnpm manasvi start       # Start all services
-pnpm manasvi status      # Verify everything is healthy
-pnpm cli                 # Open interactive terminal chat
-```
+| Variable | Description |
+|----------|-------------|
+| `MANASVI_HOME` | CLI home dir (default: `~/.manasvi`) |
+| `MANASVI_PROJECT` | Project root (default: cwd) |
+| `MODEL_ADAPTER_MODE` | Active model provider |
+| `PLANNER_MODEL` | Model name for planner |
+| `DEEPSEEK_API_KEY` | DeepSeek API key |
+| `OPENAI_API_KEY` | OpenAI API key |
+| `ANTHROPIC_API_KEY` | Anthropic API key |
+| `TELEGRAM_BOT_TOKEN` | Telegram bot token |
+| `TELEGRAM_ADAPTER_MODE` | `polling` or `webhook` |
+| `NO_COLOR` | Disable ANSI colors (any value) |
+
+Run `pnpm manasvi config explain <VAR>` for full documentation on any variable.
