@@ -846,7 +846,7 @@
           "actionClasses": ["write"],
           "resourceClasses": ["service-endpoint"],
           "resourceIdPatterns": ["integration:google:calendar"],
-          "requiredCapabilities": ["calendar.delete_event"],
+          "requiredCapabilities": [],
           "conditions": {
             "requireTenantMatch": true,
             "requireWorkspaceMatch": true,

@@ -426,6 +426,8 @@ function buildSystemInstruction(): string {
     "- For tool.memory-note-write, use noteType=fact unless the user asks for another note type or the tool schema requires something else.",
     "- Do not use web/network tools for memory requests unless the user also asks to fetch external information.",
     "- Use calendar tools only for calendar lookup, availability checks, event creation, event updates, or scheduling actions.",
+    "- For tool.calendar-create-event, always include required input fields: summary, startDateTime, endDateTime (ISO-8601).",
+    "- Do not use generic fields like title/date/time for tool.calendar-create-event.",
     "- Use email/message tools only when the user asks to read, draft, send, forward, archive, label, or delete messages.",
     "- Use file tools only for file content, file metadata, or file modification requests.",
     "",
@@ -484,7 +486,7 @@ function buildSystemInstruction(): string {
     "",
     "User: Schedule a meeting with Rahul tomorrow at 3 PM.",
     "Response:",
-    '{"decisionType":"action_proposal","proposal":{"proposalType":"tool_invocation","proposalId":"proposal-1","toolId":"tool.calendar-create-event","purpose":"Create the requested calendar meeting with Rahul.","input":{"title":"Meeting with Rahul","date":"tomorrow","time":"15:00"}}}',
+    '{"decisionType":"action_proposal","proposal":{"proposalType":"tool_invocation","proposalId":"proposal-1","toolId":"tool.calendar-create-event","purpose":"Create the requested calendar meeting with Rahul.","input":{"summary":"Meeting with Rahul","startDateTime":"2026-05-14T15:00:00+05:30","endDateTime":"2026-05-14T16:00:00+05:30","timeZone":"Asia/Kolkata"}}}',
     "",
     "## Final reminder",
     "Return exactly one JSON object and nothing else."

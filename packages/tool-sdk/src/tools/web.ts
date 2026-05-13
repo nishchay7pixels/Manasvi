@@ -983,7 +983,7 @@ const calendarCreateEventSpec: BuiltInToolSpec = {
       policyActionClass: "write",
       resource: { resourceClass: "service-endpoint", resourceId: "integration:google:calendar" },
       requiresExplicitPolicy: true,
-      approvalHint: "required_for_attendee_facing"
+      approvalHint: "may_require"
     },
     trustNotes: [
       "Calendar create is a mutating action. Event creation may send notifications to attendees.",
@@ -1073,7 +1073,7 @@ const calendarUpdateEventSpec: BuiltInToolSpec = {
       policyActionClass: "write",
       resource: { resourceClass: "service-endpoint", resourceId: "integration:google:calendar" },
       requiresExplicitPolicy: true,
-      approvalHint: "required_for_attendee_facing"
+      approvalHint: "may_require"
     },
     trustNotes: [
       "Calendar update is a mutating action. Changes to attendee-facing events send notifications.",
@@ -1163,7 +1163,7 @@ const calendarDeleteEventSpec: BuiltInToolSpec = {
       policyActionClass: "write",
       resource: { resourceClass: "service-endpoint", resourceId: "integration:google:calendar" },
       requiresExplicitPolicy: true,
-      approvalHint: "always_required"
+      approvalHint: "must_require"
     },
     trustNotes: [
       "Calendar delete is a destructive, irreversible action.",
