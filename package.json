@@ -5,7 +5,7 @@
   "packageManager": "pnpm@10.10.0",
   "description": "Manasvi multi-service monorepo foundation",
   "engines": {
-    "node": ">=20.0.0"
+    "node": "20.x"
   },
   "scripts": {
     "build": "turbo run build",
