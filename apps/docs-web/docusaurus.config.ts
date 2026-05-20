@@ -7,7 +7,7 @@ const config: Config = {
   tagline: "A secure, policy-governed AI agent operating fabric",
   favicon: "img/favicon.ico",
 
-  url: "https://manasvi.dev",
+  url: "https://manasvi.llcortex.ai",
   baseUrl: "/",
 
   organizationName: "manasvi",
