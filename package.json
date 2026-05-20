@@ -2,7 +2,7 @@
   "name": "manasvi",
   "version": "0.1.0",
   "private": true,
-  "packageManager": "pnpm@10.10.0",
+  "packageManager": "pnpm@9.15.9",
   "description": "Manasvi multi-service monorepo foundation",
   "engines": {
     "node": "20.x"
