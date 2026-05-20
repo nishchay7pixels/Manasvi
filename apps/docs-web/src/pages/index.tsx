@@ -71,34 +71,34 @@ const START_HERE = [
 
 const CAPABILITIES = [
   {
-    icon: "💬",
-    title: "Chat via Telegram or Slack",
-    desc: "Connect a Telegram bot or Slack workspace. Your agent receives messages, processes them, and replies — with every action governed.",
+    icon: "⬡",
+    title: "Policy-first execution",
+    desc: "Every sensitive action is evaluated against explicit policy before execution. The model proposes; policy decides.",
   },
   {
-    icon: "🖥",
-    title: "Run models locally with Ollama",
-    desc: "Use Llama 3, Mistral, Qwen, or any Ollama-supported model. No API key, no cloud costs. The model runs on your machine.",
-  },
-  {
-    icon: "⚙",
-    title: "Use tools with controlled access",
-    desc: "Web search, file access, HTTP calls, shell execution — all mediated through a policy engine. The model can't call tools directly.",
-  },
-  {
-    icon: "✅",
-    title: "Approve sensitive actions",
-    desc: "High-risk actions require your sign-off before they run. Approvals are cryptographically bound and time-limited.",
+    icon: "◈",
+    title: "Approval-gated tools",
+    desc: "Agents propose actions. Humans or policies approve them. Executors only run approved, cryptographically-signed intents.",
   },
   {
     icon: "📋",
-    title: "See everything that happened",
-    desc: "Every decision, tool call, and outcome is recorded in an append-only audit trail with integrity checking.",
+    title: "Auditable by design",
+    desc: "Every decision, tool call, approval, denial, and execution result is written to an append-only, integrity-checked trail.",
   },
   {
-    icon: "🧩",
-    title: "Extend with plugins safely",
-    desc: "Third-party plugins run in isolated processes with narrow capability grants. They can't inherit core system trust.",
+    icon: "🛡",
+    title: "Sandboxed runtime",
+    desc: "Tool execution is isolated with controlled filesystem, network, secret, and process access. Plugins can't escalate trust.",
+  },
+  {
+    icon: "🧠",
+    title: "Trust-aware memory",
+    desc: "Memory is separated by provenance and trust level to reduce poisoning risks and prevent unsafe context reuse across sessions.",
+  },
+  {
+    icon: "🔌",
+    title: "Built for real integrations",
+    desc: "Telegram, Gmail, Calendar, filesystem, and web tools can all be governed consistently through the same policy engine.",
   },
 ];
 
@@ -141,18 +141,21 @@ function HeroSection() {
         <div className={styles.heroInner}>
           <div className={styles.heroLeft}>
             <div className={styles.heroBadge}>
-              <span className="m-badge">Secure AI Agent Runtime</span>
+              <span className="m-badge">Security-first AI agent runtime</span>
             </div>
-            <h1 className="hero__title">Manasvi Docs</h1>
+            <h1 className="hero__title">
+              Build AI agents that can be <em>trusted</em> to act.
+            </h1>
             <p className={`hero__subtitle ${styles.heroSubtitle}`}>
-              Build governed AI agents you can actually run.
+              Manasvi is a policy-governed runtime for building agents with approval-gated
+              actions, auditable execution, tool mediation, sandboxing, and memory provenance.
             </p>
             <div className={styles.heroButtons}>
               <Link className="button button--primary button--lg" to="/docs/getting-started/quickstart">
-                Start building →
+                Get Started →
               </Link>
               <Link className="button button--secondary button--lg" to="/docs/architecture/overview">
-                Explore architecture
+                View Architecture
               </Link>
             </div>
           </div>
@@ -170,11 +173,11 @@ function FlowSection() {
     <section className={styles.flowSection}>
       <div className="container">
         <div className={styles.sectionHeader}>
-          <div className={styles.sectionLabel}>How the runtime works</div>
+          <div className={styles.sectionLabel}>A control plane for AI agents</div>
           <h2 className={styles.sectionTitle}>One message. Six governed steps.</h2>
           <p className={styles.sectionDesc}>
-            Every agent action goes through a governed execution pipeline.
-            The model proposes. Policy decides. Execution is sandboxed. Everything is recorded.
+            Manasvi separates conversation, policy, approval, memory, tools, and execution
+            so agents can be useful without becoming blindly autonomous.
           </p>
         </div>
         <div className={styles.flowSteps}>
@@ -241,11 +244,11 @@ function CapabilitiesSection() {
     <section className="features-section">
       <div className="container">
         <div className={styles.sectionHeader}>
-          <div className={styles.sectionLabel}>Capabilities</div>
-          <h2 className={styles.sectionTitle}>What you can do with Manasvi</h2>
+          <div className={styles.sectionLabel}>Security-first by design</div>
+          <h2 className={styles.sectionTitle}>Governance built into every layer</h2>
           <p className={styles.sectionDesc}>
-            A real agent you can run locally, connect to channels, and extend with tools —
-            with governance built in from the start.
+            Agents that propose, policies that decide, humans that approve.
+            Every capability is mediated — not bolted on after the fact.
           </p>
         </div>
         <div className="row">
@@ -321,10 +324,10 @@ function CTASection() {
   return (
     <section className="cta-section">
       <div className="container" style={{ position: "relative", zIndex: 1 }}>
-        <h2>From zero to running in about 15 minutes.</h2>
+        <h2>A governed runtime for trustworthy AI agents.</h2>
         <p>
           Free, open source, and runs entirely on your machine.
-          No cloud account required if you use Ollama.
+          Policy-first execution from the ground up.
         </p>
         <div style={{ display: "flex", gap: "1rem", justifyContent: "center", flexWrap: "wrap" }}>
           <Link className="button button--primary button--lg" to="/docs/getting-started/quickstart">
