@@ -937,6 +937,17 @@ tr:hover td {
   align-items: center;
 }
 
+@media (max-width: 996px) {
+  /* Keep the right-side navbar strip visible on mobile but only show the GitHub icon */
+  .navbar__items--right {
+    display: flex !important;
+  }
+
+  .navbar__items--right > *:not(.header-github-link) {
+    display: none !important;
+  }
+}
+
 .header-github-link::before {
   content: "";
   display: block;
