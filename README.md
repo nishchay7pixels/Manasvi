@@ -410,4 +410,8 @@ pnpm manasvi status
 
 ## License
 
-No license file is currently present in this repository. Confirm licensing before distribution, reuse, or external deployment.
+Manasvi is released under the [MIT License](./LICENSE).
+
+You are free to use, modify, and distribute this project, including for commercial use, provided that the original copyright and license notice are included in any substantial portions of the software.
+
+Manasvi is provided **“as is”**, without warranty of any kind.
