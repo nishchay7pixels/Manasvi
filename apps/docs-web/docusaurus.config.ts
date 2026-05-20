@@ -25,6 +25,25 @@ const config: Config = {
     locales: ["en"]
   },
 
+  plugins: [
+    // webpackbar@6 passes options (name, color, reporters, reporter) that the
+    // current webpack version rejects as unknown. Remove it from the plugin
+    // list before webpack validates so the dev server and build can proceed.
+    function webpackbarCompatPlugin() {
+      return {
+        name: "webpackbar-compat",
+        configureWebpack(config: { plugins?: { constructor?: { name?: string } }[] }) {
+          if (Array.isArray(config.plugins)) {
+            config.plugins = config.plugins.filter(
+              (p) => p?.constructor?.name !== "WebpackBarPlugin"
+            );
+          }
+          return {};
+        }
+      };
+    }
+  ],
+
   presets: [
     [
       "classic",
@@ -52,7 +71,7 @@ const config: Config = {
       respectPrefersColorScheme: true
     },
     navbar: {
-      title: "Manasvi",
+      title: "",
       logo: {
         alt: "Manasvi Logo",
         src: "img/logo.svg",

@@ -623,6 +623,14 @@
   .flowDesc {
     grid-template-columns: repeat(2, 1fr);
   }
+
+  /* Pipeline diagram moves below the safety copy on tablet */
+  .pipelineDiagram {
+    margin-top: 2.5rem;
+    max-width: 400px;
+    margin-left: auto;
+    margin-right: auto;
+  }
 }
 
 @media (max-width: 768px) {
@@ -642,10 +650,16 @@
     font-size: 1.625rem;
   }
 
+  .flowSection {
+    padding: 4.5rem 0 3.5rem;
+  }
+
   .flowSteps {
     justify-content: flex-start;
     padding-left: 1rem;
     padding-right: 1rem;
+    /* Ensure scroll hint is visible when content overflows */
+    -webkit-overflow-scrolling: touch;
   }
 
   .flowDesc {
@@ -654,5 +668,88 @@
 
   .console {
     font-size: 0.75rem;
+  }
+
+  .startSection {
+    padding: 4.5rem 0;
+  }
+
+  .safetySection {
+    padding: 4.5rem 0;
+  }
+}
+
+@media (max-width: 480px) {
+  .heroInner {
+    gap: 2rem;
+  }
+
+  /* Console — tighten row padding so it fits narrow screens */
+  .console {
+    font-size: 0.7rem;
+  }
+
+  .consoleRow {
+    padding: 0.4rem 0.875rem;
+    gap: 0.5rem;
+  }
+
+  .consoleTimestamp {
+    width: 2rem;
+    font-size: 0.65rem;
+  }
+
+  /* Flow steps — reduce icon size so steps don't need as much horizontal scroll */
+  .flowSection {
+    padding: 4rem 0 3rem;
+  }
+
+  .flowIcon {
+    width: 44px;
+    height: 44px;
+    font-size: 1.05rem;
+    border-radius: 11px;
+  }
+
+  .flowArrow {
+    padding: 0 0.3rem;
+    font-size: 1rem;
+  }
+
+  .flowLabel {
+    font-size: 0.72rem;
+  }
+
+  .sectionTitle {
+    font-size: 1.5rem;
+  }
+
+  .sectionHeader {
+    margin-bottom: 2rem;
+  }
+
+  .startSection {
+    padding: 4rem 0;
+  }
+
+  .startCard {
+    padding: 1.25rem;
+  }
+
+  .safetySection {
+    padding: 4rem 0;
+  }
+
+  .safetyTitle {
+    font-size: 1.5rem;
+  }
+
+  .pipelineDiagram {
+    margin-top: 2rem;
+  }
+
+  .pipelineBox {
+    font-size: 0.8rem;
+    padding: 0.55rem 1rem;
   }
 }

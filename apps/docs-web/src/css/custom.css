@@ -368,13 +368,17 @@ code {
 /* ── Tables ────────────────────────────────────────────────────── */
 table {
   border-collapse: collapse;
+  /* display: block (Infima default) — keeps overflow-x scroll working on mobile.
+     overflow-y: hidden clips th backgrounds to border-radius. */
+  display: block;
   width: 100%;
   margin: 1.5rem 0;
   font-size: 0.9rem;
   border: 1px solid var(--m-border);
   border-radius: 12px;
-  overflow: hidden;
-  display: table;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
 }
 
 th {
@@ -464,6 +468,19 @@ tr:hover td {
 
 .button--secondary:hover {
   background: var(--m-surface-raised);
+  border-color: var(--ifm-color-primary);
+  color: var(--ifm-color-primary);
+}
+
+/* In dark mode the default secondary border (28% opacity) and muted text
+   are nearly invisible against the near-black background. Increase contrast. */
+[data-theme="dark"] .button--secondary {
+  border-color: rgba(203, 213, 225, 0.45);
+  color: #CBD5E1;
+}
+
+[data-theme="dark"] .button--secondary:hover {
+  background: rgba(203, 213, 225, 0.08);
   border-color: var(--ifm-color-primary);
   color: var(--ifm-color-primary);
 }
@@ -777,23 +794,137 @@ tr:hover td {
   outline-offset: 2px;
 }
 
+/* ── Mobile navbar sidebar — must be outside media queries so it always
+   overrides any stacking context created by backdrop-filter on the navbar ── */
+.navbar-sidebar {
+  z-index: 400 !important;
+}
+
+.navbar-sidebar__backdrop {
+  z-index: 399 !important;
+}
+
+/* Minimum 44 × 44 px tap target on the hamburger button */
+.navbar__toggle {
+  min-width: 44px;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
 /* ── Responsive ────────────────────────────────────────────────── */
+
+/* Tablet / small desktop */
 @media (max-width: 996px) {
   .hero {
     padding: 5rem 1.5rem 4rem;
   }
+
+  /* backdrop-filter creates a new stacking context in iOS Safari, which can
+     trap the mobile sidebar behind the navbar. Disable it on mobile and use
+     a fully-opaque background instead so the sidebar renders above the bar. */
+  .navbar {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+
+  [data-theme="dark"] .navbar {
+    background: rgba(5, 8, 22, 0.98) !important;
+  }
+
+  [data-theme="light"] .navbar {
+    background: rgba(248, 250, 252, 0.98) !important;
+  }
 }
 
+/* Mobile */
 @media (max-width: 768px) {
   .hero__title {
-    font-size: 2.5rem;
+    font-size: 2.25rem;
   }
 
   .hero__subtitle {
-    font-size: 1rem;
+    font-size: 0.975rem;
   }
 
   .cta-section h2 {
-    font-size: 1.75rem;
+    font-size: 1.625rem;
+  }
+
+  .cta-section {
+    padding: 4.5rem 0;
+  }
+
+  .prism-code {
+    font-size: 0.8rem !important;
+    border-radius: 10px !important;
+  }
+
+  .code-block-title {
+    border-radius: 10px 10px 0 0 !important;
+  }
+
+  .code-block-title + div .prism-code {
+    border-radius: 0 0 10px 10px !important;
+  }
+
+  .footer {
+    padding: 2.5rem 1.25rem;
+  }
+
+  .pagination-nav {
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+}
+
+/* Small mobile */
+@media (max-width: 480px) {
+  .hero {
+    padding: 3.5rem 1.25rem 3rem;
+  }
+
+  .hero__title {
+    font-size: 1.875rem;
+  }
+
+  .hero__subtitle {
+    font-size: 0.9rem;
+  }
+
+  .cta-section {
+    padding: 4rem 0;
+  }
+
+  .cta-section h2 {
+    font-size: 1.375rem;
+  }
+
+  .cta-section p {
+    font-size: 0.95rem;
+  }
+
+  .markdown h1:first-child {
+    font-size: 1.625rem;
+  }
+
+  .markdown {
+    --ifm-h2-font-size: 1.25rem;
+    --ifm-h3-font-size: 1.05rem;
+  }
+
+  .admonition {
+    padding: 0.875rem 1rem;
+    border-radius: 10px;
+  }
+
+  .footer {
+    padding: 2rem 1rem;
+  }
+
+  /* Ensure table cells don't force enormous widths on small phones */
+  td, th {
+    min-width: 6rem;
   }
 }
