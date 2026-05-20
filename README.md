@@ -429,6 +429,14 @@ pnpm manasvi start
 pnpm manasvi status
 ```
 
+## ☕ Support
+
+If you find Manasvi useful, you can support the project:
+
+👉 https://buymeacoffee.com/nishchya
+
+It helps keep the project alive and growing.
+
 ## License
 
 Manasvi is released under the [MIT License](./LICENSE).

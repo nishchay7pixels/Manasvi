@@ -109,8 +109,9 @@ const config: Config = {
         },
         {
           href: "https://github.com/nishchay7pixels/manasvi",
-          label: "GitHub",
-          position: "right"
+          position: "right",
+          className: "header-github-link",
+          "aria-label": "GitHub repository"
         }
       ],
       hideOnScroll: false
