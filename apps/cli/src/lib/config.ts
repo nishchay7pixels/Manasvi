@@ -7,6 +7,7 @@ import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { homedir } from "node:os";
 import { fileExists } from "./env.js";
+import type { GoogleIntegrationConfig } from "@manasvi/integrations-sdk";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -42,9 +43,9 @@ export interface ManasviConfig {
     slack?: { enabled: boolean };
   };
   integrations: {
-    google?: {
+    google?: Partial<GoogleIntegrationConfig> & {
       enabled: boolean;
-      scopes: string[];
+      scopes?: string[];
     };
   };
   ui: {

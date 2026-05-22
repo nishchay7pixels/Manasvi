@@ -71,6 +71,13 @@ import {
   runIntegrationsCalendarToday,
   runIntegrationsCalendarUpcoming,
   runIntegrationsCalendarWriteStatus,
+  runIntegrationsGoogleCheck,
+  runIntegrationsGoogleOAuthComplete,
+  runIntegrationsGoogleOAuthStart,
+  runIntegrationsGoogleOAuthStatus,
+  runIntegrationsGoogleSetBackend,
+  runIntegrationsGoogleSwitchMode,
+  runIntegrationsGoogleStatus,
   runIntegrationsList,
   runIntegrationsRemove,
   runIntegrationsStatus
@@ -485,8 +492,53 @@ async function main(): Promise<void> {
             await runIntegrationsList();
             break;
           case "add": await runIntegrationsAdd(rest[0], rest[1]); break;
-          case "status": await runIntegrationsStatus(); break;
-          case "check": await runIntegrationsCheck(rest[0]); break;
+          case "status":
+            if (rest[0] === "google") await runIntegrationsGoogleStatus({ json });
+            else await runIntegrationsStatus();
+            break;
+          case "check":
+            if (rest[0] === "google") await runIntegrationsGoogleCheck({ json, backend: flagValue(args, "--backend") });
+            else await runIntegrationsCheck(rest[0]);
+            break;
+          case "google":
+            switch (rest[0]) {
+              case "status":
+              case undefined:
+                await runIntegrationsGoogleStatus({ json });
+                break;
+              case "check":
+                await runIntegrationsGoogleCheck({ json, backend: flagValue(args, "--backend") });
+                break;
+              case "switch-mode":
+                await runIntegrationsGoogleSwitchMode(rest[1], { json, yes });
+                break;
+              case "set-backend":
+                await runIntegrationsGoogleSetBackend(rest[1], rest[2], { json });
+                break;
+              case "oauth":
+                switch (rest[1]) {
+                  case "start":
+                  case undefined:
+                    await runIntegrationsGoogleOAuthStart({ json, accountHint: flagValue(args, "--account") });
+                    break;
+                  case "complete":
+                    await runIntegrationsGoogleOAuthComplete({ json, code: flagValue(args, "--code"), state: flagValue(args, "--state") });
+                    break;
+                  case "status":
+                    await runIntegrationsGoogleOAuthStatus({ json });
+                    break;
+                  default:
+                    printError(`Unknown subcommand: integrations google oauth ${rest[1]}`);
+                    hint("Valid subcommands: start, complete, status");
+                    process.exit(1);
+                }
+                break;
+              default:
+                printError(`Unknown subcommand: integrations google ${rest[0]}`);
+                hint("Valid subcommands: status, check, switch-mode, set-backend, oauth");
+                process.exit(1);
+            }
+            break;
           case "gmail-health": await runIntegrationsGmailHealth(); break;
           case "gmail-attention": await runIntegrationsGmailAttention(); break;
           case "gmail-write-status": await runIntegrationsGmailWriteStatus(); break;
@@ -503,7 +555,7 @@ async function main(): Promise<void> {
         break;
 
       case "connect":
-        await runConnect(sub, { json });
+        await runConnect(sub, { json, mode: flagValue(args, "--mode"), service: rest[0] });
         break;
 
       case "connections":

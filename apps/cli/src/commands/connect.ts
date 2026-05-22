@@ -7,14 +7,17 @@
 import { banner, info, warn, hint, style } from "../lib/ui.js";
 import { runModelsAdd } from "./models.js";
 import { runChannelsAdd } from "./channels.js";
-import { runIntegrationsAdd } from "./integrations.js";
+import { runIntegrationsAdd, runIntegrationsGoogleModeSelect, runIntegrationsGoogleSetBackend } from "./integrations.js";
 import { printJson, jsonFail } from "../lib/json.js";
+import type { GoogleIntegrationMode } from "@manasvi/integrations-sdk";
 
 const CONNECT_TARGETS = ["model", "telegram", "slack", "google"] as const;
 type ConnectTarget = (typeof CONNECT_TARGETS)[number];
 
 export interface ConnectOptions {
   json?: boolean;
+  mode?: string;
+  service?: string;
 }
 
 export async function runConnect(target?: string, opts: ConnectOptions = {}): Promise<void> {
@@ -62,7 +65,13 @@ export async function runConnect(target?: string, opts: ConnectOptions = {}): Pr
       break;
 
     case "google":
-      await runIntegrationsAdd("google", undefined);
+      if (opts.mode && opts.service) {
+        await runIntegrationsGoogleSetBackend(opts.service, opts.mode, { json: opts.json });
+      } else if (opts.mode) {
+        await runIntegrationsGoogleModeSelect(opts.mode as GoogleIntegrationMode, { json: opts.json });
+      } else {
+        await runIntegrationsAdd("google", undefined);
+      }
       break;
 
     default: {

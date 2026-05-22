@@ -79,7 +79,7 @@ export async function runConnections(opts: ConnectionsOptions = {}): Promise<voi
   // ── Google integration status ─────────────────────────────────────────────────
 
   const googleEnabled = config.integrations.google?.enabled ?? false;
-  const googleScopes = config.integrations.google?.scopes ?? [];
+  const googleScopes: string[] = config.integrations.google?.scopes ?? [];
   const hasGmailRead = googleScopes.some((s) => s.includes("gmail") && s.includes("readonly"));
   const hasCalendarRead = googleScopes.some((s) => s.includes("calendar") && s.includes("readonly"));
   const hasGmailWrite = googleScopes.some((s) => s.includes("gmail.modify") || s.includes("gmail.send") || s.includes("gmail.compose"));

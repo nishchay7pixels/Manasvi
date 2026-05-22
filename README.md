@@ -50,7 +50,7 @@ Manasvi exists to put a governance layer between language-model reasoning and re
 - **Ingress and channel adapters** — Telegram, Slack, terminal/API, and webhook-style inputs are normalized into canonical events.
 - **Remote node execution** — node manager and node agent components support scoped dispatch, node identity, and distributed execution patterns.
 - **Audit and governance** — audit contracts, audit service, policy decision records, and approval records provide traceability.
-- **Google integrations** — Google OAuth foundation, Gmail read/write actions, and Calendar read actions are implemented with scope/capability checks. Calendar write and Drive/Docs capabilities appear in the permission model and roadmap, but should be treated as incomplete unless verified in code.
+- **Google integrations** — backend-neutral capability routing is present, with `gog` available as a controlled read-only execution backend and native Google APIs available for governed Gmail/Calendar capabilities. Native write actions remain approval-gated.
 
 ## Architecture Overview
 
@@ -294,7 +294,7 @@ Common commands include:
 | Connections | `connect`, `connections` |
 | Governance | `governance summary`, `governance tools`, `governance policies`, `governance risks` |
 | Approvals | `approvals list`, `approvals inspect`, `approvals approve`, `approvals reject` |
-| Integrations | `integrations list`, `integrations add`, `integrations status`, `integrations gmail-health`, `integrations calendar-today` |
+| Integrations | `integrations list`, `integrations add`, `integrations status`, `integrations google status`, `integrations google check`, `integrations gmail-health`, `integrations calendar-today` |
 | Tools | `tools list`, `tools inspect`, `tools sets` |
 | Plugins | `plugins list`, `plugins inspect`, `plugins status` |
 | Nodes | `nodes list`, `nodes status`, `nodes pair` |
@@ -329,7 +329,7 @@ Important configuration areas include:
 - Service URLs: `POLICY_SERVICE_BASE_URL`, `APPROVAL_SERVICE_BASE_URL`, `EXECUTION_MANAGER_BASE_URL`, `MEMORY_SERVICE_BASE_URL`, `ORCHESTRATOR_BASE_URL`, `NODE_MANAGER_BASE_URL`
 - Model provider settings: `MANASVI_MODEL_PROVIDER`, `MODEL_ADAPTER_MODE`, `PLANNER_MODEL`, `DEEPSEEK_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `OLLAMA_BASE_URL`
 - Channel settings: `TELEGRAM_*`, `SLACK_*`
-- Google integration settings are configured through the CLI and local service endpoints.
+- Google integration settings are configured through the CLI and local service endpoints. Mode selection is available with `pnpm manasvi connect google --mode <gog|native|mixed>`.
 
 Do not commit real secrets. The repo contains placeholders and local examples only.
 

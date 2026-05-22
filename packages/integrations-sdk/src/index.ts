@@ -4,6 +4,25 @@ import { dirname } from "node:path";
 export * from "./permissions.js";
 export * from "./gmail.js";
 export * from "./calendar.js";
+export * from "./google-capabilities.js";
+export * from "./google-config.js";
+export * from "./google-provider.js";
+export * from "./google-capability-router.js";
+export * from "./google-capability-inputs.js";
+export * from "./providers/gog-google-provider.js";
+export * from "./providers/native-google-provider.js";
+export * from "./providers/gog/gog-process-runner.js";
+export * from "./providers/gog/gog-health-check.js";
+export * from "./providers/gog/gog-command-builder.js";
+export * from "./providers/gog/gog-output-parsers.js";
+export * from "./providers/native/google-oauth.js";
+export * from "./providers/native/google-token-store.js";
+export * from "./providers/native/google-scope-registry.js";
+export * from "./providers/native/google-api-client-factory.js";
+export * from "./providers/native/gmail-native-client.js";
+export * from "./providers/native/calendar-native-client.js";
+export * from "./providers/native/native-output-normalizers.js";
+export * from "./providers/native/native-errors.js";
 
 export type IntegrationProviderId = "google";
 

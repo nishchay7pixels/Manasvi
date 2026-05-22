@@ -367,6 +367,11 @@ export const COMMAND_REGISTRY: CommandDef[] = [
       "pnpm manasvi integrations list",
       "pnpm manasvi integrations add google",
       "pnpm manasvi integrations add google write",
+      "pnpm manasvi integrations google status",
+      "pnpm manasvi integrations google check",
+      "pnpm manasvi integrations google switch-mode native",
+      "pnpm manasvi integrations google set-backend gmail native",
+      "pnpm manasvi integrations google oauth start",
       "pnpm manasvi integrations status",
       "pnpm manasvi integrations gmail-health",
       "pnpm manasvi integrations calendar-today"
@@ -376,6 +381,7 @@ export const COMMAND_REGISTRY: CommandDef[] = [
       { name: "add", description: "Connect a provider (Google OAuth flow)", syntax: "integrations add google [read-only|write|calendar|calendar-write|full]", mutatesState: true } as SubcommandDef,
       { name: "status", description: "Show integration status", syntax: "integrations status [--json]" },
       { name: "check", description: "Evaluate policy/scopes for an action", syntax: "integrations check <action-id>" },
+      { name: "google", description: "Show and configure Google gog/native/mixed backends", syntax: "integrations google <status|check|switch-mode|set-backend|oauth> [--json]" },
       { name: "gmail-health", description: "Gmail connector health and readiness", syntax: "integrations gmail-health" },
       { name: "gmail-attention", description: "Summarize inbox items needing attention", syntax: "integrations gmail-attention" },
       { name: "gmail-write-status", description: "Gmail write capability readiness", syntax: "integrations gmail-write-status" },
@@ -393,11 +399,18 @@ export const COMMAND_REGISTRY: CommandDef[] = [
     group: "integrations",
     status: "stable",
     description: "Shortcut to connect a model, channel, or external integration",
-    syntax: "pnpm manasvi connect <model|telegram|slack|google>",
+    syntax: "pnpm manasvi connect <model|telegram|slack|google> [service] [--mode <gog|native|mixed>]",
     examples: [
       "pnpm manasvi connect model",
       "pnpm manasvi connect telegram",
-      "pnpm manasvi connect google"
+      "pnpm manasvi connect google",
+      "pnpm manasvi connect google --mode gog",
+      "pnpm manasvi connect google --mode native",
+      "pnpm manasvi connect google --mode mixed",
+      "pnpm manasvi connect google gmail --mode native"
+    ],
+    flags: [
+      { flag: "--mode", type: "string", description: "Google foundation mode: gog | native | mixed" }
     ],
     mutatesState: true,
     requiresInit: true

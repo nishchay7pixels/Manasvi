@@ -303,6 +303,16 @@ pnpm manasvi integrations add google calendar     # Calendar read
 pnpm manasvi integrations add google calendar-write  # Calendar write
 pnpm manasvi integrations add google full         # All scopes
 pnpm manasvi integrations status
+pnpm manasvi integrations google status           # gog/native/mixed backend status
+pnpm manasvi integrations google status --json
+pnpm manasvi integrations google check            # router/provider checks
+pnpm manasvi integrations google check --backend gog
+pnpm manasvi integrations google check --backend native
+pnpm manasvi integrations google switch-mode native
+pnpm manasvi integrations google set-backend gmail native
+pnpm manasvi integrations google oauth start
+pnpm manasvi integrations google oauth complete --code <code> --state <state>
+pnpm manasvi integrations google oauth status
 pnpm manasvi integrations check gmail.threads.read
 pnpm manasvi integrations gmail-health
 pnpm manasvi integrations gmail-attention
@@ -323,6 +333,9 @@ pnpm manasvi connect model        # → models add (interactive)
 pnpm manasvi connect telegram     # → channels add telegram
 pnpm manasvi connect slack        # → channels add slack
 pnpm manasvi connect google       # → integrations add google
+pnpm manasvi connect google --mode gog     # configure G1 gog backend mode
+pnpm manasvi connect google --mode native  # configure G1 native backend mode
+pnpm manasvi connect google --mode mixed   # configure G1 mixed backend mode
 ```
 
 ### `connections`

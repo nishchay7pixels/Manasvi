@@ -1,5 +1,32 @@
 import { banner, hint, info, section, success, table, warn } from "../lib/ui.js";
-import { loadConfig, saveConfig } from "../lib/config.js";
+import { defaultConfig, loadConfig, saveConfig } from "../lib/config.js";
+import { jsonFail, jsonOk, printJson } from "../lib/json.js";
+import {
+  createGoogleIntegrationConfigForMode,
+  defaultGoogleOAuthStateStorePath,
+  defaultGoogleTokenStorePath,
+  FileGoogleOAuthStateStore,
+  defaultGoogleIntegrationConfig,
+  generateGoogleOAuthState,
+  GogGoogleProvider,
+  GOOGLE_G2_READ_CAPABILITY_IDS,
+  GOOGLE_G2_WRITE_BLOCKED_CAPABILITY_IDS,
+  GOOGLE_SERVICE_LABELS,
+  GOOGLE_SERVICES,
+  googleOAuthConfigFromEnv,
+  GoogleOAuthService,
+  listDefaultNativeGoogleScopes,
+  listScopesByService,
+  LocalEncryptedGoogleTokenStore,
+  listGoogleCapabilities,
+  NativeGoogleProvider,
+  normalizeGoogleIntegrationConfig,
+  requiresGoogleApproval,
+  redactGoogleTokenRecord,
+  type GoogleIntegrationConfig,
+  type GoogleIntegrationMode,
+  type GoogleService
+} from "@manasvi/integrations-sdk";
 
 interface IntegrationAccount {
   providerId: string;
@@ -10,9 +37,534 @@ interface IntegrationAccount {
   lastError: string | null;
 }
 
+export interface GoogleFoundationCliSnapshot {
+  ok: true;
+  integration: "google";
+  status: "not_connected";
+  enabled: boolean;
+  mode: GoogleIntegrationMode;
+  defaultBackend: "gog" | "native";
+  account: string | null;
+  backends: {
+    gog: { status: string };
+    native: { status: string };
+  };
+  services: Record<string, {
+    enabled: boolean;
+    backend: "gog" | "native";
+    read: boolean;
+    write: boolean;
+  }>;
+  security: {
+    capabilityRegistryLoaded: boolean;
+    providerInterfaceLoaded: boolean;
+    routerEnabled: boolean;
+    directAgentAccessDisabled: boolean;
+    writeActionsRequireApproval: boolean;
+  };
+  capabilities: {
+    total: number;
+    approvalRequired: number;
+    readSensitive: number;
+  };
+  nextSteps: string[];
+}
+
 async function getGatewayPort(): Promise<number> {
   const cfg = await loadConfig();
   return cfg?.services.gatewayPort ?? 4100;
+}
+
+function getCliGoogleConfig(input?: Partial<GoogleIntegrationConfig> | null): GoogleIntegrationConfig {
+  return normalizeGoogleIntegrationConfig(input ?? defaultGoogleIntegrationConfig);
+}
+
+export function buildGoogleFoundationSnapshot(input?: Partial<GoogleIntegrationConfig> | null): GoogleFoundationCliSnapshot {
+  const config = getCliGoogleConfig(input);
+  const capabilities = listGoogleCapabilities();
+  return {
+    ok: true,
+    integration: "google",
+    status: "not_connected",
+    enabled: config.enabled,
+    mode: config.mode,
+    defaultBackend: config.defaultBackend,
+    account: config.account ?? null,
+    backends: {
+      gog: { status: "unknown" },
+      native: { status: "unknown" }
+    },
+    services: Object.fromEntries(
+      GOOGLE_SERVICES.map((service) => {
+        const serviceConfig = config.services[service];
+        return [
+          service,
+          {
+            enabled: serviceConfig?.enabled ?? false,
+            backend: serviceConfig?.backend ?? config.defaultBackend,
+            read: serviceConfig?.read ?? false,
+            write: serviceConfig?.write ?? false
+          }
+        ];
+      })
+    ),
+    security: {
+      capabilityRegistryLoaded: capabilities.length > 0,
+      providerInterfaceLoaded: true,
+      routerEnabled: true,
+      directAgentAccessDisabled: true,
+      writeActionsRequireApproval: listGoogleCapabilities()
+        .filter((capability) => capability.effect === "external_write" || capability.effect === "destructive")
+        .every((capability) => requiresGoogleApproval(capability.id))
+    },
+    capabilities: {
+      total: capabilities.length,
+      approvalRequired: capabilities.filter((capability) => capability.requiresApproval).length,
+      readSensitive: capabilities.filter((capability) => capability.effect === "read_sensitive").length
+    },
+    nextSteps: [
+      "Install and authenticate gog for read-only gog backend execution",
+      "Connect native Google APIs with: pnpm manasvi connect google --mode native"
+    ]
+  };
+}
+
+export async function runIntegrationsGoogleStatus(opts: { json?: boolean } = {}): Promise<void> {
+  const cfg = await loadConfig();
+  const snapshot = buildGoogleFoundationSnapshot(cfg?.integrations.google);
+  const googleConfig = getCliGoogleConfig(cfg?.integrations.google);
+  const gog = new GogGoogleProvider({ config: googleConfig.backends?.gog });
+  const native = new NativeGoogleProvider({ config: googleConfig.backends?.native });
+  const [gogHealth, nativeHealth, nativeToken] = await Promise.all([gog.healthCheck(), native.healthCheck(), native.tokenStatus()]);
+  snapshot.backends.gog.status = gogHealth.status;
+  snapshot.backends.native.status = nativeHealth.status;
+
+  if (opts.json) {
+    printJson(jsonOk("integrations google status", {
+      ...snapshot,
+      backends: {
+        gog: {
+          status: gogHealth.status,
+          account: gogHealth.account ?? null,
+          services: gogHealth.services,
+          warnings: gogHealth.warnings,
+          errors: gogHealth.errors,
+          nextSteps: gogHealth.nextSteps
+        },
+        native: {
+          status: nativeHealth.status,
+          account: nativeHealth.account ?? null,
+          services: nativeHealth.services,
+          token: nativeToken,
+          warnings: nativeHealth.warnings,
+          errors: nativeHealth.errors,
+          nextSteps: nativeHealth.nextSteps
+        }
+      },
+      supportedReadCapabilities: GOOGLE_G2_READ_CAPABILITY_IDS,
+      blockedWriteCapabilities: GOOGLE_G2_WRITE_BLOCKED_CAPABILITY_IDS
+    }, {
+      warnings: gogHealth.warnings.map((message) => ({ code: "google.gog.warning", message })),
+      nextSteps: gogHealth.nextSteps
+    }));
+    return;
+  }
+
+  banner("integrations google status");
+  section("Google Workspace");
+  table([
+    { label: "Status", value: "not connected", status: "warn" },
+    { label: "Enabled", value: snapshot.enabled ? "yes" : "no", status: snapshot.enabled ? "ok" : "dim" },
+    { label: "Mode", value: snapshot.mode },
+    { label: "Default backend", value: snapshot.defaultBackend },
+    { label: "Account", value: snapshot.account ?? "not configured", status: "dim" }
+  ]);
+
+  section("gog Backend");
+  table([
+    { label: "Binary/Auth", value: gogHealth.status, status: gogHealth.ok ? "ok" : "warn" },
+    { label: "Account", value: gogHealth.account ?? "not configured", status: gogHealth.account ? "ok" : "dim" }
+  ]);
+  if (gogHealth.errors.length > 0) {
+    for (const error of gogHealth.errors) warn(error);
+  }
+
+  section("gog Services");
+  table(GOOGLE_SERVICES.map((service) => {
+    const serviceHealth = gogHealth.services[service];
+    return {
+      label: GOOGLE_SERVICE_LABELS[service],
+      value: serviceHealth?.connected ? "authorized" : serviceHealth?.reason ? `missing (${serviceHealth.reason})` : "unknown",
+      status: serviceHealth?.connected ? "ok" : "warn"
+    };
+  }));
+
+  section("Backends");
+  table([
+    { label: "gog", value: gogHealth.status, status: gogHealth.ok ? "ok" : "warn" },
+    { label: "native", value: nativeHealth.status, status: nativeHealth.ok ? "ok" : "warn" }
+  ]);
+
+  section("Native OAuth");
+  table([
+    { label: "Client configured", value: nativeHealth.status === "not_configured" ? "no" : "yes", status: nativeHealth.status === "not_configured" ? "warn" : "ok" },
+    { label: "Token stored safely", value: nativeToken ? "yes" : "no", status: nativeToken ? "ok" : "warn" },
+    { label: "Refresh token available", value: nativeToken?.hasRefreshToken ? "yes" : "no", status: nativeToken?.hasRefreshToken ? "ok" : "warn" },
+    { label: "Access token expiry", value: nativeToken?.expiryDate ?? "not configured", status: nativeToken?.expiryDate ? "ok" : "dim" }
+  ]);
+
+  section("Native Scopes");
+  for (const service of ["gmail", "calendar"] as GoogleService[]) {
+    const serviceHealth = nativeHealth.services[service];
+    hint(`${GOOGLE_SERVICE_LABELS[service]} granted: ${serviceHealth?.grantedScopes?.length ? serviceHealth.grantedScopes.join(", ") : "none"}`);
+    hint(`${GOOGLE_SERVICE_LABELS[service]} missing: ${serviceHealth?.missingScopes?.length ? serviceHealth.missingScopes.join(", ") : "none"}`);
+  }
+
+  section("Services");
+  table(GOOGLE_SERVICES.map((service) => {
+    const state = snapshot.services[service]!;
+    return {
+      label: GOOGLE_SERVICE_LABELS[service],
+      value: `${state.backend}   ${state.enabled ? "enabled" : "disabled"}`,
+      status: state.enabled ? "ok" : "dim"
+    };
+  }));
+
+  section("Security");
+  table([
+    { label: "Capability registry loaded", value: snapshot.security.capabilityRegistryLoaded ? "yes" : "no", status: snapshot.security.capabilityRegistryLoaded ? "ok" : "error" },
+    { label: "Provider interface loaded", value: snapshot.security.providerInterfaceLoaded ? "yes" : "no", status: snapshot.security.providerInterfaceLoaded ? "ok" : "error" },
+    { label: "Capability router enabled", value: snapshot.security.routerEnabled ? "yes" : "no", status: snapshot.security.routerEnabled ? "ok" : "error" },
+    { label: "Direct agent access disabled", value: snapshot.security.directAgentAccessDisabled ? "yes" : "no", status: snapshot.security.directAgentAccessDisabled ? "ok" : "error" },
+    { label: "Safe process execution", value: "yes", status: "ok" },
+    { label: "No shell interpolation", value: "yes", status: "ok" },
+    { label: "Raw Google API access disabled", value: "yes", status: "ok" },
+    { label: "Tokens redacted", value: "yes", status: "ok" },
+    { label: "Write actions require approval", value: snapshot.security.writeActionsRequireApproval ? "yes" : "no", status: snapshot.security.writeActionsRequireApproval ? "ok" : "error" }
+  ]);
+
+  section("Capabilities");
+  hint(`Available through gog: ${GOOGLE_G2_READ_CAPABILITY_IDS.join(", ")}`);
+  hint(`Blocked until approval support: ${GOOGLE_G2_WRITE_BLOCKED_CAPABILITY_IDS.join(", ")}`);
+
+  section("Next steps");
+  for (const step of gogHealth.nextSteps.length > 0 ? gogHealth.nextSteps : snapshot.nextSteps) hint(step);
+}
+
+export async function runIntegrationsGoogleCheck(opts: { json?: boolean; backend?: string } = {}): Promise<void> {
+  const cfg = await loadConfig();
+  const snapshot = buildGoogleFoundationSnapshot(cfg?.integrations.google);
+  const googleConfig = getCliGoogleConfig(cfg?.integrations.google);
+  const gog = new GogGoogleProvider({ config: googleConfig.backends?.gog });
+  const native = new NativeGoogleProvider({ config: googleConfig.backends?.native });
+  const [gogHealth, nativeHealth] = await Promise.all([gog.healthCheck(), native.healthCheck()]);
+  const selectedBackend = opts.backend ?? "all";
+  const data = {
+    ...snapshot,
+    selectedBackend,
+    checks: {
+      gogProvider: gogHealth.status,
+      nativeProvider: nativeHealth.status,
+      realExecutionAvailable: gogHealth.ok,
+      realOAuthAvailableInRouter: nativeHealth.ok
+    }
+  };
+
+  if (opts.json) {
+    printJson(jsonOk("integrations google check", data, { warnings: [
+      ...(nativeHealth.ok ? [] : [{ code: "google.native.not_connected", message: "Native Google OAuth is not configured or not connected." }]),
+      ...(gogHealth.ok ? [] : [{ code: "google.gog.not_connected", message: "gog is missing or not authenticated." }])
+    ], nextSteps: snapshot.nextSteps }));
+    return;
+  }
+
+  banner("integrations google check");
+  section("Foundation checks");
+  table([
+    { label: "Capability registry", value: snapshot.security.capabilityRegistryLoaded ? "loaded" : "missing", status: snapshot.security.capabilityRegistryLoaded ? "ok" : "error" },
+    { label: "Router", value: snapshot.security.routerEnabled ? "enabled" : "disabled", status: snapshot.security.routerEnabled ? "ok" : "error" },
+    { label: "Selected backend", value: selectedBackend },
+    { label: "gog provider", value: gogHealth.status, status: gogHealth.ok ? "ok" : "warn" },
+    { label: "native provider", value: nativeHealth.status, status: nativeHealth.ok ? "ok" : "warn" },
+    { label: "Read-only gog execution", value: gogHealth.ok ? "available" : "not connected", status: gogHealth.ok ? "ok" : "warn" },
+    { label: "Native Gmail/Calendar execution", value: nativeHealth.ok ? "available" : "not connected", status: nativeHealth.ok ? "ok" : "warn" },
+    { label: "Approval-required writes", value: snapshot.security.writeActionsRequireApproval ? "enforced" : "not enforced", status: snapshot.security.writeActionsRequireApproval ? "ok" : "error" },
+    { label: "Silent fallback", value: "disabled", status: "ok" }
+  ]);
+  hint("No Gmail or Calendar data request was executed. Checks inspect gog status and local native OAuth/token metadata only.");
+}
+
+function isGoogleIntegrationMode(value: string): value is GoogleIntegrationMode {
+  return value === "gog" || value === "native" || value === "mixed";
+}
+
+function isGoogleService(value: string): value is GoogleService {
+  return (GOOGLE_SERVICES as readonly string[]).includes(value);
+}
+
+export async function runIntegrationsGoogleModeSelect(
+  mode: GoogleIntegrationMode,
+  opts: { json?: boolean } = {}
+): Promise<void> {
+  if (!isGoogleIntegrationMode(mode)) {
+    warn(`Unsupported Google integration mode: ${mode}`);
+    hint("Valid modes: gog, native, mixed");
+    return;
+  }
+
+  const existing = await loadConfig();
+  const cfg = existing ?? defaultConfig(process.cwd());
+  const previous = normalizeGoogleIntegrationConfig(cfg.integrations.google);
+  const nextFoundation = createGoogleIntegrationConfigForMode(mode);
+  const mergedGoogle = {
+    ...previous,
+    ...nextFoundation,
+    scopes: cfg.integrations.google?.scopes ?? []
+  };
+  cfg.integrations.google = mergedGoogle;
+  await saveConfig(cfg);
+
+  const data = {
+    integration: "google",
+    mode,
+    enabled: true,
+    defaultBackend: nextFoundation.defaultBackend,
+    updated: {
+      "integrations.google.enabled": true,
+      "integrations.google.mode": mode,
+      "integrations.google.defaultBackend": nextFoundation.defaultBackend
+    },
+    realExecutionAvailable: mode === "gog",
+    next: "pnpm manasvi integrations google status"
+  };
+
+  if (opts.json) {
+    printJson(jsonOk("connect google", data, {
+      warnings: [{ code: "google.g3.mode_selected", message: "Mode selection does not grant scopes or delete existing backend credentials." }],
+      nextSteps: [data.next]
+    }));
+    return;
+  }
+
+  banner("connect google");
+  if (mode === "mixed") {
+    info("Mixed mode selected.");
+    console.log();
+    section("Default backend");
+    hint(nextFoundation.defaultBackend);
+    section("Service backend overrides");
+    table(GOOGLE_SERVICES.map((service) => ({
+      label: GOOGLE_SERVICE_LABELS[service],
+      value: nextFoundation.services[service]?.backend ?? nextFoundation.defaultBackend
+    })));
+  } else {
+    info(`Google integration mode selected: ${mode}`);
+  }
+
+  console.log();
+  info("This configures the Google integration backend mode.");
+  hint(mode === "gog"
+    ? "Read-only gog execution is available through the capability router after gog is installed and authenticated."
+    : mode === "native"
+      ? "Native Gmail and Calendar execution is available after OAuth is configured and completed."
+      : "Mixed mode lets each Google service choose gog or native without silent fallback.");
+
+  section("Updated");
+  table([
+    { label: "integrations.google.enabled", value: "true", status: "ok" },
+    { label: "integrations.google.mode", value: mode },
+    { label: "integrations.google.defaultBackend", value: nextFoundation.defaultBackend }
+  ]);
+
+  section("Next");
+  hint(mode === "native" ? "pnpm manasvi integrations google oauth start" : "pnpm manasvi integrations google status");
+}
+
+export async function runIntegrationsGoogleSwitchMode(
+  mode: string | undefined,
+  opts: { json?: boolean; yes?: boolean } = {}
+): Promise<void> {
+  if (!mode || !isGoogleIntegrationMode(mode)) {
+    warn(`Unsupported Google integration mode: ${mode ?? "(missing)"}`);
+    hint("Valid modes: gog, native, mixed");
+    return;
+  }
+  const existing = await loadConfig();
+  const cfg = existing ?? defaultConfig(process.cwd());
+  const previous = normalizeGoogleIntegrationConfig(cfg.integrations.google);
+  const defaultBackend = mode === "gog" ? "gog" : "native";
+  const services = Object.fromEntries(GOOGLE_SERVICES.map((service) => [
+    service,
+    {
+      ...(previous.services[service] ?? { enabled: false, read: false, write: false }),
+      backend: mode === "mixed" ? previous.services[service]?.backend ?? previous.defaultBackend : defaultBackend
+    }
+  ])) as GoogleIntegrationConfig["services"];
+  const next = normalizeGoogleIntegrationConfig({
+    ...previous,
+    enabled: true,
+    mode,
+    defaultBackend,
+    services
+  });
+  cfg.integrations.google = { ...next, scopes: cfg.integrations.google?.scopes ?? [] };
+  await saveConfig(cfg);
+  const data = { previous: { mode: previous.mode, defaultBackend: previous.defaultBackend }, current: { mode: next.mode, defaultBackend: next.defaultBackend, services: next.services } };
+  if (opts.json) {
+    printJson(jsonOk("integrations google switch-mode", data, { nextSteps: ["pnpm manasvi integrations google status"] }));
+    return;
+  }
+  banner("integrations google switch-mode");
+  section("Previous");
+  table([
+    { label: "mode", value: previous.mode },
+    { label: "default backend", value: previous.defaultBackend }
+  ]);
+  section("Current");
+  table([
+    { label: "mode", value: next.mode },
+    { label: "default backend", value: next.defaultBackend }
+  ]);
+  section("Services");
+  table(GOOGLE_SERVICES.map((service) => ({ label: GOOGLE_SERVICE_LABELS[service], value: next.services[service]?.backend ?? next.defaultBackend })));
+  section("Next");
+  hint("pnpm manasvi integrations google status");
+}
+
+export async function runIntegrationsGoogleSetBackend(
+  service: string | undefined,
+  backend: string | undefined,
+  opts: { json?: boolean } = {}
+): Promise<void> {
+  if (!service || !isGoogleService(service) || (backend !== "gog" && backend !== "native")) {
+    warn("Usage: pnpm manasvi integrations google set-backend <gmail|calendar|drive|docs|sheets|contacts> <gog|native>");
+    return;
+  }
+  const existing = await loadConfig();
+  const cfg = existing ?? defaultConfig(process.cwd());
+  const previous = normalizeGoogleIntegrationConfig(cfg.integrations.google);
+  const next = normalizeGoogleIntegrationConfig({
+    ...previous,
+    enabled: true,
+    mode: previous.mode === "mixed" ? "mixed" : previous.mode,
+    services: {
+      ...previous.services,
+      [service]: {
+        ...(previous.services[service] ?? { enabled: false, read: false, write: false }),
+        backend
+      }
+    }
+  });
+  cfg.integrations.google = { ...next, scopes: cfg.integrations.google?.scopes ?? [] };
+  await saveConfig(cfg);
+  const data = { service, backend, mode: next.mode, services: next.services };
+  if (opts.json) {
+    printJson(jsonOk("integrations google set-backend", data, { nextSteps: ["pnpm manasvi integrations google status"] }));
+    return;
+  }
+  banner("integrations google set-backend");
+  success(`${GOOGLE_SERVICE_LABELS[service]} backend set to ${backend}`);
+  hint("Backend fallback remains disabled; unsupported capabilities will block instead of switching providers.");
+}
+
+export async function runIntegrationsGoogleOAuthStart(opts: { json?: boolean; accountHint?: string } = {}): Promise<void> {
+  const config = googleOAuthConfigFromEnv();
+  if (!config) {
+    if (opts.json) {
+      printJson(jsonFail("integrations google oauth start", [{
+        code: "google.native.oauth_not_configured",
+        message: "Google OAuth client is not configured.",
+        fix: "Set GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET."
+      }]));
+      return;
+    }
+    warn("Google OAuth client is not configured.");
+    hint("Set GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET.");
+    return;
+  }
+  const requestedScopes = listDefaultNativeGoogleScopes();
+  const tokenStore = new LocalEncryptedGoogleTokenStore();
+  const service = new GoogleOAuthService(config, new FileGoogleOAuthStateStore(defaultGoogleOAuthStateStorePath()), tokenStore);
+  const started = await service.start({
+    state: generateGoogleOAuthState(),
+    requestedScopes,
+    ...(opts.accountHint ? { accountHint: opts.accountHint } : {})
+  });
+  if (opts.json) {
+    printJson(jsonOk("integrations google oauth start", started));
+    return;
+  }
+  banner("Google Native API Setup");
+  section("Requested scopes");
+  for (const scope of requestedScopes) hint(scope);
+  section("Open this URL");
+  console.log(started.authorizationUrl);
+  section("Complete");
+  hint("pnpm manasvi integrations google oauth complete --code <code> --state <state>");
+  hint(`State expires at: ${started.expiresAt ?? "unknown"}`);
+}
+
+export async function runIntegrationsGoogleOAuthComplete(opts: { json?: boolean; code?: string; state?: string } = {}): Promise<void> {
+  if (!opts.code || !opts.state) {
+    if (opts.json) {
+      printJson(jsonFail("integrations google oauth complete", [{
+        code: "google.native.oauth_missing_code_or_state",
+        message: "OAuth completion requires --code and --state.",
+        fix: "pnpm manasvi integrations google oauth complete --code <code> --state <state>"
+      }]));
+      return;
+    }
+    warn("OAuth completion requires --code and --state.");
+    hint("pnpm manasvi integrations google oauth complete --code <code> --state <state>");
+    return;
+  }
+  const config = googleOAuthConfigFromEnv();
+  if (!config) {
+    if (opts.json) {
+      printJson(jsonFail("integrations google oauth complete", [{
+        code: "google.native.oauth_not_configured",
+        message: "Google OAuth client is not configured.",
+        fix: "Set GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET."
+      }]));
+      return;
+    }
+    warn("Google OAuth client is not configured.");
+    hint("Set GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET.");
+    return;
+  }
+  const service = new GoogleOAuthService(
+    config,
+    new FileGoogleOAuthStateStore(defaultGoogleOAuthStateStorePath()),
+    new LocalEncryptedGoogleTokenStore()
+  );
+  const result = await service.complete({ code: opts.code, state: opts.state });
+  if (opts.json) {
+    printJson(jsonOk("integrations google oauth complete", result));
+    return;
+  }
+  banner("integrations google oauth complete");
+  success("Google native OAuth completed.");
+  table([
+    { label: "Account", value: result.account ?? "not reported by token", status: result.account ? "ok" : "dim" },
+    { label: "Granted scopes", value: result.grantedScopes.join(", ") }
+  ]);
+}
+
+export async function runIntegrationsGoogleOAuthStatus(opts: { json?: boolean } = {}): Promise<void> {
+  const token = await new LocalEncryptedGoogleTokenStore().getDefault();
+  const safe = token ? redactGoogleTokenRecord(token) : null;
+  if (opts.json) {
+    printJson(jsonOk("integrations google oauth status", { token: safe, tokenStorePath: defaultGoogleTokenStorePath() }));
+    return;
+  }
+  banner("integrations google oauth status");
+  table([
+    { label: "Token store", value: defaultGoogleTokenStorePath() },
+    { label: "Token stored safely", value: safe ? "yes" : "no", status: safe ? "ok" : "warn" },
+    { label: "Account", value: safe?.account ?? "not configured", status: safe?.account ? "ok" : "dim" },
+    { label: "Refresh token", value: safe?.hasRefreshToken ? "available" : "missing", status: safe?.hasRefreshToken ? "ok" : "warn" },
+    { label: "Expiry", value: safe?.expiryDate ?? "unknown", status: safe?.expiryDate ? "ok" : "dim" }
+  ]);
 }
 
 export async function runIntegrationsList(): Promise<void> {
